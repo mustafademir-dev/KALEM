@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "shared",
+    "dtl-token",
+    "pool-manager",
+]
+
+[workspace.dependencies]
+soroban-sdk = "26.1.0"
+soroban-token-sdk = "26.1.0"
+kalem-shared = { path = "shared" }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = false
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true

@@ -1,0 +1,27 @@
+{
+  "name": "kalem-orchestrator",
+  "version": "0.1.0",
+  "description": "KALEM orkestrasyon katmanı — Fee-Bump sarmalama, SSE dinleme, Idempotency koruması, GİB simülasyonu",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^12.3.0",
+    "express": "^4.21.0",
+    "mongoose": "^8.7.0",
+    "node-cron": "^3.0.3",
+    "dotenv": "^16.4.5",
+    "uuid": "^10.0.0",
+    "winston": "^3.14.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
