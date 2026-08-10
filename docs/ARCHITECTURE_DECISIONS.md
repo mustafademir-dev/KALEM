@@ -12,15 +12,60 @@ KALEM projesinde **hibrit mimari** benimsenmiştir:
 
 ---
 
-## 2. Derleme Laboratuvarı Kurulum Bilgileri (Ubuntu WSL2)
+## 2. SEP-41 Devre Dışı Fonksiyonlar ve Kapalı Devre Güvenlik Doğrulaması
 
-| Bileşen | Sürüm / Detay |
-|---|---|
-| **İşletim Sistemi** | Ubuntu 24.04 (WSL2 Kernel 6.18.33.2-microsoft-standard-WSL2) |
-| **Rust Toolchain** | `rustc 1.97.1` (stable-x86_64-unknown-linux-gnu) |
-| **Rust Targets** | `x86_64-unknown-linux-gnu`, `wasm32v1-none`, `wasm32-unknown-unknown` |
-| **Sistem Bağımlılıkları** | `build-essential`, `pkg-config`, `libssl-dev`, `libdbus-1-dev` |
-| **Stellar CLI** | `stellar 27.1.0` (Stellar-XDR 27.0.0, WASM Spec-Shaking V2 desteği) |
+dTL (dijital Türk Lirası test taşıyıcısı), kapalı devre bir varlıktır. Bu nedenle SEP-41 standart token arayüzünün gerektirdiği delegasyon/izin fonksiyonları (`allowance`, `approve`, `transfer_from`) **kasıtlı olarak devre dışı bırakılmış** ve çağrıldıklarında doğrudan panic döndürecek şekilde kodlanmıştır:
+
+### A. Kod İncelemesi (`contracts/dtl-token/src/token.rs` L341-L354)
+
+```rust
+/// SEP-41: Allowance sorgulama — dTL için devre dışı.
+pub fn allowance(_env: Env, _from: Address, _spender: Address) -> i128 {
+    panic!("dTL kapalı devre varliktir: allowance desteklenmez")
+}
+
+/// SEP-41: Approve — dTL için devre dışı.
+pub fn approve(_env: Env, _from: Address, _spender: Address, _amount: i128, _live_until_ledger: u32) {
+    panic!("dTL kapalı devre varliktir: approve desteklenmez")
+}
+
+/// SEP-41: Transfer from (delegasyonlu) — dTL için devre dışı.
+pub fn transfer_from(_env: Env, _spender: Address, _from: Address, _to: Address, _amount: i128) {
+    panic!("dTL kapalı devre varliktir: transfer_from desteklenmez")
+}
+```
+
+### B. Birim Test Doğrulaması (`contracts/dtl-token/src/test.rs` L294-L320)
+
+```rust
+#[test]
+#[should_panic]
+fn test_allowance_panics() {
+    let t = setup();
+    let a = Address::generate(&t.env);
+    let b = Address::generate(&t.env);
+    t.client.allowance(&a, &b);
+}
+
+#[test]
+#[should_panic]
+fn test_approve_panics() {
+    let t = setup();
+    let a = Address::generate(&t.env);
+    let b = Address::generate(&t.env);
+    t.client.approve(&a, &b, &100, &1000);
+}
+
+#[test]
+#[should_panic]
+fn test_transfer_from_panics() {
+    let t = setup();
+    let a = Address::generate(&t.env);
+    let b = Address::generate(&t.env);
+    let c = Address::generate(&t.env);
+    t.client.transfer_from(&a, &b, &c, &100);
+}
+```
 
 ---
 
@@ -90,9 +135,3 @@ test result: ok. 6 passed; 0 failed.
 
 TOTAL: 31 passed; 0 failed; 0 ignored.
 ```
-
----
-
-## 4. Kaynak Kod Senkronizasyonu
-
-Test ve derleme doğrulamasından geçen tüm kontrat kaynak kodları Linux `~/kalem-contracts/` ortamından Windows üzerindeki `kalem/contracts/` ana dizinine senkronize edilmiş olup proje tek bir noktada güncel tutulmaktadır.
