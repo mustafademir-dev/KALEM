@@ -1,0 +1,22 @@
+[
+  {
+    "address": "GDWNZKIREKS2WLZGBGWBBO3JZUEXIXNG4USX5F4AIM2UBD5W4CLXDKEM",
+    "address_type": "SorobanAddress",
+    "pool_id": "Liquidity"
+  },
+  {
+    "address": "GAXVXYZ7DTFCK5JKXPAWSMJ3V72KCZGO5LIR32AHD73HLQOVGJMQURVK",
+    "address_type": "StellarAccount",
+    "pool_id": "GasSponsor"
+  },
+  {
+    "address": "GDIRKWQXXJDNHLVZHTO7USR3FBSTOW7LXEJY7LSML75LSEWJA7EMXJOQ",
+    "address_type": "SorobanAddress",
+    "pool_id": "SocialFund"
+  },
+  {
+    "address": "GBOOXSBUSUUEWK57OBKQU7WUA7V36DZATXY54ACH2V56537QBHSMV3CQ",
+    "address_type": "SorobanAddress",
+    "pool_id": "Operational"
+  }
+]

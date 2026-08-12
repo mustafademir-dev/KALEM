@@ -135,3 +135,35 @@ test result: ok. 6 passed; 0 failed.
 
 TOTAL: 31 passed; 0 failed; 0 ignored.
 ```
+
+---
+
+## 4. Stellar Testnet Deployment ve On-Chain Doğrulama (10 Ağustos 2026)
+
+Kontratlar ve birim testler (31/31) doğrulandıktan sonra Stellar Testnet ortamında canlıya alınmış ve atomik dağılım testi on-chain olarak doğrulanmıştır.
+
+### A. Kontrat ve Hesap Adresleri
+
+| Varlık / Kontrat | Alias / Tanım | Adres / Contract ID |
+| :--- | :--- | :--- |
+| **Deployer / Admin** | `deployer` | `GAAAUEICPJWHDM23K3RG7HPUFKGZGWXQIPQ5ER76DLD4OJ5UNLX6T6K4` |
+| **`dtl-token` Contract** | Soroban Custom Token | `CC4ME5GZASQP456TPFEEADRK4NOFVV4KWX5TJGHJBO7SGK34IMIPWTX4` |
+| **`pool-manager` Contract** | Atomik Dağılım Kontratı | `CBFJOXNUATWPCSONJMQUOFL3QML2VHZCT5A5SOOJ3BSN5BSFAGPOR4WF` |
+| **Havuz 1 (Likidite Hazinesi)** | `pool1` (`SorobanAddress`) | `GDWNZKIREKS2WLZGBGWBBO3JZUEXIXNG4USX5F4AIM2UBD5W4CLXDKEM` |
+| **Havuz 2 (Gaz Sponsor Havuzu)** | `pool2` (`StellarAccount`) | `GAXVXYZ7DTFCK5JKXPAWSMJ3V72KCZGO5LIR32AHD73HLQOVGJMQURVK` |
+| **Havuz 3 (Sosyal Destek Fonu)** | `pool3` (`SorobanAddress`) | `GDIRKWQXXJDNHLVZHTO7USR3FBSTOW7LXEJY7LSML75LSEWJA7EMXJOQ` |
+| **Havuz 4 (Operasyonel Gelir)** | `pool4` (`SorobanAddress`) | `GBOOXSBUSUUEWK57OBKQU7WUA7V36DZATXY54ACH2V56537QBHSMV3CQ` |
+
+### B. On-Chain E2E Dağılım Test Sonuçları
+
+1. **Mint**: `1,000,000,000` stroops (100.0000000 dTL) `deployer` adresine basıldı (TX: [`c133f5f007bd71971635c09ad7d1928ba3f570804b49fdc8095f644d35f8804d`](https://stellar.expert/explorer/testnet/tx/c133f5f007bd71971635c09ad7d1928ba3f570804b49fdc8095f644d35f8804d)).
+2. **Distribute**: `pool-manager.distribute()` ile 1.000.000.000 stroops 3 havuza atomik dağıtıldı (TX: [`a3ca5ad1814a16e24980b6afa92791d01b086a978856c0870565a3964607136c`](https://stellar.expert/explorer/testnet/tx/a3ca5ad1814a16e24980b6afa92791d01b086a978856c0870565a3964607136c)).
+3. **Sorgulanan On-Chain Bakiyeler**:
+   - Havuz 1 (%99.6): `996,000,000` stroops
+   - Havuz 2 (Gaz Sponsor / XLM): `0` dTL (XLM hesabı)
+   - Havuz 3 (%0.1): `1,000,000` stroops
+   - Havuz 4 (%0.3): `3,000,000` stroops
+   - Gönderen Kalan Bakiye: `0` stroops
+
+Detaylı komut çıktıları ve konfigürasyonlar [TESTNET_DEPLOYMENT.md](file:///c:/Users/musta/OneDrive/Masa%C3%BCst%C3%BC/teknofest%20proje%20uygulama/kalem/docs/TESTNET_DEPLOYMENT.md) dosyasında belgelenmiştir.
+
