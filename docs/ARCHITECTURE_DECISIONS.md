@@ -167,3 +167,36 @@ Kontratlar ve birim testler (31/31) doğrulandıktan sonra Stellar Testnet ortam
 
 Detaylı komut çıktıları ve konfigürasyonlar [TESTNET_DEPLOYMENT.md](file:///c:/Users/musta/OneDrive/Masa%C3%BCst%C3%BC/teknofest%20proje%20uygulama/kalem/docs/TESTNET_DEPLOYMENT.md) dosyasında belgelenmiştir.
 
+---
+
+## 5. Bilinen Sapmalar ve Implementasyon Notları
+
+> Bu bölüm, orkestrasyon katmanı (`orchestrator/src/services/`) implementasyonu sırasında rapor metni ile kontrat kodu arasında bulunan ve kullanıcı onayıyla çözülen mimari sapmaları belgeler. Yukarıdaki bölümlerdeki (1-4) kararlar DEĞİŞTİRİLMEMİŞTİR; bu bölüm yalnızca EK bir açıklama katmanıdır.
+
+### 5.1. Havuz 4 → Havuz 2 Besleme Akışında Burn Sapması
+
+**Rapor metni (KALEM_Proje_Raporu_Duzeltilmis.pdf, Bölüm 5.3.1):** "Havuz 4'teki dTL, ihraççıya (kurumsal hazineye) gönderilir ve sözleşme seviyesinde yakılır (burn)."
+
+**Neden zincirde yürütülemez:**
+- `contracts/dtl-token/src/token.rs` (`transfer()`, satır ~255-267): alıcı (`to`) adresinin `pool_registry::is_authorized_recipient()` ile kayıtlı 4 havuzdan (Havuz 1/2/3/4) biri olduğu doğrulanır. İhraççı/admin adresi (`GAAAUEICPJWHDM23K3RG7HPUFKGZGWXQIPQ5ER76DLD4OJ5UNLX6T6K4`) bu 4 havuzdan biri DEĞİLDİR — dolayısıyla `transfer(from=Havuz4, to=ihraççı, ...)` çağrısı `UnauthorizedRecipient` (#2) hatasıyla reddedilir.
+- Aynı fonksiyon `from.require_auth()` da ister (token.rs, satır ~257) — yani Havuz 4'ün KENDİSİNİN bu transferi imzalaması gerekir. Orkestrasyon katmanı (`orchestrator/src/config/index.js`) yalnızca Havuz 2 (`POOL2_SECRET_KEY`) ve ihraççı (`ISSUER_SECRET_KEY`) özel anahtarlarını tutar; Havuz 4'ün kendi imza anahtarı hiçbir yerde saklanmaz/tutulmaz.
+
+**Uygulanan çözüm:** Transfer adımı atlanır; ihraççı `dtl-token.burn(from = Havuz4Adresi, amount)` fonksiyonunu DOĞRUDAN çağırır. `burn()` fonksiyonu (`token.rs`, satır ~212-235) yalnızca `auth::require_admin()` çağırır — bu da yalnızca ÇAĞIRANIN (ihraççı/admin) `require_auth()` sağlamasını ister (`auth.rs`, `require_admin`); `from` parametresi için `from.require_auth()` ÇAĞRILMAZ. Dolayısıyla tek bir admin imzası, Havuz 4'ün bakiyesini yakmak için yeterli ve tek uygulanabilir yoldur.
+
+**Ekonomik sonuç:** Rapor ile birebir aynıdır — Havuz 4'ün dTL bakiyesi ve toplam arz (`total_supply`) aynı miktarda azalır. Fark yalnızca ara transfer adımının (ve onun event izinin) oluşmamasıdır; muhasebe izi doğrudan `burn` event'i üzerinden takip edilir.
+
+**Kapsam:** Kontrat DEĞİŞTİRİLMEMİŞ, yeniden derlenmemiş, redeploy EDİLMEMİŞTİR. Bölüm 3 ve 4'te belgelenen WASM hash'leri, contract ID'leri ve 31 birim test sonucu geçerliliğini korur.
+
+**Yan not — ihraççı clawback yetkisi:** `burn()`'ün `from.require_auth()` istememesi, dolaylı bir sonuç olarak ihraççıya, teknik açıdan HERHANGİ bir adresin (Havuz 1'deki esnaf bakiyeleri dahil) bakiyesini o adresin onayı olmadan yakabilme yetkisi verir. Bu, dTL'nin kapalı devre/düzenleyici doğasıyla tutarlı bir "ihraççı clawback" yetkisi olarak kabul edilmiş, kontrat bu amaçla değiştirilmemiştir. İlgili implementasyon: `orchestrator/src/services/pool-feeder.service.js` (`burnPool4Dtl` fonksiyonu ve dosya başı JSDoc notu).
+
+### 5.2. Havuz 2 XLM Enjeksiyonu — Hibrit DEMO_MODE
+
+Rapor Bölüm 5.3.1 ve 5.4 sonu, Havuz 4'ten yakılan dTL karşılığının off-chain kontrollü bir kurla XLM'e çevrilip Havuz 2'ye enjekte edildiğini tarif eder ("ihraççının kontrollü döviz/kripto dönüşüm süreciyle"). Bu off-chain adım (kur belirleme, gerçek TL↔XLM işlemi) sistemin dışındadır ve orkestrasyon katmanı tarafından otomatik olarak taklit edilemez/edilmemelidir — aksi halde testnet'te gerçek olmayan bir "1:1 karşılık" görüntüsü verir.
+
+Bu nedenle `pool-feeder.service.js` iki modda çalışacak şekilde tasarlanmıştır (`DEMO_MODE` ortam değişkeni ile seçilir, ikisi de AYNI kod yolunu kullanır):
+
+- **`DEMO_MODE=false` (varsayılan, gerçekçi/üretim davranışı):** Burn otomatik yapılır, ancak XLM enjeksiyonu OTOMATİK yapılmaz. `PoolFeed` kaydı `awaiting_offchain` durumunda kalıcı olarak bekler; loglarda ve kayıtta `"MANUEL ONAY BEKLENİYOR"` damgası taşınır. Gerçek off-chain dönüşüm tamamlandıktan sonra enjeksiyon ayrıca (manuel/operasyonel bir adımla) tetiklenmelidir.
+- **`DEMO_MODE=true` (yalnızca TEKNOFEST canlı sunumu için):** `POOL_FEEDER_DEMO_DTL_PER_XLM` ile tanımlı sabit bir kur kullanılarak XLM enjeksiyonu OTOMATİK yapılır. Loglarda ve `PoolFeed.exchangeRateNote` alanında her zaman `"SİMÜLE KUR (DEMO_MODE)"` damgası taşınır — hangi modda çalışıldığı hiçbir kayıtta belirsiz kalmaz.
+
+İlgili implementasyon: `orchestrator/src/services/pool-feeder.service.js` (`convertDtlToXlm`, `injectXlmToPool2` fonksiyonları), `orchestrator/src/config/index.js` (`config.demoMode`, `config.poolFeeder.demoDtlPerXlm`).
+

@@ -18,7 +18,11 @@ import healthRoutes from './api/routes/health.routes.js';
 
 // --- Servisler ---
 // import { startSSEListener } from './services/sse-listener.service.js';
-// import { startPoolFeederCron } from './services/pool-feeder.service.js';
+// SSE listener burada kasıtlı olarak KAPALI bırakılmıştır: sse-listener.service.js
+// Havuz 1'i forAccount() ile filtreliyor, ancak Havuz 1 Soroban adresi değil klasik
+// G... hesabıdır ve fee-bump'lı işlemlerin fee source'u Havuz 2'dir. Bu, ayrı bir
+// iş kaydı olarak bırakılmıştır (bkz. plan D.6) — bu değişikliğin kapsamı dışındadır.
+import { startPoolFeederCron } from './services/pool-feeder.service.js';
 
 const app = express();
 
@@ -49,13 +53,23 @@ async function start() {
     // startSSEListener();
 
     // Havuz 4→2 besleme cron job'ını başlat
-    // startPoolFeederCron();
+    const poolFeederTask = startPoolFeederCron();
 
     // HTTP sunucusu
-    app.listen(config.port, () => {
+    const server = app.listen(config.port, () => {
       logger.info(`[Server] KALEM Orkestrasyon Katmanı — port ${config.port}`);
       logger.info(`[Server] Ortam: ${config.nodeEnv}`);
     });
+
+    const shutdown = (signal) => {
+      logger.info(`[Server] ${signal} alındı, kapatılıyor...`);
+      poolFeederTask?.stop();
+      server.close(() => {
+        mongoose.connection.close(false).finally(() => process.exit(0));
+      });
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
   } catch (err) {
     logger.error('[Server] Başlatma hatası:', err);
     process.exit(1);
