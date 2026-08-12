@@ -26,19 +26,13 @@ function getNetworkPassphrase() {
  * SSE dinleme ve işlem gönderimi için kullanılır.
  */
 function createHorizonServer() {
-  // TODO: Faz 2 Aşama 2.4'te yapılandırılacak.
-  // return new StellarSdk.Horizon.Server(config.stellar.horizonUrl);
-  return null;
+  if (!config.stellar.horizonUrl) return null;
+  return new StellarSdk.Horizon.Server(config.stellar.horizonUrl);
 }
 
-/**
- * Soroban RPC sunucu instance'ı.
- * Akıllı sözleşme çağrıları (invoke) için kullanılır.
- */
 function createSorobanServer() {
-  // TODO: Faz 2 Aşama 2.4'te yapılandırılacak.
-  // return new StellarSdk.SorobanRpc.Server(config.stellar.sorobanRpcUrl);
-  return null;
+  if (!config.stellar.sorobanRpcUrl) return null;
+  return new StellarSdk.rpc.Server(config.stellar.sorobanRpcUrl);
 }
 
 const stellarConfig = {

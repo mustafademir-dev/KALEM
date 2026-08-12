@@ -26,13 +26,13 @@ const config = {
   nodeEnv: requireEnv('NODE_ENV', 'development'),
 
   // --- MongoDB ---
-  mongodbUri: requireEnv('MONGODB_URI'),
+  mongodbUri: requireEnv('MONGODB_URI', 'mongodb://localhost:27017/kalem'),
 
   // --- Stellar ---
   stellar: {
     network: requireEnv('STELLAR_NETWORK', 'testnet'),
-    horizonUrl: requireEnv('HORIZON_URL'),
-    sorobanRpcUrl: requireEnv('SOROBAN_RPC_URL'),
+    horizonUrl: requireEnv('HORIZON_URL', 'https://horizon-testnet.stellar.org'),
+    sorobanRpcUrl: requireEnv('SOROBAN_RPC_URL', 'https://soroban-testnet.stellar.org'),
   },
 
   // --- Kontrat ID'leri ---
