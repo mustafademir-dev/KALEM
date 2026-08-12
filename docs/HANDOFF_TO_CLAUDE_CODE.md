@@ -36,14 +36,14 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Contracts** | `contracts/dtl-token/src/pool_registry.rs` | Gerçek Mantık | Havuz kayıt ve yetkili havuz listesi kontrolü |
 | **Contracts** | `contracts/dtl-token/src/storage_types.rs` | Gerçek Mantık | Soroban storage tipleri ve anahtar yapıları |
 | **Contracts** | `contracts/dtl-token/src/errors.rs` | Gerçek Mantık | Token hata kodları enumu |
-| **Contracts** | `contracts/dtl-token/src/test.rs` | Gerçek Mantık | 15 adet Soroban token birim testi |
+| **Contracts** | `contracts/dtl-token/src/test.rs` | Gerçek Mantık | 19 adet Soroban token birim testi |
 | **Contracts** | `contracts/pool-manager/Cargo.toml` | Gerçek | `pool-manager` Soroban kontrat bağımlılıkları |
 | **Contracts** | `contracts/pool-manager/src/lib.rs` | Gerçek Mantık | Pool manager kontratı ana giriş noktası |
 | **Contracts** | `contracts/pool-manager/src/distribution.rs` | Gerçek Mantık | Vergi/komisyon/tüccar havuz oranlarına göre atomik dağıtım mantığı (`distribute()`) |
 | **Contracts** | `contracts/pool-manager/src/pool_config.rs` | Gerçek Mantık | Havuz yapılandırma ve oran saklama fonksiyonları |
 | **Contracts** | `contracts/pool-manager/src/storage_types.rs` | Gerçek Mantık | Pool manager storage tipleri ve key tanımları |
 | **Contracts** | `contracts/pool-manager/src/errors.rs` | Gerçek Mantık | Dağıtım hata kodları enumu |
-| **Contracts** | `contracts/pool-manager/src/test.rs` | Gerçek Mantık | 16 adet Soroban pool-manager birim testi |
+| **Contracts** | `contracts/pool-manager/src/test.rs` | Gerçek Mantık | 6 adet Soroban pool-manager birim testi |
 | **Contracts** | `contracts/shared/Cargo.toml` | Gerçek | Ortak tipler kütüphane konfigürasyonu |
 | **Contracts** | `contracts/shared/src/lib.rs` | Gerçek Mantık | Kontratlar arası paylaşılan tipler ve sabitler |
 | **Orchestrator** | `orchestrator/package.json` | Gerçek | Node.js / Express bağımlılıkları ve npm test scripti |
@@ -136,8 +136,9 @@ d201353 docs: SEP-41 kapalı devre fonksiyonları (allowance, approve, transfer_
 Çalıştırılan komut: `cargo test` (`kalem/contracts` klasöründe)
 
 * **Kontrat Test İçeriği:** 
-  * `contracts/dtl-token/src/test.rs`: 15 adet Soroban birim testi.
-  * `contracts/pool-manager/src/test.rs`: 16 adet Soroban birim testi.
+  * `contracts/dtl-token/src/test.rs`: 19 adet Soroban birim testi.
+  * `contracts/pool-manager/src/test.rs`: 6 adet Soroban birim testi.
+  * `contracts/shared/src/lib.rs`: 6 adet Soroban birim testi.
   * **Toplam: 31 adet Soroban Rust birim testi mevcuttur.**
 * **Çalıştırma Ortam Durumu (Windows MSVC Note):**
   Windows ortamında default host target (`x86_64-pc-windows-msvc`) derlenirken sistemdeki PATH üzerinde `link.exe` (MSVC Build Tools) bulunmadığı için `error: linker link.exe not found` çıktısı alınmaktadır. Visual Studio C++ Build Tools bulunan Windows veya Linux/macOS ortamlarında 31 testin tamamı sorunsuz çalışmaktadır. Soroban WASM derlemesi (`stellar contract build`) bu durumdan etkilenmemektedir.
@@ -147,8 +148,8 @@ d201353 docs: SEP-41 kapalı devre fonksiyonları (allowance, approve, transfer_
 ## 5. Testnet Canlı Dağıtım Adresleri (Stellar Testnet)
 
 * **dTL Token Contract ID:** `CC4ME5GZASQP456TPFEEADRK4NOFVV4KWX5TJGHJBO7SGK34IMIPWTX4`
-* **Pool Manager Contract ID:** `CDX37C7M2362PPAVEXZ4C3O3SNAWR46YAKM6UXN4Q4Q2K757OEX22LGY`
-* **Canlı Doğrulama:** `distribute()` fonksiyonu Testnet üzerinde çağrılmış; vergi, platform ve tüccar hesap bakiyelerinin belirlenen oranlarda (%20 Vergi, %2 Platform, %78 Tüccar) atomik olarak aktarıldığı zincir üzerinde (`TESTNET_DEPLOYMENT.md` belgesinde detaylandırıldığı üzere) doğrulanmıştır.
+* **Pool Manager Contract ID:** `CBFJOXNUATWPCSONJMQUOFL3QML2VHZCT5A5SOOJ3BSN5BSFAGPOR4WF`
+* **Canlı Doğrulama:** `distribute()` fonksiyonu Testnet üzerinde çağrılmış; Havuz 1, Havuz 3 ve Havuz 4 bakiyelerinin belirlenen oranlarda (%99.6 Havuz 1 — Likidite, %0.1 Havuz 3 — Sosyal Destek, %0.3 Havuz 4 — Operasyonel) atomik olarak aktarıldığı zincir üzerinde (`TESTNET_DEPLOYMENT.md` belgesinde detaylandırıldığı üzere) doğrulanmıştır.
 
 ---
 
