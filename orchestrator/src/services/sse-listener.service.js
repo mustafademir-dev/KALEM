@@ -116,8 +116,14 @@ export function startSSEListener() {
 
     logger.info('[SSE] Stellar Horizon SSE dinleyicisi başlatılıyor...');
 
-    // Havuz 1 adresi varsa onun işlemlerine filtreleme yapabiliriz, aksi halde tüm akış
-    const poolAddress = config.pools?.pool1Address;
+    // Havuz 2 (fee sponsor) adresine filtrelenir — her fee-bump'lı işlemin
+    // fee_account'ı Havuz 2'dir; Havuz 1 klasik G... adresi olsa da fee-bump'lı
+    // işlemler onun işlem listesinde GÖRÜNMEZ (yalnızca operasyon içinde
+    // referans edilen adresler Horizon'un per-account tx listesine girer,
+    // fee_account girmez). Gerçek testnet doğrulaması: Madde 3'teki 3 fee-bump
+    // tx'i (db93848d..., c6e42c..., a36ffaa9...) Havuz 2'nin işlem listesinde
+    // görünürken Havuz 1'in listesinde HİÇBİRİ görünmüyordu (bkz. HANDOFF Bölüm 9).
+    const poolAddress = config.pools?.pool2Address;
     let callBuilder = stellarConfig.horizonServer.transactions();
 
     if (poolAddress) {

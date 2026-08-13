@@ -218,3 +218,13 @@ Sistemin gerçek testnet E2E doğrulaması `mongodb-memory-server` ile yapılmı
 
 `.env` dosyası `.gitignore`'dadır ve `POOL2_SECRET_KEY`/`ISSUER_SECRET_KEY` gibi gizli anahtarları içerir; repoda hiçbir zaman bulunmaz. Gerçek testnet işlemi gönderebilmek için bu dosyanın doldurulmuş olması gerekir. Anahtarların kimin tarafından, hangi güvenli kanaldan sağlanacağı (örn. HSM, secret manager, elle) operasyonel olarak henüz tanımlanmamıştır — bkz. Bölüm 5.1 "Yan not — ihraççı clawback yetkisi" ile aynı üretim-öncesi sertleştirme kapsamı.
 
+### 6.4. SSE Dinleyicisinde Kalıcı Cursor / Reconciliation Yok
+
+Madde 5 (`sse-listener.service.js` havuz filtresi düzeltmesi) sırasında incelenmiştir. `@stellar/stellar-sdk`'in `stream()` implementasyonu (`horizon/call_builder.js`) kısa süreli ağ kesintilerine karşı makul bir koruma sağlar: her mesajda sıfırlanan 15 saniyelik bir durgunluk (staleness) sayacı bağlantıyı otomatik kapatıp yeniden açar, alttaki `EventSource` de kendi native retry'ını çalıştırır, ve son işlenen `paging_token` bellekte tutulup yeniden bağlanırken kullanılır — yani saniyeler-dakikalar süren kesintilerde veri kaybı olmaz.
+
+**Ancak iki gerçek boşluk var:**
+- **Sabit 15sn retry aralığı, exponential backoff yoktur** — uzun süreli bir Horizon kesintisinde sistem aralıksız denemeye devam eder, hız kesme/geri çekilme mantığı yoktur.
+- **Kalıcı cursor yoktur (asıl önemli olan bu):** `startSSEListener()` her çağrıldığında `.cursor('now')` ile sıfırdan başlar; cursor hiçbir yerde (DB'de) saklanmaz. Orkestrasyon süreci yeniden başlarsa (deploy, crash, restart) — o pencerede zincire yazılan ama henüz yakalanmamış bir onay **kalıcı olarak kaçırılır**. Hiçbir reconciliation/backfill job'ı `'submitted'` durumunda takılı kalan işlemleri sonradan Horizon'dan sorgulayıp düzeltmiyor; `/health` endpoint'i de SSE bağlantı durumunu yansıtmıyor — dolayısıyla bu durum operasyonel olarak fark edilmeyebilir.
+
+**Öneri (üretim öncesi yapılmalı, bu iş paketinin kapsamı dışında bırakıldı):** son işlenen cursor'ı MongoDB'de kalıcı tutmak, sunucu başlangıcında oradan devam etmek; ayrıca periyodik bir reconciliation job'ı ile belirli bir süreden uzun `'submitted'` durumunda kalan işlemleri Horizon'dan tekil sorgulayıp durumlarını düzeltmek (SSE'nin bir yedeği olarak). **Bu henüz yapılmamıştır.**
+

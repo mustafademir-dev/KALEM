@@ -1,6 +1,7 @@
 import test, { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import stellarConfig from '../src/config/stellar.js';
+import config from '../src/config/index.js';
 import Transaction from '../src/models/Transaction.model.js';
 import GibDocument from '../src/models/GibDocument.model.js';
 import { handleTransaction, startSSEListener } from '../src/services/sse-listener.service.js';
@@ -89,6 +90,44 @@ describe('SSE Listener Service Unit Tests', () => {
       assert.equal(typeof closeFn, 'function', 'Kapatma fonksiyonu döndürülmelidir');
     } finally {
       stellarConfig.horizonServer = originalHorizon;
+    }
+  });
+
+  it('startSSEListener: Havuz 1 DEĞİL, Havuz 2 (fee sponsor) adresine filtrelenmelidir', async () => {
+    // Regresyon testi: fee-bump'lı işlemlerin fee_account'ı Havuz 2'dir;
+    // Havuz 1'e filtrelemek onları KAÇIRIR (bkz. HANDOFF Bölüm 9, gerçek
+    // testnet doğrulaması: Madde 3 tx'leri Havuz 1'in listesinde hiç görünmüyordu).
+    const originalHorizon = stellarConfig.horizonServer;
+    const originalPool1 = config.pools.pool1Address;
+    const originalPool2 = config.pools.pool2Address;
+    config.pools.pool1Address = 'GPOOL1XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+    config.pools.pool2Address = 'GPOOL2XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+
+    let forAccountArg = null;
+    stellarConfig.horizonServer = {
+      transactions: () => ({
+        forAccount: (addr) => {
+          forAccountArg = addr;
+          return {
+            cursor: () => ({
+              stream: (callbacks) => {
+                assert.ok(typeof callbacks.onmessage === 'function');
+                return () => {};
+              },
+            }),
+          };
+        },
+      }),
+    };
+
+    try {
+      startSSEListener();
+      assert.equal(forAccountArg, config.pools.pool2Address);
+      assert.notEqual(forAccountArg, config.pools.pool1Address);
+    } finally {
+      stellarConfig.horizonServer = originalHorizon;
+      config.pools.pool1Address = originalPool1;
+      config.pools.pool2Address = originalPool2;
     }
   });
 });

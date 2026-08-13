@@ -17,11 +17,7 @@ import merchantRoutes from './api/routes/merchant.routes.js';
 import healthRoutes from './api/routes/health.routes.js';
 
 // --- Servisler ---
-// import { startSSEListener } from './services/sse-listener.service.js';
-// SSE listener burada kasıtlı olarak KAPALI bırakılmıştır: sse-listener.service.js
-// Havuz 1'i forAccount() ile filtreliyor, ancak Havuz 1 Soroban adresi değil klasik
-// G... hesabıdır ve fee-bump'lı işlemlerin fee source'u Havuz 2'dir. Bu, ayrı bir
-// iş kaydı olarak bırakılmıştır (bkz. plan D.6) — bu değişikliğin kapsamı dışındadır.
+import { startSSEListener } from './services/sse-listener.service.js';
 import { startPoolFeederCron } from './services/pool-feeder.service.js';
 
 const app = express();
@@ -48,9 +44,8 @@ async function start() {
     await mongoose.connect(config.mongodbUri);
     logger.info('[MongoDB] Bağlantı başarılı.');
 
-    // TODO: Faz 2 Aşama 2.5'te aktifleştirilecek
-    // SSE Listener başlat
-    // startSSEListener();
+    // SSE Listener başlat (Havuz 2 üzerinden fee-bump'lı işlem onaylarını yakalar)
+    const closeSSEStream = startSSEListener();
 
     // Havuz 4→2 besleme cron job'ını başlat
     const poolFeederTask = startPoolFeederCron();
@@ -63,6 +58,7 @@ async function start() {
 
     const shutdown = (signal) => {
       logger.info(`[Server] ${signal} alındı, kapatılıyor...`);
+      closeSSEStream?.();
       poolFeederTask?.stop();
       server.close(() => {
         mongoose.connection.close(false).finally(() => process.exit(0));

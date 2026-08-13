@@ -3,7 +3,7 @@
 > **Tarih:** 12 Ağustos 2026 (ilk sürüm), güncelleme: 13 Ağustos 2026  
 > **Proje Adı:** KALEM — Kriptografik Ağlarda Lokasyonsuz Eşler Arası Mutabakat  
 > **Ağ:** Stellar Testnet / Soroban Smart Contracts  
-> **Durum:** Faz 2 (Soroban Kontratları + Testnet Deploy + E2E Dağıtım Doğrulaması) Tamamlandı. `POST /transactions/submit` gerçek testnet işlemiyle UÇTAN UCA doğrulandı — fee-bump + idempotency koruması birlikte çalışıyor (bkz. Bölüm 8). Auth/Validation middleware ve Merchant route'ları tamamlandı (bkz. Bölüm 6, madde 4). Orkestrasyon Birim Testleri Geçti (94/94).
+> **Durum:** Faz 2 (Soroban Kontratları + Testnet Deploy + E2E Dağıtım Doğrulaması) Tamamlandı. `POST /transactions/submit` gerçek testnet işlemiyle UÇTAN UCA doğrulandı — fee-bump + idempotency koruması birlikte çalışıyor (bkz. Bölüm 8). SSE dinleyicisi Havuz 2 üzerinden düzeltildi ve etkinleştirildi; gerçek işlem onayını 2 saniyede yakaladığı testnet'te kanıtlandı (bkz. Bölüm 9). Auth/Validation middleware ve Merchant route'ları tamamlandı (bkz. Bölüm 6, madde 4). Orkestrasyon Birim Testleri Geçti (95/95).
 
 ---
 
@@ -48,7 +48,7 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Contracts** | `contracts/shared/src/lib.rs` | Gerçek Mantık | Kontratlar arası paylaşılan tipler ve sabitler |
 | **Orchestrator** | `orchestrator/package.json` | Gerçek | Node.js / Express bağımlılıkları ve npm test scripti |
 | **Orchestrator** | `orchestrator/.env.example` | Gerçek | Çevre değişkenleri şablonu |
-| **Orchestrator** | `orchestrator/src/index.js` | Gerçek Mantık | Express.js sunucu başlatma ve rotaları bağlama |
+| **Orchestrator** | `orchestrator/src/index.js` | Gerçek Mantık | Express.js sunucu başlatma, rotaları bağlama, SSE listener + pool-feeder cron başlatma ve graceful shutdown |
 | **Orchestrator** | `orchestrator/src/config/index.js` | Gerçek Mantık | Uygulama genel konfigürasyonu ve env okuma |
 | **Orchestrator** | `orchestrator/src/config/stellar.js` | Gerçek Mantık | Stellar SDK, Horizon adresi ve kontrat ID konfigürasyonu |
 | **Orchestrator** | `orchestrator/src/api/middleware/auth.middleware.js` | Gerçek Mantık | `Authorization: Bearer <apiKey>` doğrulaması; SHA-256 hash karşılaştırmasıyla `req.merchant`/`req.merchantId` atar |
@@ -62,7 +62,7 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Orchestrator** | `orchestrator/src/models/Merchant.model.js` | Gerçek Mantık | Üye iş yeri MongoDB şeması (`apiKeyHash` alanı ile — plaintext anahtar hiçbir yerde saklanmaz) |
 | **Orchestrator** | `orchestrator/src/models/Transaction.model.js` | Gerçek Mantık | İşlem detayları MongoDB şeması |
 | **Orchestrator** | `orchestrator/src/services/stellar-tx.service.js` | Gerçek Mantık | Soroban kontrat çağrı hazırlığı (`prepareTransaction`), simülasyon (`readContractBalance` — maliyetsiz bakiye okuma) ve Horizon'a işlem gönderme |
-| **Orchestrator** | `orchestrator/src/services/sse-listener.service.js` | Gerçek Mantık | Stellar Horizon SSE dinleyicisi; zincir üstü onayları yakalayıp DB güncelleme |
+| **Orchestrator** | `orchestrator/src/services/sse-listener.service.js` | Gerçek Mantık | Stellar Horizon SSE dinleyicisi; **Havuz 2 (fee sponsor)** üzerinden filtrelenir (Havuz 1 değil — fee-bump'lı işlemlerin `fee_account`'ı Havuz 2'dir), zincir üstü onayları yakalayıp DB günceller. `index.js`'te ARTIK AKTİF. Kalıcı cursor/reconciliation yok (bkz. ARCHITECTURE_DECISIONS.md §6.4) |
 | **Orchestrator** | `orchestrator/src/services/gib-simulator.service.js` | Gerçek Mantık | İşlem tamamlandığında GİB UBL-TR e-fatura taslağı oluşturup DB kaydı yapma |
 | **Orchestrator** | `orchestrator/src/services/fee-bump.service.js` | Gerçek Mantık | Fee-Bump (CAP-0015) dış zarf sarmalama: iç zarf güvenlik doğrulaması, ön-simülasyon, ücret hesaplama/tavan, Havuz 2 imzası, ağa iletim |
 | **Orchestrator** | `orchestrator/src/services/idempotency.service.js` | Gerçek Mantık | `acquireIdempotencyLock`/`finalizeIdempotencyKey` — writeConcern:majority + readConcern:linearizable, `failed`→retry mantığı. **Düzeltme notu:** önceki sürümde bu dosya "Gerçek Mantık" olarak listeliydi ama içi TODO stub'dı (koşulsuz `{isNew:true}` dönüyordu, hiçbir koruma yoktu) — gerçek testnet E2E'sinde tespit edilip düzeltildi (bkz. Bölüm 8) |
@@ -73,7 +73,7 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Orchestrator** | `orchestrator/src/utils/logger.js` | Gerçek Mantık | Winston tabanlı yapılandırılmış loglama |
 | **Orchestrator** | `orchestrator/src/utils/xdr-parser.js` | Gerçek Mantık | Stellar XDR çözme ve veri ayıklama yardımcısı |
 | **Orchestrator** | `orchestrator/test/gib-simulator.service.test.js` | Gerçek Mantık | GİB Fatura simülasyonu birim testi (PASS) |
-| **Orchestrator** | `orchestrator/test/sse-listener.service.test.js` | Gerçek Mantık | Horizon SSE dinleyici birim testleri (PASS) |
+| **Orchestrator** | `orchestrator/test/sse-listener.service.test.js` | Gerçek Mantık | Horizon SSE dinleyici birim testleri; `forAccount()`'un Havuz 1 DEĞİL Havuz 2 ile çağrıldığını doğrulayan regresyon testi dahil (PASS) |
 | **Orchestrator** | `orchestrator/test/stellar-tx.service.test.js` | Gerçek Mantık | Stellar Tx hazırlama ve gönderme birim testleri (PASS) |
 | **Orchestrator** | `orchestrator/test/fee-bump.service.test.js` | Gerçek Mantık | Fee-Bump dış zarf sarmalama, güvenlik doğrulaması ve ücret hesabı birim testleri (PASS) |
 | **Orchestrator** | `orchestrator/test/pool-feeder.service.test.js` | Gerçek Mantık | Havuz 4→2 besleme döngüsü, burn ve DEMO_MODE enjeksiyon birim testleri (PASS) |
@@ -158,15 +158,15 @@ d201353 docs: SEP-41 kapalı devre fonksiyonları (allowance, approve, transfer_
 ▶ Transaction Routes Unit Tests (7 test)
 ✔ Transaction Routes Unit Tests
 
-ℹ tests 94
+ℹ tests 95
 ℹ suites 19
-ℹ pass 94
+ℹ pass 95
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
 ```
-**Sonuç:** **94/94 Test BAŞARILI (PASS)**. Fee-Bump ve Pool-Feeder testleri gerçek ağ/DB bağlantısı açmadan, mevcut monkey-patch test kalıbıyla çalışır — bkz. `test/fee-bump.service.test.js`, `test/pool-feeder.service.test.js`. Auth/Validation/Idempotency middleware ve Merchant/Transaction route testleri de aynı kalıbı (Mongoose statik metod / `stellarConfig.sorobanServer` monkey-patch) izler — `wrapAndSubmitFeeBump` gibi servis fonksiyonları asla doğrudan mock'lanmaz, yalnızca SDK/DB sınırı (`stellarConfig`, model statikleri) mock'lanıp gerçek kod yolu çalıştırılır.
+**Sonuç:** **95/95 Test BAŞARILI (PASS)**. Fee-Bump ve Pool-Feeder testleri gerçek ağ/DB bağlantısı açmadan, mevcut monkey-patch test kalıbıyla çalışır — bkz. `test/fee-bump.service.test.js`, `test/pool-feeder.service.test.js`. Auth/Validation/Idempotency middleware ve Merchant/Transaction route testleri de aynı kalıbı (Mongoose statik metod / `stellarConfig.sorobanServer` monkey-patch) izler — `wrapAndSubmitFeeBump` gibi servis fonksiyonları asla doğrudan mock'lanmaz, yalnızca SDK/DB sınırı (`stellarConfig`, model statikleri) mock'lanıp gerçek kod yolu çalıştırılır.
 
 **Önemli:** Unit testlerin yeşil olması tek başına "submit rotası uçtan uca çalışıyor" anlamına gelmez. Bu iddia yalnızca gerçek bir testnet işlemiyle (tx hash + Stellar Expert linki) doğrulanabilir — fee-bump için bkz. Bölüm 7, submit rotası + idempotency için bkz. Bölüm 8.
 
@@ -207,7 +207,7 @@ Claude Code projeyi devraldığında sırasıyla şu adımlarla devam edebilir:
    * Yeni yardımcılar: `stellar-tx.service.js` → `readContractBalance()` (genel amaçlı, maliyetsiz Soroban bakiye okuma); `utils/crypto.js` → `generateApiKey()`/`hashApiKey()`.
    * 29 yeni birim test eklendi (`auth.middleware.test.js`, `validation.middleware.test.js`, `merchant.routes.test.js`, + `stellar-tx.service.test.js`'e 3 test) — toplam 71/71 PASS (bkz. Bölüm 4.A).
    * **Kapsam dışı bırakılan:** rate limiting (bkz. ARCHITECTURE_DECISIONS.md §6.2 — artık kimliği doğrulanmış tek işyerinin ardışık isteklerle Havuz 2'yi tüketebilmesi riski açıkça belgeli), KYC/KYB gerçek doğrulaması (`kycStatus` hâlâ `pending` sabit başlar).
-5. **`sse-listener.service.js` Havuz Filtresi Düzeltmesi** — `forAccount(config.pools.pool1Address)` kullanıyor; Havuz 1 klasik `G...` adresi olduğundan bu çalışsa da, fee-bump'lı işlemlerin onayını yakalamak için muhtemelen `pool2Address` (her fee-bump'ın fee source'u) filtrelenmesi gerekir. Ayrı bir iş kaydı olarak bırakıldı.
+5. ~~**`sse-listener.service.js` Havuz Filtresi Düzeltmesi**~~ — **TAMAMLANDI** (bkz. Bölüm 9). `forAccount(config.pools.pool1Address)` → `forAccount(config.pools.pool2Address)`. Gerçek testnet doğrulaması: Havuz 1'in Horizon işlem listesinde Madde 3'ün 3 fee-bump tx'inden HİÇBİRİ görünmüyordu, Havuz 2'nin listesinde üçü de vardı. `index.js`'te `startSSEListener()` artık etkinleştirildi (önceki blokaj sebebi ortadan kalktı). Yol boyunca `sse-listener.service.js`'in kalıcı cursor/reconciliation eksikliği tespit edilip ARCHITECTURE_DECISIONS.md §6.4'e "Bilinen Eksik" olarak not düşüldü (düzeltilmedi, kapsam dışı bırakıldı — process restart'ında SSE'nin `cursor('now')` ile sıfırdan başlaması, restart penceresindeki onayların kalıcı olarak kaçırılabileceği anlamına gelir).
 
 ---
 
@@ -271,6 +271,36 @@ Claude Code projeyi devraldığında sırasıyla şu adımlarla devam edebilir:
 **Keşfedilen ve düzeltilen bug (bu doğrulama sırasında):** `idempotency.service.js`'deki `acquireIdempotencyLock()` başlangıçta `IdempotencyKey.create({key, status}, {writeConcern:{w:'majority'}})` şeklinde (tekil obje + options) yazılmıştı. Mongoose'un `Model.create()` metodu tekil obje verildiğinde ikinci argümanı da **ayrı bir doküman** sanıyor — bu da `{writeConcern:{...}}`'in `key` alanı olmadığı için validasyon hatası fırlatmasına yol açıyordu. Tehlikeli kısım: İLK doküman (gerçek idempotency kaydı) yine de DB'ye başarıyla yazılıyordu, ama çağıran kod bunu bilmeden hata alıyordu — yani kilit sessizce `'processing'`de askıda kalıp bir daha asla tamamlanamayabilirdi. Doğru kullanım `create([{...}], options)` (docs dizi olmalı) — düzeltildi ve `test/idempotency.service.test.js`'e regresyon testi eklendi.
 
 **Doğrulama script'i** (`orchestrator/tmp-verify-submit.mjs`, geçiciydi) çalıştırma sonrası **silinmiştir** — repoda kalmamıştır.
+
+---
+
+## 9. SSE Dinleyici Havuz Filtresi Düzeltmesi — Gerçek Testnet Doğrulaması
+
+> Bu bölüm, Madde 5'i belgeler: `sse-listener.service.js`'in artık Havuz 2 (fee sponsor) üzerinden gerçek bir fee-bump'lı işlemin onayını GERÇEKTEN yakaladığını kanıtlar.
+
+**Durum: TAMAMLANDI.**
+
+**Değişiklik öncesi kanıt (bug'ın gerçekliği):** Madde 3'ün 3 fee-bump tx'i (`db93848d...`, `c6e42c...`, `a36ffaa9...`) Horizon'da sorgulandı:
+- Havuz 2'nin (`GAXVXYZ7...`) işlem listesinde **üçü de** `fee_account` olarak görünüyordu.
+- Havuz 1'in (`GDWNZKIR...`) işlem listesinde **hiçbiri** görünmüyordu (yalnızca ilişkisiz eski bir tx vardı).
+
+Bu, eski `forAccount(config.pools.pool1Address)` filtresinin fee-bump'lı işlemleri yapısal olarak kaçırdığını kanıtlar.
+
+**Değişiklik:** `sse-listener.service.js`'te filtre `pool2Address`'e çevrildi; `index.js`'te `startSSEListener()` etkinleştirildi (önceki blokaj gerekçesi ortadan kalktığı için).
+
+**Akış (gerçek testnet, `mongodb-memory-server` `MongoMemoryReplSet` ile):**
+1. Geçici Express sunucusu + **gerçek** `startSSEListener()` (gerçek Horizon testnet akışına Havuz 2 filtresiyle bağlandı) ayağa kaldırıldı.
+2. İhraççı kendine 1 dTL mint etti: Tx [`5ab48d58...`](https://stellar.expert/explorer/testnet/tx/5ab48d58ccb2e3d92b687c065a3671c9ca467a4f340c83fdcf58fbb80a20d909)
+3. `distribute()` iç zarfı imzalandı, `POST /transactions/submit` ile gönderildi → **201**, fee-bump ile ağa iletildi: Tx [`74d5e7c8...`](https://stellar.expert/explorer/testnet/tx/74d5e7c87013d5041eed87b60ae09f5169da450fd41de0bc3ae4fb9c057b2ef0) (ledger `4127105`)
+4. Submit sonrası, SSE'den önce: DB'de `status: "submitted"`, `ledgerNumber: null`.
+5. **SSE dinleyicisi onayı 2 SANİYE içinde yakaladı** (gerçek Horizon akışından, gerçek Havuz 2 filtresi üzerinden) — log: `[SSE] Yeni zincir içi işlem algılandı: 74d5e7c8... (Ledger: 4127105)`.
+6. `Transaction.status` otomatik `"confirmed"` oldu, `ledgerNumber: 4127105` yazıldı — hiçbir manuel müdahale olmadan, tamamen SSE akışı üzerinden.
+7. Yan ürün olarak GİB belge üretimi de otomatik tetiklendi (`generateGibDocument`), bu da SSE→GİB zincirinin de gerçekten çalıştığını doğrular.
+8. `GET /transactions/:txHash` → **200**, `status: "confirmed"`, `ledgerNumber: 4127105` — Madde 3'ün E2E'sinde `submitted`/`null` kalan alanlar artık doğru dolduruluyor.
+
+**Bilinen ve belgelenen sınır:** Bu doğrulama SSE bağlantısının transient kesintilere karşı dayanıklılığını test etmedi (SDK'nın 15sn staleness watchdog'u + cursor koruması zaten koda dahil — bkz. ARCHITECTURE_DECISIONS.md §6.4); process restart'ında kalıcı cursor olmaması hâlâ açık bir eksik olarak belgelenmiştir, düzeltilmemiştir.
+
+**Doğrulama script'i** (`orchestrator/tmp-verify-sse.mjs`, geçiciydi) çalıştırma sonrası **silinmiştir** — repoda kalmamıştır.
 
 ---
 *KALEM projesi temiz ve doğrulanmış durumda Claude Code'a devredilmiştir.*
