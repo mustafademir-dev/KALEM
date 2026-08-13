@@ -28,6 +28,14 @@ const merchantSchema = new mongoose.Schema(
       unique: true,
     },
 
+    /** API anahtarının SHA-256 hash'i. Plaintext anahtar hiçbir yerde saklanmaz. */
+    apiKeyHash: {
+      type: String,
+      required: true,
+      unique: true,
+      select: false,
+    },
+
     /** KYC/KYB doğrulama durumu. */
     kycStatus: {
       type: String,

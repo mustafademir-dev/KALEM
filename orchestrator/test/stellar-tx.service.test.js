@@ -2,7 +2,12 @@ import test, { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import stellarConfig from '../src/config/stellar.js';
-import { loadAccount, buildContractCall, submitTransaction } from '../src/services/stellar-tx.service.js';
+import {
+  loadAccount,
+  buildContractCall,
+  submitTransaction,
+  readContractBalance,
+} from '../src/services/stellar-tx.service.js';
 
 describe('StellarTx Service Unit Tests', () => {
   const dummyAddress = 'GAAAUEICPJWHDM23K3RG7HPUFKGZGWXQIPQ5ER76DLD4OJ5UNLX6T6K4';
@@ -92,6 +97,51 @@ describe('StellarTx Service Unit Tests', () => {
       assert.equal(res.ledger, 4068741);
     } finally {
       stellarConfig.horizonServer = originalHorizon;
+    }
+  });
+
+  it('readContractBalance: Bakiyeyi Horizon\'a hiç gitmeden simülasyonla okumalıdır', async () => {
+    const originalSoroban = stellarConfig.sorobanServer;
+    let capturedTx = null;
+
+    stellarConfig.sorobanServer = {
+      simulateTransaction: async (tx) => {
+        capturedTx = tx;
+        return { transactionData: {}, result: { retval: StellarSdk.nativeToScVal('95600000', { type: 'i128' }) } };
+      },
+    };
+
+    try {
+      const balance = await readContractBalance(dummyContractId, dummyAddress);
+      assert.equal(balance, '95600000');
+      assert.ok(capturedTx instanceof StellarSdk.Transaction);
+    } finally {
+      stellarConfig.sorobanServer = originalSoroban;
+    }
+  });
+
+  it('readContractBalance: Simülasyon hatasında fırlatmalıdır', async () => {
+    const originalSoroban = stellarConfig.sorobanServer;
+
+    stellarConfig.sorobanServer = {
+      simulateTransaction: async () => ({ error: 'HostError' }),
+    };
+
+    try {
+      await assert.rejects(() => readContractBalance(dummyContractId, dummyAddress), /simülasyonu başarısız/);
+    } finally {
+      stellarConfig.sorobanServer = originalSoroban;
+    }
+  });
+
+  it('readContractBalance: Soroban RPC yapılandırılmamışsa fırlatmalıdır', async () => {
+    const originalSoroban = stellarConfig.sorobanServer;
+    stellarConfig.sorobanServer = null;
+
+    try {
+      await assert.rejects(() => readContractBalance(dummyContractId, dummyAddress), /yapılandırılmamış/);
+    } finally {
+      stellarConfig.sorobanServer = originalSoroban;
     }
   });
 });

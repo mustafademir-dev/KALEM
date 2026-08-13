@@ -3,7 +3,7 @@
 > **Tarih:** 12 Ağustos 2026 (ilk sürüm), güncelleme: 13 Ağustos 2026  
 > **Proje Adı:** KALEM — Kriptografik Ağlarda Lokasyonsuz Eşler Arası Mutabakat  
 > **Ağ:** Stellar Testnet / Soroban Smart Contracts  
-> **Durum:** Faz 2 (Soroban Kontratları + Testnet Deploy + E2E Dağıtım Doğrulaması) Tamamlandı. Orkestrasyon Birim Testleri Geçti (42/42). Fee-Bump/Pool-Feeder servisleri kodlandı; gerçek testnet doğrulaması bekleniyor (bkz. Bölüm 7).
+> **Durum:** Faz 2 (Soroban Kontratları + Testnet Deploy + E2E Dağıtım Doğrulaması) Tamamlandı. Fee-Bump/Pool-Feeder servisleri gerçek testnet işlemiyle doğrulandı (bkz. Bölüm 7). Auth/Validation middleware ve Merchant route'ları (kayıt + bakiye sorgulama) gerçek mantıkla tamamlandı (bkz. Bölüm 6, madde 4). Orkestrasyon Birim Testleri Geçti (71/71).
 
 ---
 
@@ -51,17 +51,17 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Orchestrator** | `orchestrator/src/index.js` | Gerçek Mantık | Express.js sunucu başlatma ve rotaları bağlama |
 | **Orchestrator** | `orchestrator/src/config/index.js` | Gerçek Mantık | Uygulama genel konfigürasyonu ve env okuma |
 | **Orchestrator** | `orchestrator/src/config/stellar.js` | Gerçek Mantık | Stellar SDK, Horizon adresi ve kontrat ID konfigürasyonu |
-| **Orchestrator** | `orchestrator/src/api/middleware/auth.middleware.js` | İskelet / Stub | API istekleri yetkilendirme (JWT/API-Key taslağı) |
+| **Orchestrator** | `orchestrator/src/api/middleware/auth.middleware.js` | Gerçek Mantık | `Authorization: Bearer <apiKey>` doğrulaması; SHA-256 hash karşılaştırmasıyla `req.merchant`/`req.merchantId` atar |
 | **Orchestrator** | `orchestrator/src/api/middleware/idempotency.middleware.js` | Gerçek Mantık | `x-idempotency-key` başlığı ile mükerrer işlem engelleme |
-| **Orchestrator** | `orchestrator/src/api/middleware/validation.middleware.js` | İskelet / Stub | İstek gövdesi (body) doğrulama middleware taslağı |
+| **Orchestrator** | `orchestrator/src/api/middleware/validation.middleware.js` | Gerçek Mantık | `signedXdr`/`merchantId`/`totalAmount`/`cartItems` ve merchant kayıt alanlarının gerçek doğrulaması |
 | **Orchestrator** | `orchestrator/src/api/routes/health.routes.js` | Gerçek Mantık | `/health` endpointi |
-| **Orchestrator** | `orchestrator/src/api/routes/merchant.routes.js` | İskelet / Stub | Merchant kayıt ve havuz sorgulama rotaları taslağı |
+| **Orchestrator** | `orchestrator/src/api/routes/merchant.routes.js` | Gerçek Mantık | Üye işyeri kaydı (API anahtarı üretimi + hash'leme) ve Soroban RPC üzerinden gerçek dTL bakiye sorgulama |
 | **Orchestrator** | `orchestrator/src/api/routes/transaction.routes.js` | Gerçek Mantık | Ödeme başlatma (`/transactions/prepare`, `/submit`) rotaları |
 | **Orchestrator** | `orchestrator/src/models/GibDocument.model.js` | Gerçek Mantık | GİB UBL-TR e-fatura MongoDB Mongoose şeması |
 | **Orchestrator** | `orchestrator/src/models/IdempotencyKey.model.js` | Gerçek Mantık | Idempotency Mongoose şeması |
-| **Orchestrator** | `orchestrator/src/models/Merchant.model.js` | Gerçek Mantık | Üye iş yeri MongoDB şeması |
+| **Orchestrator** | `orchestrator/src/models/Merchant.model.js` | Gerçek Mantık | Üye iş yeri MongoDB şeması (`apiKeyHash` alanı ile — plaintext anahtar hiçbir yerde saklanmaz) |
 | **Orchestrator** | `orchestrator/src/models/Transaction.model.js` | Gerçek Mantık | İşlem detayları MongoDB şeması |
-| **Orchestrator** | `orchestrator/src/services/stellar-tx.service.js` | Gerçek Mantık | Soroban kontrat çağrı hazırlığı (`prepareTransaction`), simülasyon ve Horizon'a işlem gönderme |
+| **Orchestrator** | `orchestrator/src/services/stellar-tx.service.js` | Gerçek Mantık | Soroban kontrat çağrı hazırlığı (`prepareTransaction`), simülasyon (`readContractBalance` — maliyetsiz bakiye okuma) ve Horizon'a işlem gönderme |
 | **Orchestrator** | `orchestrator/src/services/sse-listener.service.js` | Gerçek Mantık | Stellar Horizon SSE dinleyicisi; zincir üstü onayları yakalayıp DB güncelleme |
 | **Orchestrator** | `orchestrator/src/services/gib-simulator.service.js` | Gerçek Mantık | İşlem tamamlandığında GİB UBL-TR e-fatura taslağı oluşturup DB kaydı yapma |
 | **Orchestrator** | `orchestrator/src/services/fee-bump.service.js` | Gerçek Mantık | Fee-Bump (CAP-0015) dış zarf sarmalama: iç zarf güvenlik doğrulaması, ön-simülasyon, ücret hesaplama/tavan, Havuz 2 imzası, ağa iletim |
@@ -69,7 +69,7 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Orchestrator** | `orchestrator/src/services/notification.service.js` | İskelet / Stub | Müşteri/Tüccar push/webhook bildirim servisi taslağı |
 | **Orchestrator** | `orchestrator/src/services/pool-feeder.service.js` | Gerçek Mantık | Havuz 4→2 besleme cron döngüsü: bakiye kontrolü, doğrudan burn (bkz. ARCHITECTURE_DECISIONS.md §5.1 sapma notu), hibrit DEMO_MODE XLM enjeksiyonu |
 | **Orchestrator** | `orchestrator/src/models/PoolFeed.model.js` | Gerçek Mantık | Havuz 4→2 besleme döngüsü denetim kaydı ve çift-burn kilidi (kısmi unique index) |
-| **Orchestrator** | `orchestrator/src/utils/crypto.js` | Gerçek Mantık | Ed25519 ve Stellar imza doğrulama araçları |
+| **Orchestrator** | `orchestrator/src/utils/crypto.js` | Kısmi (AES stub) / Gerçek (API key) | `encrypt`/`decrypt` (AES-256-GCM) henüz Faz 2 Aşama 2.4 TODO'sudur; `generateApiKey`/`hashApiKey` (SHA-256) gerçek mantıkla tamamlandı |
 | **Orchestrator** | `orchestrator/src/utils/logger.js` | Gerçek Mantık | Winston tabanlı yapılandırılmış loglama |
 | **Orchestrator** | `orchestrator/src/utils/xdr-parser.js` | Gerçek Mantık | Stellar XDR çözme ve veri ayıklama yardımcısı |
 | **Orchestrator** | `orchestrator/test/gib-simulator.service.test.js` | Gerçek Mantık | GİB Fatura simülasyonu birim testi (PASS) |
@@ -77,6 +77,9 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Orchestrator** | `orchestrator/test/stellar-tx.service.test.js` | Gerçek Mantık | Stellar Tx hazırlama ve gönderme birim testleri (PASS) |
 | **Orchestrator** | `orchestrator/test/fee-bump.service.test.js` | Gerçek Mantık | Fee-Bump dış zarf sarmalama, güvenlik doğrulaması ve ücret hesabı birim testleri (PASS) |
 | **Orchestrator** | `orchestrator/test/pool-feeder.service.test.js` | Gerçek Mantık | Havuz 4→2 besleme döngüsü, burn ve DEMO_MODE enjeksiyon birim testleri (PASS) |
+| **Orchestrator** | `orchestrator/test/auth.middleware.test.js` | Gerçek Mantık | Bearer API-Key doğrulama, 401/403/500 senaryoları ve `req.merchant` ataması birim testleri (PASS) |
+| **Orchestrator** | `orchestrator/test/validation.middleware.test.js` | Gerçek Mantık | `validateTransactionSubmit` ve `validateMerchantRegister` alan doğrulama birim testleri (PASS) |
+| **Orchestrator** | `orchestrator/test/merchant.routes.test.js` | Gerçek Mantık | Üye işyeri kaydı (409/201, API anahtarı hash'leme) ve bakiye sorgulama (400/403/404/502/200) birim testleri (PASS) |
 | **Client** | `client/package.json` | Gerçek | React Native / Expo bağımlılık konfigürasyonu |
 | **Client** | `client/src/services/api.service.js` | İskelet / Stub | HTTP API istemcisi (Axios/Fetch altyapı taslağı) |
 | **Client** | `client/src/services/transaction.service.js` | İskelet / Stub | Mobil işlem akışı servisi taslağı |
@@ -129,17 +132,29 @@ d201353 docs: SEP-41 kapalı devre fonksiyonları (allowance, approve, transfer_
   ✔ loadAccount: Horizon sunucusu üzerinden hesap bilgilerini çekmelidir (6.87ms)
   ✔ buildContractCall: prepareTransaction (simulate + assemble) adımını ÇALIŞTIRMALIDIR (9.91ms)
   ✔ submitTransaction: İmzalı işlemi Horizon ağına iletmelidir (2.70ms)
-✔ StellarTx Service Unit Tests (23.16ms)
+  ✔ readContractBalance: Bakiyeyi Horizon'a hiç gitmeden simülasyonla okumalıdır
+  ✔ readContractBalance: Simülasyon hatasında fırlatmalıdır
+  ✔ readContractBalance: Soroban RPC yapılandırılmamışsa fırlatmalıdır
+✔ StellarTx Service Unit Tests
 
-ℹ tests 42
-ℹ suites 5
-ℹ pass 42
+▶ Validation Middleware Unit Tests (12 test)
+✔ Validation Middleware Unit Tests
+
+▶ Auth Middleware Unit Tests (6 test)
+✔ Auth Middleware Unit Tests
+
+▶ Merchant Routes Unit Tests (7 test)
+✔ Merchant Routes Unit Tests
+
+ℹ tests 71
+ℹ suites 12
+ℹ pass 71
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
 ```
-**Sonuç:** **42/42 Test BAŞARILI (PASS)**. Fee-Bump ve Pool-Feeder testleri gerçek ağ/DB bağlantısı açmadan, mevcut monkey-patch test kalıbıyla çalışır — bkz. `test/fee-bump.service.test.js`, `test/pool-feeder.service.test.js`.
+**Sonuç:** **71/71 Test BAŞARILI (PASS)**. Fee-Bump ve Pool-Feeder testleri gerçek ağ/DB bağlantısı açmadan, mevcut monkey-patch test kalıbıyla çalışır — bkz. `test/fee-bump.service.test.js`, `test/pool-feeder.service.test.js`. Auth/Validation middleware ve Merchant route testleri de aynı kalıbı (Mongoose statik metod / `stellarConfig.sorobanServer` monkey-patch) izler.
 
 **Önemli:** Unit testlerin yeşil olması tek başına "fee-bump uçtan uca çalışıyor" anlamına gelmez. Bu iddia yalnızca gerçek bir testnet işlemiyle (tx hash + Stellar Expert linki) doğrulanabilir — bkz. Bölüm 7.
 
@@ -172,10 +187,14 @@ Claude Code projeyi devraldığında sırasıyla şu adımlarla devam edebilir:
    * `client/src/screens/` klasörü altında ödeme alma, QR gösterme, cüzdan bakiye ve işlem geçmişi ekran arayüzlerinin yazılması.
    * `client/src/services/wallet.service.js` ve `transaction.service.js` iskelet servislerinin gerçek imzalama ve API çağrılarıyla tamamlanması.
 2. ~~**Fee-Bump Servis Entegrasyonu**~~ — **TAMAMLANDI** (bkz. Bölüm 7). `fee-bump.service.js` ve `pool-feeder.service.js` gerçek mantıkla dolduruldu, 36 yeni birim test eklendi VE gerçek testnet işlemiyle (tx hash + Havuz 2 önce/sonra bakiye kanıtı) doğrulandı.
-3. **`/transactions/submit` Rotasının `wrapAndSubmitFeeBump`'a Bağlanması** — bilinçli olarak bu işe dahil edilmedi (ayrı iş paketi): `auth.middleware.js` gerçekleştirilip route'a bağlanmadan bu uç açılırsa kimliksiz herkes Havuz 2'nin XLM'ini tüketebilir (bkz. ARCHITECTURE_DECISIONS.md §5 ve `fee-bump.service.js` dosya başı güvenlik notu).
-4. **API Middleware & Routes Tamamlanması**:
-   * `orchestrator/src/api/middleware/auth.middleware.js` ve `validation.middleware.js` servislerinin tamamlanması (madde 3'ün ön koşulu).
-   * `orchestrator/src/api/routes/merchant.routes.js` rotasının kodlanması.
+3. **`/transactions/submit` Rotasının `wrapAndSubmitFeeBump`'a Bağlanması** — bilinçli olarak henüz yapılmadı (ayrı iş paketi). Ön koşulu (madde 4) artık tamamlandı: `authMiddleware` ve `validateTransactionSubmit` kullanıma hazır, ancak bilinçli olarak `transaction.routes.js`'e HENÜZ BAĞLANMADI — bu, madde 3'ün kapsamı olarak bırakıldı. `authMiddleware` route'a bağlanmadan bu uç açılırsa kimliksiz herkes Havuz 2'nin XLM'ini tüketebilir (bkz. ARCHITECTURE_DECISIONS.md §5 ve `fee-bump.service.js` dosya başı güvenlik notu).
+4. ~~**API Middleware & Routes Tamamlanması**~~ — **TAMAMLANDI**.
+   * `orchestrator/src/api/middleware/auth.middleware.js`: `Authorization: Bearer <apiKey>` doğrulaması, SHA-256 hash karşılaştırması (`Merchant.apiKeyHash`, plaintext hiç saklanmaz), `req.merchant`/`req.merchantId` ataması, 401/403/500 durumları.
+   * `orchestrator/src/api/middleware/validation.middleware.js`: `validateTransactionSubmit` (XDR parse doğrulaması, ObjectId, pozitif tamsayı tutar, cartItems dizi kontrolü) ve `validateMerchantRegister` (zorunlu alanlar, `StrKey.isValidEd25519PublicKey` ile Stellar adres doğrulaması) gerçek mantıkla dolduruldu.
+   * `orchestrator/src/api/routes/merchant.routes.js`: `POST /register` (taxId/stellarAddress benzersizlik kontrolü, API anahtarı üretimi — yalnızca yanıtta bir kez gösterilir, DB'ye sadece hash yazılır) ve `GET /:id/balance` (authMiddleware korumalı, yalnızca kendi bakiyesi, `readContractBalance()` ile Soroban RPC üzerinden maliyetsiz simülasyon) kodlandı.
+   * Yeni yardımcılar: `stellar-tx.service.js` → `readContractBalance()` (genel amaçlı, maliyetsiz Soroban bakiye okuma); `utils/crypto.js` → `generateApiKey()`/`hashApiKey()`.
+   * 29 yeni birim test eklendi (`auth.middleware.test.js`, `validation.middleware.test.js`, `merchant.routes.test.js`, + `stellar-tx.service.test.js`'e 3 test) — toplam 71/71 PASS (bkz. Bölüm 4.A).
+   * **Kapsam dışı bırakılan:** `/transactions/submit` rotasına bağlama (madde 3), `merchant.routes.js`'in kendisine ayrı bir idempotency/rate-limit katmanı, KYC/KYB gerçek doğrulaması (`kycStatus` hâlâ `pending` sabit başlar).
 5. **`sse-listener.service.js` Havuz Filtresi Düzeltmesi** — `forAccount(config.pools.pool1Address)` kullanıyor; Havuz 1 klasik `G...` adresi olduğundan bu çalışsa da, fee-bump'lı işlemlerin onayını yakalamak için muhtemelen `pool2Address` (her fee-bump'ın fee source'u) filtrelenmesi gerekir. Ayrı bir iş kaydı olarak bırakıldı.
 
 ---

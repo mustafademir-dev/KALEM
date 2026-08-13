@@ -46,3 +46,23 @@ export function decrypt(encryptedBase64) {
   logger.warn('[Crypto] decrypt() henüz implemente edilmedi.');
   return encryptedBase64;
 }
+
+/**
+ * Kriptografik olarak güvenli, rastgele bir üye işyeri API anahtarı üretir.
+ *
+ * @returns {string} 64 karakterlik hex anahtar (yalnızca kayıt yanıtında bir kez gösterilir).
+ */
+export function generateApiKey() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * API anahtarının SHA-256 hash'ini döner. Veritabanında yalnızca bu hash saklanır,
+ * plaintext anahtar hiçbir yerde tutulmaz.
+ *
+ * @param {string} apiKey - Ham (plaintext) API anahtarı.
+ * @returns {string} Hex SHA-256 hash.
+ */
+export function hashApiKey(apiKey) {
+  return crypto.createHash('sha256').update(apiKey, 'utf8').digest('hex');
+}

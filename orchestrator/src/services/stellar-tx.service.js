@@ -81,6 +81,49 @@ export async function buildContractCall({ sourceAddress, contractId, method, arg
 }
 
 /**
+ * Bir adresin bir Soroban token kontratındaki bakiyesini salt-okunur
+ * simülasyonla (ağa işlem göndermeden, maliyetsiz) sorgular.
+ *
+ * `balance()` bir view fonksiyonudur; tam invoke gereksiz ağ ücreti ve
+ * ledger yazımı üretir. Bu nedenle yalnızca simulateTransaction kullanılır
+ * — sorgulanan adresin kendisi, sequence numarası '0' ile yerel olarak
+ * kurulan simülasyon kaynağı olarak kullanılır (imza gerekmez).
+ *
+ * @param {string} contractId - Sorgulanacak token kontratı (C...).
+ * @param {string} address - Bakiyesi sorgulanacak adres (G... veya C...).
+ * @returns {Promise<string>} Bakiye (stroops, string).
+ */
+export async function readContractBalance(contractId, address) {
+  try {
+    if (!stellarConfig.sorobanServer) {
+      throw new Error('Soroban RPC sunucusu yapılandırılmamış.');
+    }
+
+    const simulationAccount = new StellarSdk.Account(address, '0');
+    const contract = new StellarSdk.Contract(contractId);
+    const readTx = new StellarSdk.TransactionBuilder(simulationAccount, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase: stellarConfig.networkPassphrase,
+    })
+      .addOperation(contract.call('balance', StellarSdk.Address.fromString(address).toScVal()))
+      .setTimeout(30)
+      .build();
+
+    const simulation = await stellarConfig.sorobanServer.simulateTransaction(readTx);
+
+    if (!StellarSdk.rpc.Api.isSimulationSuccess(simulation)) {
+      throw new Error(`Bakiye simülasyonu başarısız: ${JSON.stringify(simulation.error ?? simulation)}`);
+    }
+
+    const rawBalance = StellarSdk.scValToNative(simulation.result.retval); // BigInt (i128)
+    return rawBalance.toString();
+  } catch (error) {
+    logger.error(`[StellarTx] readContractBalance hatası (${contractId}, ${address}): ${error.message}`);
+    throw error;
+  }
+}
+
+/**
  * İmzalı bir işlemi (veya Fee-Bump zarfını) Horizon sunucusuna veya RPC ağa gönderir.
  *
  * @param {StellarSdk.Transaction | StellarSdk.FeeBumpTransaction | string} transaction - İmzalanmış işlem nesnesi veya XDR string'i.
