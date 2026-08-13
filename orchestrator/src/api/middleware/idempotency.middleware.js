@@ -1,7 +1,10 @@
 /**
  * Idempotency Middleware
  *
- * İstemciden gelen Idempotency-Key header'ını kontrol eder.
+ * İstemciden gelen Idempotency-Key header'ını kontrol eder ve gerçek kilit
+ * mantığı için idempotency.service.js'i çağırır (mantık tek yerde —
+ * bkz. acquireIdempotencyLock). Bu dosya yalnızca HTTP katmanıdır.
+ *
  * Bölüm 5.6.3'te tanımlanan mükerrer çekim koruması:
  * - writeConcern: majority
  * - readConcern: linearizable
@@ -9,33 +12,44 @@
  * Yalnızca /transactions/submit endpoint'inde kullanılır.
  */
 
+import { validate as isUuid, version as uuidVersion } from 'uuid';
+import { acquireIdempotencyLock } from '../../services/idempotency.service.js';
+import logger from '../../utils/logger.js';
+
 /**
  * @param {import('express').Request} req
  * @param {import('express').Response} res
  * @param {import('express').NextFunction} next
  */
 export async function idempotencyMiddleware(req, res, next) {
-  // TODO: Faz 2 Aşama 2.5'te implemente edilecek.
-  //
-  // 1. Idempotency-Key header'ını oku
-  //    → yoksa 400 döndür
-  //    → UUID v4 formatında değilse 400 döndür
-  //
-  // 2. IdempotencyKey.findOne({ key }, null, {
-  //      readConcern: { level: 'linearizable' }
-  //    })
-  //    → bulunursa:
-  //      - status === 'completed' → önceki sonucu 200 ile döndür
-  //      - status === 'processing' → 409 Conflict döndür
-  //      - status === 'failed' → yeniden işlemeye izin ver
-  //
-  // 3. Yeni key oluştur: IdempotencyKey.create(
-  //      { key, status: 'processing' },
-  //      { writeConcern: { w: 'majority' } }
-  //    )
-  //    → duplicate key hatası → 409 Conflict (race condition koruması)
-  //
-  // 4. req.idempotencyKey = key → next()
+  try {
+    const key = req.get('Idempotency-Key');
 
-  next();
+    if (!key || !isUuid(key) || uuidVersion(key) !== 4) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Idempotency-Key başlığı zorunludur ve UUID v4 formatında olmalıdır.',
+      });
+    }
+
+    const { isNew, existing } = await acquireIdempotencyLock(key);
+
+    if (!isNew) {
+      if (existing?.status === 'completed') {
+        // Aynı istek daha önce tamamlandı — ağa TEKRAR gitmeden saklanan sonucu döndür.
+        return res.status(200).json(existing.result ?? {});
+      }
+      // status === 'processing' — uçuşta olan bir istekle çakışıyor.
+      return res.status(409).json({
+        error: 'CONFLICT',
+        message: 'Bu Idempotency-Key ile bir istek zaten işleniyor.',
+      });
+    }
+
+    req.idempotencyKey = key;
+    next();
+  } catch (error) {
+    logger.error(`[Idempotency] idempotencyMiddleware hatası: ${error.message}`);
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: 'Idempotency kontrolü sırasında hata oluştu.' });
+  }
 }

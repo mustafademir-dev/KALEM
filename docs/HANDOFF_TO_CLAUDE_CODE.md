@@ -3,7 +3,7 @@
 > **Tarih:** 12 Ağustos 2026 (ilk sürüm), güncelleme: 13 Ağustos 2026  
 > **Proje Adı:** KALEM — Kriptografik Ağlarda Lokasyonsuz Eşler Arası Mutabakat  
 > **Ağ:** Stellar Testnet / Soroban Smart Contracts  
-> **Durum:** Faz 2 (Soroban Kontratları + Testnet Deploy + E2E Dağıtım Doğrulaması) Tamamlandı. Fee-Bump/Pool-Feeder servisleri gerçek testnet işlemiyle doğrulandı (bkz. Bölüm 7). Auth/Validation middleware ve Merchant route'ları (kayıt + bakiye sorgulama) gerçek mantıkla tamamlandı (bkz. Bölüm 6, madde 4). Orkestrasyon Birim Testleri Geçti (71/71).
+> **Durum:** Faz 2 (Soroban Kontratları + Testnet Deploy + E2E Dağıtım Doğrulaması) Tamamlandı. `POST /transactions/submit` gerçek testnet işlemiyle UÇTAN UCA doğrulandı — fee-bump + idempotency koruması birlikte çalışıyor (bkz. Bölüm 8). Auth/Validation middleware ve Merchant route'ları tamamlandı (bkz. Bölüm 6, madde 4). Orkestrasyon Birim Testleri Geçti (94/94).
 
 ---
 
@@ -52,11 +52,11 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Orchestrator** | `orchestrator/src/config/index.js` | Gerçek Mantık | Uygulama genel konfigürasyonu ve env okuma |
 | **Orchestrator** | `orchestrator/src/config/stellar.js` | Gerçek Mantık | Stellar SDK, Horizon adresi ve kontrat ID konfigürasyonu |
 | **Orchestrator** | `orchestrator/src/api/middleware/auth.middleware.js` | Gerçek Mantık | `Authorization: Bearer <apiKey>` doğrulaması; SHA-256 hash karşılaştırmasıyla `req.merchant`/`req.merchantId` atar |
-| **Orchestrator** | `orchestrator/src/api/middleware/idempotency.middleware.js` | Gerçek Mantık | `x-idempotency-key` başlığı ile mükerrer işlem engelleme |
+| **Orchestrator** | `orchestrator/src/api/middleware/idempotency.middleware.js` | Gerçek Mantık | `Idempotency-Key` (UUID v4) başlığı doğrulaması; gerçek kilit mantığı `idempotency.service.js`'e devredilir (kod tekrarı yok) |
 | **Orchestrator** | `orchestrator/src/api/middleware/validation.middleware.js` | Gerçek Mantık | `signedXdr`/`merchantId`/`totalAmount`/`cartItems` ve merchant kayıt alanlarının gerçek doğrulaması |
 | **Orchestrator** | `orchestrator/src/api/routes/health.routes.js` | Gerçek Mantık | `/health` endpointi |
 | **Orchestrator** | `orchestrator/src/api/routes/merchant.routes.js` | Gerçek Mantık | Üye işyeri kaydı (API anahtarı üretimi + hash'leme) ve Soroban RPC üzerinden gerçek dTL bakiye sorgulama |
-| **Orchestrator** | `orchestrator/src/api/routes/transaction.routes.js` | Gerçek Mantık | Ödeme başlatma (`/transactions/prepare`, `/submit`) rotaları |
+| **Orchestrator** | `orchestrator/src/api/routes/transaction.routes.js` | Gerçek Mantık | `POST /submit` (authMiddleware → validateTransactionSubmit → idempotencyMiddleware → wrapAndSubmitFeeBump) ve `GET /:txHash` — gerçek testnet E2E ile doğrulandı (bkz. Bölüm 8) |
 | **Orchestrator** | `orchestrator/src/models/GibDocument.model.js` | Gerçek Mantık | GİB UBL-TR e-fatura MongoDB Mongoose şeması |
 | **Orchestrator** | `orchestrator/src/models/IdempotencyKey.model.js` | Gerçek Mantık | Idempotency Mongoose şeması |
 | **Orchestrator** | `orchestrator/src/models/Merchant.model.js` | Gerçek Mantık | Üye iş yeri MongoDB şeması (`apiKeyHash` alanı ile — plaintext anahtar hiçbir yerde saklanmaz) |
@@ -65,7 +65,7 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Orchestrator** | `orchestrator/src/services/sse-listener.service.js` | Gerçek Mantık | Stellar Horizon SSE dinleyicisi; zincir üstü onayları yakalayıp DB güncelleme |
 | **Orchestrator** | `orchestrator/src/services/gib-simulator.service.js` | Gerçek Mantık | İşlem tamamlandığında GİB UBL-TR e-fatura taslağı oluşturup DB kaydı yapma |
 | **Orchestrator** | `orchestrator/src/services/fee-bump.service.js` | Gerçek Mantık | Fee-Bump (CAP-0015) dış zarf sarmalama: iç zarf güvenlik doğrulaması, ön-simülasyon, ücret hesaplama/tavan, Havuz 2 imzası, ağa iletim |
-| **Orchestrator** | `orchestrator/src/services/idempotency.service.js` | Gerçek Mantık | DB tabanlı idempotency doğrulama ve kaydetme servisi |
+| **Orchestrator** | `orchestrator/src/services/idempotency.service.js` | Gerçek Mantık | `acquireIdempotencyLock`/`finalizeIdempotencyKey` — writeConcern:majority + readConcern:linearizable, `failed`→retry mantığı. **Düzeltme notu:** önceki sürümde bu dosya "Gerçek Mantık" olarak listeliydi ama içi TODO stub'dı (koşulsuz `{isNew:true}` dönüyordu, hiçbir koruma yoktu) — gerçek testnet E2E'sinde tespit edilip düzeltildi (bkz. Bölüm 8) |
 | **Orchestrator** | `orchestrator/src/services/notification.service.js` | İskelet / Stub | Müşteri/Tüccar push/webhook bildirim servisi taslağı |
 | **Orchestrator** | `orchestrator/src/services/pool-feeder.service.js` | Gerçek Mantık | Havuz 4→2 besleme cron döngüsü: bakiye kontrolü, doğrudan burn (bkz. ARCHITECTURE_DECISIONS.md §5.1 sapma notu), hibrit DEMO_MODE XLM enjeksiyonu |
 | **Orchestrator** | `orchestrator/src/models/PoolFeed.model.js` | Gerçek Mantık | Havuz 4→2 besleme döngüsü denetim kaydı ve çift-burn kilidi (kısmi unique index) |
@@ -80,6 +80,9 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Orchestrator** | `orchestrator/test/auth.middleware.test.js` | Gerçek Mantık | Bearer API-Key doğrulama, 401/403/500 senaryoları ve `req.merchant` ataması birim testleri (PASS) |
 | **Orchestrator** | `orchestrator/test/validation.middleware.test.js` | Gerçek Mantık | `validateTransactionSubmit` ve `validateMerchantRegister` alan doğrulama birim testleri (PASS) |
 | **Orchestrator** | `orchestrator/test/merchant.routes.test.js` | Gerçek Mantık | Üye işyeri kaydı (409/201, API anahtarı hash'leme) ve bakiye sorgulama (400/403/404/502/200) birim testleri (PASS) |
+| **Orchestrator** | `orchestrator/test/idempotency.service.test.js` | Gerçek Mantık | Kilit alma (yeni/processing/completed/failed→retry/yarış), finalize ve Mongoose `create()` dizi-formu regresyon testi (PASS) |
+| **Orchestrator** | `orchestrator/test/idempotency.middleware.test.js` | Gerçek Mantık | Header eksik/geçersiz UUID (400), yeni key, processing (409), completed replay (200), 500 birim testleri (PASS) |
+| **Orchestrator** | `orchestrator/test/transaction.routes.test.js` | Gerçek Mantık | Submit (403/400/201/502, gerçek `wrapAndSubmitFeeBump` çağrısı stellarConfig sınırında mock'lanarak) ve `GET /:txHash` (404/403/200) birim testleri (PASS) |
 | **Client** | `client/package.json` | Gerçek | React Native / Expo bağımlılık konfigürasyonu |
 | **Client** | `client/src/services/api.service.js` | İskelet / Stub | HTTP API istemcisi (Axios/Fetch altyapı taslağı) |
 | **Client** | `client/src/services/transaction.service.js` | İskelet / Stub | Mobil işlem akışı servisi taslağı |
@@ -146,17 +149,26 @@ d201353 docs: SEP-41 kapalı devre fonksiyonları (allowance, approve, transfer_
 ▶ Merchant Routes Unit Tests (7 test)
 ✔ Merchant Routes Unit Tests
 
-ℹ tests 71
-ℹ suites 12
-ℹ pass 71
+▶ Idempotency Service Unit Tests (9 test)
+✔ Idempotency Service Unit Tests
+
+▶ Idempotency Middleware Unit Tests (7 test)
+✔ Idempotency Middleware Unit Tests
+
+▶ Transaction Routes Unit Tests (7 test)
+✔ Transaction Routes Unit Tests
+
+ℹ tests 94
+ℹ suites 19
+ℹ pass 94
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
 ```
-**Sonuç:** **71/71 Test BAŞARILI (PASS)**. Fee-Bump ve Pool-Feeder testleri gerçek ağ/DB bağlantısı açmadan, mevcut monkey-patch test kalıbıyla çalışır — bkz. `test/fee-bump.service.test.js`, `test/pool-feeder.service.test.js`. Auth/Validation middleware ve Merchant route testleri de aynı kalıbı (Mongoose statik metod / `stellarConfig.sorobanServer` monkey-patch) izler.
+**Sonuç:** **94/94 Test BAŞARILI (PASS)**. Fee-Bump ve Pool-Feeder testleri gerçek ağ/DB bağlantısı açmadan, mevcut monkey-patch test kalıbıyla çalışır — bkz. `test/fee-bump.service.test.js`, `test/pool-feeder.service.test.js`. Auth/Validation/Idempotency middleware ve Merchant/Transaction route testleri de aynı kalıbı (Mongoose statik metod / `stellarConfig.sorobanServer` monkey-patch) izler — `wrapAndSubmitFeeBump` gibi servis fonksiyonları asla doğrudan mock'lanmaz, yalnızca SDK/DB sınırı (`stellarConfig`, model statikleri) mock'lanıp gerçek kod yolu çalıştırılır.
 
-**Önemli:** Unit testlerin yeşil olması tek başına "fee-bump uçtan uca çalışıyor" anlamına gelmez. Bu iddia yalnızca gerçek bir testnet işlemiyle (tx hash + Stellar Expert linki) doğrulanabilir — bkz. Bölüm 7.
+**Önemli:** Unit testlerin yeşil olması tek başına "submit rotası uçtan uca çalışıyor" anlamına gelmez. Bu iddia yalnızca gerçek bir testnet işlemiyle (tx hash + Stellar Expert linki) doğrulanabilir — fee-bump için bkz. Bölüm 7, submit rotası + idempotency için bkz. Bölüm 8.
 
 ### B. Soroban Kontrat Birim Testleri (`cargo test`)
 Çalıştırılan komut: `cargo test` (`kalem/contracts` klasöründe)
@@ -187,14 +199,14 @@ Claude Code projeyi devraldığında sırasıyla şu adımlarla devam edebilir:
    * `client/src/screens/` klasörü altında ödeme alma, QR gösterme, cüzdan bakiye ve işlem geçmişi ekran arayüzlerinin yazılması.
    * `client/src/services/wallet.service.js` ve `transaction.service.js` iskelet servislerinin gerçek imzalama ve API çağrılarıyla tamamlanması.
 2. ~~**Fee-Bump Servis Entegrasyonu**~~ — **TAMAMLANDI** (bkz. Bölüm 7). `fee-bump.service.js` ve `pool-feeder.service.js` gerçek mantıkla dolduruldu, 36 yeni birim test eklendi VE gerçek testnet işlemiyle (tx hash + Havuz 2 önce/sonra bakiye kanıtı) doğrulandı.
-3. **`/transactions/submit` Rotasının `wrapAndSubmitFeeBump`'a Bağlanması** — bilinçli olarak henüz yapılmadı (ayrı iş paketi). Ön koşulu (madde 4) artık tamamlandı: `authMiddleware` ve `validateTransactionSubmit` kullanıma hazır, ancak bilinçli olarak `transaction.routes.js`'e HENÜZ BAĞLANMADI — bu, madde 3'ün kapsamı olarak bırakıldı. `authMiddleware` route'a bağlanmadan bu uç açılırsa kimliksiz herkes Havuz 2'nin XLM'ini tüketebilir (bkz. ARCHITECTURE_DECISIONS.md §5 ve `fee-bump.service.js` dosya başı güvenlik notu).
+3. ~~**`/transactions/submit` Rotasının `wrapAndSubmitFeeBump`'a Bağlanması**~~ — **TAMAMLANDI** (bkz. Bölüm 8). Middleware zinciri: `authMiddleware → validateTransactionSubmit → idempotencyMiddleware → submitTransactionHandler`. `idempotency.service.js` bu iş sırasında gerçek mantıkla dolduruldu (önceki sürümde stub olduğu tespit edildi — bkz. dosya envanteri düzeltme notu). Gerçek testnet işlemiyle UÇTAN UCA doğrulandı: fee-bump çalıştı (Havuz 2'den gerçek XLM kesildi) VE aynı Idempotency-Key ile ikinci istek ağa hiç gitmeden engellendi (bkz. Bölüm 8 için tx hash + bakiye kanıtı). `GET /:txHash` de aynı pakette kodlandı.
 4. ~~**API Middleware & Routes Tamamlanması**~~ — **TAMAMLANDI**.
    * `orchestrator/src/api/middleware/auth.middleware.js`: `Authorization: Bearer <apiKey>` doğrulaması, SHA-256 hash karşılaştırması (`Merchant.apiKeyHash`, plaintext hiç saklanmaz), `req.merchant`/`req.merchantId` ataması, 401/403/500 durumları.
    * `orchestrator/src/api/middleware/validation.middleware.js`: `validateTransactionSubmit` (XDR parse doğrulaması, ObjectId, pozitif tamsayı tutar, cartItems dizi kontrolü) ve `validateMerchantRegister` (zorunlu alanlar, `StrKey.isValidEd25519PublicKey` ile Stellar adres doğrulaması) gerçek mantıkla dolduruldu.
    * `orchestrator/src/api/routes/merchant.routes.js`: `POST /register` (taxId/stellarAddress benzersizlik kontrolü, API anahtarı üretimi — yalnızca yanıtta bir kez gösterilir, DB'ye sadece hash yazılır) ve `GET /:id/balance` (authMiddleware korumalı, yalnızca kendi bakiyesi, `readContractBalance()` ile Soroban RPC üzerinden maliyetsiz simülasyon) kodlandı.
    * Yeni yardımcılar: `stellar-tx.service.js` → `readContractBalance()` (genel amaçlı, maliyetsiz Soroban bakiye okuma); `utils/crypto.js` → `generateApiKey()`/`hashApiKey()`.
    * 29 yeni birim test eklendi (`auth.middleware.test.js`, `validation.middleware.test.js`, `merchant.routes.test.js`, + `stellar-tx.service.test.js`'e 3 test) — toplam 71/71 PASS (bkz. Bölüm 4.A).
-   * **Kapsam dışı bırakılan:** `/transactions/submit` rotasına bağlama (madde 3), `merchant.routes.js`'in kendisine ayrı bir idempotency/rate-limit katmanı, KYC/KYB gerçek doğrulaması (`kycStatus` hâlâ `pending` sabit başlar).
+   * **Kapsam dışı bırakılan:** rate limiting (bkz. ARCHITECTURE_DECISIONS.md §6.2 — artık kimliği doğrulanmış tek işyerinin ardışık isteklerle Havuz 2'yi tüketebilmesi riski açıkça belgeli), KYC/KYB gerçek doğrulaması (`kycStatus` hâlâ `pending` sabit başlar).
 5. **`sse-listener.service.js` Havuz Filtresi Düzeltmesi** — `forAccount(config.pools.pool1Address)` kullanıyor; Havuz 1 klasik `G...` adresi olduğundan bu çalışsa da, fee-bump'lı işlemlerin onayını yakalamak için muhtemelen `pool2Address` (her fee-bump'ın fee source'u) filtrelenmesi gerekir. Ayrı bir iş kaydı olarak bırakıldı.
 
 ---
@@ -223,6 +235,42 @@ Claude Code projeyi devraldığında sırasıyla şu adımlarla devam edebilir:
 5. Aynı işlem, atomik dağılımın (`distribute()`) da gerçekten çalıştığını yan ürün olarak doğrular — Havuz 1/3/4 bakiyeleri bu 1 dTL'lik tutarla (%99.6/%0.1/%0.3) güncellenmiştir.
 
 **Doğrulama script'i** (`orchestrator/tmp-verify-feebump.mjs`, geçiciydi) çalıştırma sonrası **silinmiştir** — repoda kalmamıştır, sadece `orchestrator/src/services/fee-bump.service.js` ve `stellar-tx.service.js`'teki gerçek servis fonksiyonlarını (mock içermeden) doğrudan çağırmıştır.
+
+---
+
+## 8. `POST /transactions/submit` Rotası — Gerçek Testnet Uçtan Uca Doğrulaması
+
+> Bu bölüm, Bölüm 7'nin bir adım ötesini kanıtlar: artık `wrapAndSubmitFeeBump()` doğrudan değil, GERÇEK HTTP İSTEĞİYLE (`fetch` → Express → `authMiddleware` → `validateTransactionSubmit` → `idempotencyMiddleware` → handler) tetiklenmiştir. Ayrıca idempotency korumasının aynı işlemi ikinci kez ağa GÖNDERMEDİĞİ de kanıtlanmıştır.
+
+**Durum: TAMAMLANDI.**
+
+**Test ortamı:** `mongodb-memory-server`'ın `MongoMemoryReplSet` (tek-node replica set) modu kullanıldı — düz (replica set olmayan) bir `mongod`, `idempotency.service.js`'in kullandığı `readConcern: linearizable`'ı desteklemiyor (`node needs to be a replica set member to use read concern` hatasıyla test sırasında tespit edildi). Tek-node replica set, MongoDB Atlas'ın gerçek topolojisiyle eşleşir; bu yalnızca test altyapısı seçimidir, üretim kodu etkilenmemiştir.
+
+**Akış:**
+1. Geçici Express sunucusu (`app.listen(0)`) gerçek `merchant.routes.js` ve `transaction.routes.js` route'larıyla ayağa kaldırıldı.
+2. `POST /merchants/register` ile test işyeri kaydedildi, dönen `apiKey` alındı.
+3. İhraççı kendine 1 dTL (`10000000` stroops) mint etti:
+   Tx: [`cd46e42972f9daaef955836b795e9d4ec19c0fe02dbe030e63e15e3dddd3c7b4`](https://stellar.expert/explorer/testnet/tx/cd46e42972f9daaef955836b795e9d4ec19c0fe02dbe030e63e15e3dddd3c7b4)
+4. İstemci taklidi: `pool-manager.distribute(from=ihraççı, total_amount=10000000)` iç zarfı ihraççı ile imzalandı (ağa HENÜZ gönderilmedi).
+5. **`POST /transactions/submit`** — `Authorization: Bearer <apiKey>`, `Idempotency-Key: <UUID v4>` başlıklarıyla gerçek HTTP isteği gönderildi → **201**, gerçek fee-bump ile ağa iletildi:
+   Tx: [`db93848d51d9d088f8f5b35c0fb097c22ebe543b03556171e230afc6909b8413`](https://stellar.expert/explorer/testnet/tx/db93848d51d9d088f8f5b35c0fb097c22ebe543b03556171e230afc6909b8413) (ledger `4126105`)
+6. **AYNI Idempotency-Key ile istek TEKRAR gönderildi** → **200**, saklanan sonuç ağa hiç gitmeden aynen döndü.
+7. `GET /transactions/:txHash` (auth korumalı) → **200**, `status: "submitted"`.
+
+**Havuz 2 bakiye kanıtı** (`checkPool2Balance()`, gerçek Horizon sorgusu):
+
+| | XLM (harcanabilir) |
+|---|---|
+| Önce (ilk istekten önce) | `9998.8016401` |
+| İlk istekten sonra | `9998.7991124` |
+| **Fark (gerçekten kesilen ücret)** | **`0.0025277` XLM** |
+| İkinci (replay) istekten sonra | `9998.7991124` — **DEĞİŞMEDİ** |
+
+`IdempotencyKey` koleksiyonunda bu key için tam olarak **1 kayıt** vardı — ikinci istek yeni bir kilit açmadı, mevcut `completed` kaydı replay etti.
+
+**Keşfedilen ve düzeltilen bug (bu doğrulama sırasında):** `idempotency.service.js`'deki `acquireIdempotencyLock()` başlangıçta `IdempotencyKey.create({key, status}, {writeConcern:{w:'majority'}})` şeklinde (tekil obje + options) yazılmıştı. Mongoose'un `Model.create()` metodu tekil obje verildiğinde ikinci argümanı da **ayrı bir doküman** sanıyor — bu da `{writeConcern:{...}}`'in `key` alanı olmadığı için validasyon hatası fırlatmasına yol açıyordu. Tehlikeli kısım: İLK doküman (gerçek idempotency kaydı) yine de DB'ye başarıyla yazılıyordu, ama çağıran kod bunu bilmeden hata alıyordu — yani kilit sessizce `'processing'`de askıda kalıp bir daha asla tamamlanamayabilirdi. Doğru kullanım `create([{...}], options)` (docs dizi olmalı) — düzeltildi ve `test/idempotency.service.test.js`'e regresyon testi eklendi.
+
+**Doğrulama script'i** (`orchestrator/tmp-verify-submit.mjs`, geçiciydi) çalıştırma sonrası **silinmiştir** — repoda kalmamıştır.
 
 ---
 *KALEM projesi temiz ve doğrulanmış durumda Claude Code'a devredilmiştir.*

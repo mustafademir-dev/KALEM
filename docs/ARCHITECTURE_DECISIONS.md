@@ -200,3 +200,21 @@ Bu nedenle `pool-feeder.service.js` iki modda çalışacak şekilde tasarlanmı�
 
 İlgili implementasyon: `orchestrator/src/services/pool-feeder.service.js` (`convertDtlToXlm`, `injectXlmToPool2` fonksiyonları), `orchestrator/src/config/index.js` (`config.demoMode`, `config.poolFeeder.demoDtlPerXlm`).
 
+---
+
+## 6. Bilinen Eksikler ve Demo/Production Öncesi Yapılacaklar
+
+> Bu bölüm, `POST /transactions/submit` rotasının `wrapAndSubmitFeeBump()`'a bağlanması (Madde 3) çalışması sırasında tespit edilen, henüz kapatılmamış operasyonel/güvenlik eksiklerini belgeler. Yukarıdaki bölümler (1-5) DEĞİŞTİRİLMEMİŞTİR.
+
+### 6.1. Kalıcı MongoDB Gerekiyor
+
+Sistemin gerçek testnet E2E doğrulaması `mongodb-memory-server` ile yapılmıştır — bu, yalnızca test/doğrulama script'leri için süreç içinde başlatılan **geçici, bellek-içi** bir MongoDB'dir; süreç kapanınca tüm veri (idempotency kayıtları, işlem geçmişi, üye işyerleri) kaybolur. Gerçek çalışan sistem için (canlı demo günü dahil) MongoDB Atlas'ta (ücretsiz cluster yeterli) kalıcı bir veritabanı kurulup `MONGODB_URI` ortam değişkeni ile bağlanması gerekir. **Bu henüz yapılmamıştır.**
+
+### 6.2. Rate Limiting (İstek Sıklığı Sınırı) Yok
+
+`POST /transactions/submit` artık `authMiddleware` ile korunuyor, ancak kimliği doğrulanmış **tek bir üye işyeri**, ardışık farklı işlemlerle Havuz 2'yi işlem başına `config.feeBump.maxTotalFeeStroops` (varsayılan ~1 XLM) limitine kadar defalarca tüketebilir — hiçbir istek sıklığı sınırı (`express-rate-limit` veya benzeri bir middleware) yoktur. Mevcut kısmi korumalar: `authMiddleware` (yalnızca kayıtlı işyerleri), işlem başına mutlak ücret tavanı (`maxTotalFeeStroops`), kontrat beyaz listesi (`allowedContractIds`), iç zarf başına tek operasyon sınırı (`maxInnerOperations=1`). Bunların hiçbiri istek **sıklığını** sınırlamaz. Ayrı bir güvenlik iş paketi olarak listelenmelidir. **Bu henüz yapılmamıştır.**
+
+### 6.3. `orchestrator/.env` Operasyonel Süreci Netleşmedi
+
+`.env` dosyası `.gitignore`'dadır ve `POOL2_SECRET_KEY`/`ISSUER_SECRET_KEY` gibi gizli anahtarları içerir; repoda hiçbir zaman bulunmaz. Gerçek testnet işlemi gönderebilmek için bu dosyanın doldurulmuş olması gerekir. Anahtarların kimin tarafından, hangi güvenli kanaldan sağlanacağı (örn. HSM, secret manager, elle) operasyonel olarak henüz tanımlanmamıştır — bkz. Bölüm 5.1 "Yan not — ihraççı clawback yetkisi" ile aynı üretim-öncesi sertleştirme kapsamı.
+

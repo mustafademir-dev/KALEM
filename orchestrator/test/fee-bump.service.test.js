@@ -311,6 +311,7 @@ describe('FeeBump Service Unit Tests', () => {
     const originalSoroban = stellarConfig.sorobanServer;
     const originalHorizon = stellarConfig.horizonServer;
     const originalSecret = config.secrets.pool2SecretKey;
+    const originalPool2Addr = config.pools.pool2Address;
     const originalAllowed = config.feeBump.allowedContractIds;
 
     stellarConfig.sorobanServer = { simulateTransaction: async () => ({ transactionData: {} }) };
@@ -322,6 +323,7 @@ describe('FeeBump Service Unit Tests', () => {
       },
     };
     config.secrets.pool2SecretKey = pool2Kp.secret();
+    config.pools.pool2Address = pool2Kp.publicKey();
     config.feeBump.allowedContractIds = [dummyContractId];
 
     try {
@@ -330,6 +332,7 @@ describe('FeeBump Service Unit Tests', () => {
       stellarConfig.sorobanServer = originalSoroban;
       stellarConfig.horizonServer = originalHorizon;
       config.secrets.pool2SecretKey = originalSecret;
+      config.pools.pool2Address = originalPool2Addr;
       config.feeBump.allowedContractIds = originalAllowed;
     }
   });
