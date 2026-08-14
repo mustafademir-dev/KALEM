@@ -206,9 +206,15 @@ Bu nedenle `pool-feeder.service.js` iki modda çalışacak şekilde tasarlanmı�
 
 > Bu bölüm, `POST /transactions/submit` rotasının `wrapAndSubmitFeeBump()`'a bağlanması (Madde 3) çalışması sırasında tespit edilen, henüz kapatılmamış operasyonel/güvenlik eksiklerini belgeler. Yukarıdaki bölümler (1-5) DEĞİŞTİRİLMEMİŞTİR.
 
-### 6.1. Kalıcı MongoDB Gerekiyor
+### 6.1. Kalıcı MongoDB — ~~Gerekiyor~~ TAMAMLANDI
 
-Sistemin gerçek testnet E2E doğrulaması `mongodb-memory-server` ile yapılmıştır — bu, yalnızca test/doğrulama script'leri için süreç içinde başlatılan **geçici, bellek-içi** bir MongoDB'dir; süreç kapanınca tüm veri (idempotency kayıtları, işlem geçmişi, üye işyerleri) kaybolur. Gerçek çalışan sistem için (canlı demo günü dahil) MongoDB Atlas'ta (ücretsiz cluster yeterli) kalıcı bir veritabanı kurulup `MONGODB_URI` ortam değişkeni ile bağlanması gerekir. **Bu henüz yapılmamıştır.**
+Sistemin Madde 3/5 E2E doğrulamaları `mongodb-memory-server` ile yapılmıştı — bu, yalnızca test/doğrulama script'leri için süreç içinde başlatılan **geçici, bellek-içi** bir MongoDB'dir; süreç kapanınca tüm veri kaybolur. Gerçek çalışan sistem için MongoDB Atlas'ta kalıcı bir cluster kurulup bağlanmıştır ve gerçek bir kayıtla doğrulanmıştır:
+
+- `orchestrator/.env`'deki `MONGODB_URI` gerçek bir Atlas cluster'ına işaret ediyor. `config/index.js`'in bunu doğru okuduğu teyit edildi (kimlik bilgileri her zaman maskelenerek gösterildi, hiçbir zaman düz metin loglanmadı/commit edilmedi).
+- **Tespit edilen ortam sorunu:** Bu makinede Node'un DNS çözücüsü (`dns.getServers()` → `127.0.0.1`, muhtemelen yerel bir VPN/antivirüs DNS müdahalesi) `mongodb+srv://` bağlantı dizesinin gerektirdiği SRV DNS kaydını `ECONNREFUSED` ile reddediyordu — Windows'un kendi `nslookup`'ı aynı kaydı sorunsuz çözüyordu, yani DNS kaydının kendisi değil, Node'un bu makinedeki DNS yapılandırması sorunluydu. **Çözüm:** Atlas'ın standart (SRV olmayan) `mongodb://host1,host2,host3/...` formatına geçildi — bu format SRV DNS sorgusuna hiç ihtiyaç duymadığı için bu sınıf soruna karşı kalıcı olarak daha sağlamdır, yalnızca bu makineye özel bir yama değildir.
+- Sunucu (`node src/index.js`) gerçekten başlatılıp log'da `[MongoDB] Bağlantı başarılı.` ile Atlas'a bağlandığı doğrulandı; ardından SSE dinleyicisi ve pool-feeder cron'u da sorunsuz başladı.
+- Gerçek bir üye işyeri kaydı (`POST /merchants/register`) çalışan sunucu üzerinden oluşturuldu; **tamamen bağımsız, yeni bir mongoose bağlantısıyla** (aynı process'in önbelleği değil) sorgulanıp kaydın gerçekten Atlas'ta kalıcı olduğu doğrulandı, ardından test kaydı temizlendi.
+- **Not:** `MONGODB_URI`'de veritabanı adı belirtilmediği için bağlantı varsayılan `test` veritabanına düşüyor (`mongoose.connection.name === 'test'`) — işlevsel bir sorun değildir ama istenirse URI'nin sonuna `/kalem` eklenerek netleştirilebilir; bu operasyonel bir tercih olduğu için burada yalnızca not düşülmüştür, otomatik değiştirilmemiştir.
 
 ### 6.2. Rate Limiting (İstek Sıklığı Sınırı) Yok
 
