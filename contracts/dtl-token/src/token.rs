@@ -4,8 +4,12 @@
 //! - `initialize`: Kontratı başlatır (admin, metadata, havuz adresleri).
 //! - `mint`: İhraççı tarafından yeni dTL basılır (1:1 fiat karşılıklı).
 //! - `burn`: İhraççı tarafından dTL yakılır (Havuz 4 → ihraççı → burn akışı).
-//! - `transfer`: **OVERRIDE** — Alıcı yalnızca 4 havuzdan biri olabilir.
-//!   P2P transfer sözleşme seviyesinde bloklanmıştır.
+//! - `transfer`: **OVERRIDE** — Alıcı, kayıtlı 4 havuzdan biri VEYA kayıtlı
+//!   bir esnaf olmalı (v2). Esnaf yalnızca alıcı olabilir, asla gönderen
+//!   olamaz. Müşteriden müşteriye veya kayıtsız adrese transfer sözleşme
+//!   seviyesinde bloklanmıştır.
+//! - `register_merchant`/`is_merchant`: v2 — kayıtlı esnaf yönetimi (yalnızca
+//!   ihraççı kaydedebilir; müşteri tarafında karşılık gelen bir kayıt yoktur).
 //! - `balance`: Adres bazlı dTL bakiye sorgulama.
 //!
 //! ## SEP-41 Uyumluluk
@@ -235,47 +239,109 @@ impl DtlToken {
     }
 
     // -----------------------------------------------------------------------
+    // Esnaf (Merchant) Kaydı — v2: Müşteri→Esnaf Ödeme
+    // -----------------------------------------------------------------------
+
+    /// Verilen adresi kayıtlı esnaf olarak işaretler. Yalnızca ihraççı
+    /// (admin) çağırabilir.
+    ///
+    /// Esnaf kaydı, `POST /merchants/register` ile OTOMATİK tetiklenmez —
+    /// orkestrasyon katmanında ayrı, admin onaylı bir adımdır (bkz.
+    /// `orchestrator/scripts/approve-merchant.mjs`). Bu fonksiyon yalnızca
+    /// o onay akışının SON adımıdır.
+    ///
+    /// # Parametreler
+    /// - `merchant`: Esnaf olarak kaydedilecek adres.
+    ///
+    /// # Panics
+    /// - Çağıran admin değilse `TokenError::UnauthorizedIssuer`.
+    /// - Adres zaten esnaf veya bir havuz adresiyse `TokenError::AlreadyRegisteredMerchant`.
+    pub fn register_merchant(env: Env, merchant: Address) {
+        // 1. İhraççı yetki kontrolü
+        let admin = auth::get_admin(&env);
+        auth::require_admin(&env, &admin);
+
+        // 2. Kayıt (zaten kayıtlıysa veya havuzsa panic)
+        pool_registry::register_merchant(&env, &merchant);
+
+        // 3. Instance TTL uzat
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+
+        // 4. Kayıt event yayınla
+        env.events()
+            .publish(("register_merchant", admin, merchant), ());
+    }
+
+    /// Verilen adresin kayıtlı bir esnaf olup olmadığını döner.
+    pub fn is_merchant(env: Env, address: Address) -> bool {
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        pool_registry::is_merchant(&env, &address)
+    }
+
+    // -----------------------------------------------------------------------
     // Transfer (OVERRIDE — P2P Blokaj)
     // -----------------------------------------------------------------------
 
     /// dTL transferi. **OVERRIDE EDİLMİŞTİR.**
     ///
-    /// Standart bir token transfer fonksiyonundan farklı olarak, alıcı
-    /// (`to`) adresinin `pool_registry`'de kayıtlı 4 havuzdan biri olup
-    /// olmadığını kontrol eder. Eğer alıcı havuzlardan biri değilse
-    /// (ör. esnaftan esnafa P2P transfer) işlem `UnauthorizedRecipient`
-    /// hatası ile reddedilir.
+    /// v2 (Müşteri→Esnaf Ödeme) ile genişletilmiş kısıt seti:
+    /// - Gönderen (`from`) kayıtlı bir esnafsa → KOŞULSUZ reddedilir
+    ///   (`MerchantCannotSend`). Esnaf yalnızca alıcı olabilir.
+    /// - Alıcı (`to`), kayıtlı 4 havuzdan biri VEYA kayıtlı bir esnaf
+    ///   değilse → `UnauthorizedRecipient` ile reddedilir. Müşteriden
+    ///   müşteriye veya kayıtsız/anonim herhangi bir adrese transfer
+    ///   böylece kapalı kalır.
     ///
-    /// Bu, dTL'nin kapalı devre doğasını sözleşme seviyesinde garanti eder.
+    /// Müşteri kimliği zincirde HİÇBİR ZAMAN sorgulanmaz — havuz veya
+    /// esnaf olmayan her gönderen örtük olarak müşteri sayılır (bkz.
+    /// `pool_registry.rs` modül dokümantasyonu).
+    ///
+    /// Bu, dTL'nin kapalı devre doğasını (ikincil piyasa/P2P spekülasyon
+    /// riski hariç tutularak) sözleşme seviyesinde garanti eder.
     ///
     /// # Parametreler
-    /// - `from`: Gönderen adres (ödeme yapan müşteri/esnaf).
-    /// - `to`: Alıcı adres — YALNIZCA Havuz 1, 2, 3 veya 4 olabilir.
+    /// - `from`: Gönderen adres (ödeme yapan müşteri). Kayıtlı esnaf OLAMAZ.
+    /// - `to`: Alıcı adres — Havuz 1/2/3/4 veya kayıtlı bir esnaf olabilir.
     /// - `amount`: Transfer tutarı.
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
         // 1. Gönderen yetkilendirmesi
         from.require_auth();
 
-        // 2. Tutar doğrulaması
+        // 2. *** ESNAF GÖNDEREN OLAMAZ (v2, koşulsuz guard) ***
+        //    Bu kontrol, herhangi bir başka dala veya koşula bağlı DEĞİLDİR —
+        //    kayıtlı bir esnaf adresi, hedefi ne olursa olsun (havuz dahil)
+        //    ASLA gönderen olamaz. Esnafın aldığı dTL için tek çıkış yolu
+        //    fiat'a itfa (off-chain, bu kontratın kapsamı dışında) olmalıdır.
+        if pool_registry::is_merchant(&env, &from) {
+            panic_with_error!(&env, TokenError::MerchantCannotSend);
+        }
+
+        // 3. Tutar doğrulaması
         check_positive_amount(&env, amount);
 
-        // 3. *** P2P BLOKAJ ***
-        //    Alıcı adresin kayıtlı havuzlardan biri olup olmadığını kontrol et.
-        //    Değilse → UnauthorizedRecipient hatası ile reddet.
-        if !pool_registry::is_authorized_recipient(&env, &to) {
+        // 4. *** ALICI KISITLAMASI (v1: yalnızca havuzlar; v2: + kayıtlı esnaf) ***
+        //    Alıcı, kayıtlı havuzlardan biri VEYA kayıtlı bir esnaf değilse
+        //    → UnauthorizedRecipient hatası ile reddet. Müşteriden müşteriye
+        //    veya kayıtsız/anonim herhangi bir adrese transfer bu yolla
+        //    kapatılmış olur.
+        if !pool_registry::is_authorized_recipient(&env, &to) && !pool_registry::is_merchant(&env, &to) {
             panic_with_error!(&env, TokenError::UnauthorizedRecipient);
         }
 
-        // 4. Bakiye kontrolü ve transfer
+        // 5. Bakiye kontrolü ve transfer
         spend_balance(&env, &from, amount);
         receive_balance(&env, &to, amount);
 
-        // 5. Instance TTL uzat
+        // 6. Instance TTL uzat
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
-        // 6. Transfer event yayınla
+        // 7. Transfer event yayınla
         env.events()
             .publish(("transfer", from, to), amount);
     }

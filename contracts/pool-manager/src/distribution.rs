@@ -20,6 +20,12 @@
 //! `env.invoke_contract()` ile çağırır. dtl-token'ın `transfer()` override'ı,
 //! alıcının havuzlardan biri olduğunu zaten doğrulayacağından çift katmanlı
 //! güvenlik sağlanır.
+//!
+//! ## `pay_merchant()` (v2 — Müşteri→Esnaf Ödeme)
+//! `distribute()` ile AYNI atomik desen, tek fark hedeflerden birinin
+//! Havuz 1 yerine kayıtlı bir esnaf adresi olması: esnaf %99,6, Havuz 3
+//! %0,1, Havuz 4 %0,3. `kalem-shared::calculate_distribution()` her iki
+//! fonksiyonda da DEĞİŞTİRİLMEDEN reuse edilir.
 
 use soroban_sdk::{contract, contractimpl, panic_with_error, vec, Address, Env, IntoVal, Symbol};
 
@@ -165,6 +171,95 @@ impl PoolManager {
         env.events().publish(
             ("distribute", from),
             (total_amount, pool1_share, pool3_share, pool4_share),
+        );
+    }
+
+    /// Müşteriden esnafa gerçek dTL ödemesi (v2 — Müşteri→Esnaf Ödeme).
+    ///
+    /// `distribute()` ile BİREBİR aynı atomik desen — tek fark, Havuz 1
+    /// yerine `total_amount`'un %99,6'sının doğrudan `merchant`'a gitmesi.
+    /// `kalem_shared::calculate_distribution()` DEĞİŞTİRİLMEDEN reuse edilir;
+    /// fonksiyonun ilk dönüş değeri ("kalan pay") burada `merchant_share`
+    /// olarak yorumlanır.
+    ///
+    /// dtl-token'ın `transfer()` override'ı, `merchant`'ın kayıtlı bir esnaf
+    /// olduğunu (ve `from`'un esnaf OLMADIĞINI) zaten doğrulayacaktır —
+    /// `distribute()`'daki "çift katmanlı güvenlik" deseninin aynısı.
+    ///
+    /// # Parametreler
+    /// - `from`: Gönderen adres (ödeme yapan müşteri).
+    /// - `merchant`: Alıcı esnaf adresi — dtl-token'da kayıtlı olmalıdır.
+    /// - `total_amount`: Toplam ödeme tutarı (dTL, stroops).
+    ///
+    /// # Atomiklik
+    /// Üç transfer çağrısından herhangi biri başarısız olursa (ör. `merchant`
+    /// kayıtlı bir esnaf değilse), Soroban runtime tüm state değişikliklerini
+    /// geri alır — esnafa kısmi ödeme asla olmaz.
+    pub fn pay_merchant(env: Env, from: Address, merchant: Address, total_amount: i128) {
+        // 1. Gönderen yetkilendirmesi
+        from.require_auth();
+
+        // 2. Tutar doğrulaması
+        if total_amount <= 0 {
+            panic_with_error!(&env, PoolManagerError::InvalidAmount);
+        }
+
+        // 3. Konfigürasyonu yükle (yalnızca dtl_token/pool3/pool4 kullanılır;
+        //    pool1_address bu fonksiyonda hiç kullanılmaz)
+        let config = pool_config::load_config(&env);
+
+        // 4. Dağılım paylarını hesapla — ilk değer artık "esnaf payı"
+        let (merchant_share, pool3_share, pool4_share) =
+            kalem_shared::calculate_distribution(total_amount);
+
+        // 5. Cross-contract invocation: dtl-token.transfer() × 3
+        let transfer_fn = Symbol::new(&env, "transfer");
+
+        // Esnafa transfer (%99,6)
+        env.invoke_contract::<()>(
+            &config.dtl_token_address,
+            &transfer_fn,
+            vec![
+                &env,
+                from.clone().into_val(&env),
+                merchant.clone().into_val(&env),
+                merchant_share.into_val(&env),
+            ],
+        );
+
+        // Havuz 3'e transfer (Sosyal Destek — %0,1)
+        env.invoke_contract::<()>(
+            &config.dtl_token_address,
+            &transfer_fn,
+            vec![
+                &env,
+                from.clone().into_val(&env),
+                config.pool3_address.clone().into_val(&env),
+                pool3_share.into_val(&env),
+            ],
+        );
+
+        // Havuz 4'e transfer (Operasyonel — %0,3)
+        env.invoke_contract::<()>(
+            &config.dtl_token_address,
+            &transfer_fn,
+            vec![
+                &env,
+                from.clone().into_val(&env),
+                config.pool4_address.clone().into_val(&env),
+                pool4_share.into_val(&env),
+            ],
+        );
+
+        // 6. Instance TTL uzat
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+
+        // 7. pay_merchant event yayınla
+        env.events().publish(
+            ("pay_merchant", from, merchant),
+            (total_amount, merchant_share, pool3_share, pool4_share),
         );
     }
 

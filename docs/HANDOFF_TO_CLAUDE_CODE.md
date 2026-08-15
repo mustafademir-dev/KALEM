@@ -3,7 +3,7 @@
 > **Tarih:** 12 Ağustos 2026 (ilk sürüm), güncelleme: 13 Ağustos 2026  
 > **Proje Adı:** KALEM — Kriptografik Ağlarda Lokasyonsuz Eşler Arası Mutabakat  
 > **Ağ:** Stellar Testnet / Soroban Smart Contracts  
-> **Durum:** Faz 2 (Soroban Kontratları + Testnet Deploy + E2E Dağıtım Doğrulaması) Tamamlandı. `POST /transactions/submit` gerçek testnet işlemiyle UÇTAN UCA doğrulandı — fee-bump + idempotency koruması birlikte çalışıyor (bkz. Bölüm 8). SSE dinleyicisi Havuz 2 üzerinden düzeltildi ve etkinleştirildi; gerçek işlem onayını 2 saniyede yakaladığı testnet'te kanıtlandı (bkz. Bölüm 9). Auth/Validation middleware ve Merchant route'ları tamamlandı (bkz. Bölüm 6, madde 4). Orkestrasyon Birim Testleri Geçti (95/95).
+> **Durum:** Faz 2 (Soroban Kontratları + Testnet Deploy + E2E Dağıtım Doğrulaması) Tamamlandı. `POST /transactions/submit` gerçek testnet işlemiyle UÇTAN UCA doğrulandı — fee-bump + idempotency koruması birlikte çalışıyor (bkz. Bölüm 8). SSE dinleyicisi Havuz 2 üzerinden düzeltildi ve etkinleştirildi (bkz. Bölüm 9). **v2: Müşteri→Esnaf gerçek dTL ödemesi** (`pay_merchant`) eklendi, kontratlar redeploy edildi (v1 kanıtları korunarak), gerçek testnet E2E ile doğrulandı (bkz. Bölüm 10, ARCHITECTURE_DECISIONS.md §7). Auth/Validation middleware ve Merchant route'ları tamamlandı (bkz. Bölüm 6, madde 4). Orkestrasyon Birim Testleri Geçti (113/113), Rust Kontrat Testleri Geçti (38/38).
 
 ---
 
@@ -31,19 +31,19 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Contracts** | `contracts/pools.json` | Gerçek | Testnet havuz adresleri ve oran haritası |
 | **Contracts** | `contracts/dtl-token/Cargo.toml` | Gerçek | `dtl-token` Soroban kontrat bağımlılıkları |
 | **Contracts** | `contracts/dtl-token/src/lib.rs` | Gerçek Mantık | Token kontratı ana giriş noktası ve modül aktarımları |
-| **Contracts** | `contracts/dtl-token/src/token.rs` | Gerçek Mantık | SEP-41 uyumlu dTL token uygulaması (`mint`, `burn`, `transfer`, `transfer_from`, `approve`, `allowance`) |
+| **Contracts** | `contracts/dtl-token/src/token.rs` | Gerçek Mantık | SEP-41 uyumlu dTL token uygulaması (`mint`, `burn`, `transfer`, `transfer_from`, `approve`, `allowance`) + v2: `register_merchant`, `is_merchant`, `transfer()`'da esnaf gönderemez/alabilir kuralları |
 | **Contracts** | `contracts/dtl-token/src/auth.rs` | Gerçek Mantık | İmza yetkilendirme ve admin yetki doğrulamaları |
-| **Contracts** | `contracts/dtl-token/src/pool_registry.rs` | Gerçek Mantık | Havuz kayıt ve yetkili havuz listesi kontrolü |
-| **Contracts** | `contracts/dtl-token/src/storage_types.rs` | Gerçek Mantık | Soroban storage tipleri ve anahtar yapıları |
-| **Contracts** | `contracts/dtl-token/src/errors.rs` | Gerçek Mantık | Token hata kodları enumu |
-| **Contracts** | `contracts/dtl-token/src/test.rs` | Gerçek Mantık | 19 adet Soroban token birim testi |
+| **Contracts** | `contracts/dtl-token/src/pool_registry.rs` | Gerçek Mantık | Havuz kayıt ve yetkili havuz listesi kontrolü + v2: esnaf kaydı (`MerchantFlag`, `register_merchant`, `is_merchant`) |
+| **Contracts** | `contracts/dtl-token/src/storage_types.rs` | Gerçek Mantık | Soroban storage tipleri ve anahtar yapıları + v2: `MerchantFlag(Address)` |
+| **Contracts** | `contracts/dtl-token/src/errors.rs` | Gerçek Mantık | Token hata kodları enumu + v2: `MerchantCannotSend`(#8), `AlreadyRegisteredMerchant`(#9) |
+| **Contracts** | `contracts/dtl-token/src/test.rs` | Gerçek Mantık | 25 adet Soroban token birim testi (v1: 19, v2 eklendi: 6) |
 | **Contracts** | `contracts/pool-manager/Cargo.toml` | Gerçek | `pool-manager` Soroban kontrat bağımlılıkları |
 | **Contracts** | `contracts/pool-manager/src/lib.rs` | Gerçek Mantık | Pool manager kontratı ana giriş noktası |
-| **Contracts** | `contracts/pool-manager/src/distribution.rs` | Gerçek Mantık | Vergi/komisyon/tüccar havuz oranlarına göre atomik dağıtım mantığı (`distribute()`) |
+| **Contracts** | `contracts/pool-manager/src/distribution.rs` | Gerçek Mantık | Vergi/komisyon/tüccar havuz oranlarına göre atomik dağıtım mantığı (`distribute()`) + v2: `pay_merchant()` — aynı desen, esnafa gerçek ödeme |
 | **Contracts** | `contracts/pool-manager/src/pool_config.rs` | Gerçek Mantık | Havuz yapılandırma ve oran saklama fonksiyonları |
 | **Contracts** | `contracts/pool-manager/src/storage_types.rs` | Gerçek Mantık | Pool manager storage tipleri ve key tanımları |
 | **Contracts** | `contracts/pool-manager/src/errors.rs` | Gerçek Mantık | Dağıtım hata kodları enumu |
-| **Contracts** | `contracts/pool-manager/src/test.rs` | Gerçek Mantık | 6 adet Soroban pool-manager birim testi |
+| **Contracts** | `contracts/pool-manager/src/test.rs` | Gerçek Mantık | 7 adet Soroban pool-manager birim testi (v1: 6, v2 eklendi: 1) |
 | **Contracts** | `contracts/shared/Cargo.toml` | Gerçek | Ortak tipler kütüphane konfigürasyonu |
 | **Contracts** | `contracts/shared/src/lib.rs` | Gerçek Mantık | Kontratlar arası paylaşılan tipler ve sabitler |
 | **Orchestrator** | `orchestrator/package.json` | Gerçek | Node.js / Express bağımlılıkları ve npm test scripti |
@@ -55,13 +55,15 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Orchestrator** | `orchestrator/src/api/middleware/idempotency.middleware.js` | Gerçek Mantık | `Idempotency-Key` (UUID v4) başlığı doğrulaması; gerçek kilit mantığı `idempotency.service.js`'e devredilir (kod tekrarı yok) |
 | **Orchestrator** | `orchestrator/src/api/middleware/validation.middleware.js` | Gerçek Mantık | `signedXdr`/`merchantId`/`totalAmount`/`cartItems` ve merchant kayıt alanlarının gerçek doğrulaması |
 | **Orchestrator** | `orchestrator/src/api/routes/health.routes.js` | Gerçek Mantık | `/health` endpointi |
-| **Orchestrator** | `orchestrator/src/api/routes/merchant.routes.js` | Gerçek Mantık | Üye işyeri kaydı (API anahtarı üretimi + hash'leme) ve Soroban RPC üzerinden gerçek dTL bakiye sorgulama |
+| **Orchestrator** | `orchestrator/src/api/routes/merchant.routes.js` | Gerçek Mantık | Üye işyeri kaydı (API anahtarı üretimi + hash'leme, v2: Ed25519 adres sahipliği imza doğrulaması zorunlu) ve Soroban RPC üzerinden gerçek dTL bakiye sorgulama |
 | **Orchestrator** | `orchestrator/src/api/routes/transaction.routes.js` | Gerçek Mantık | `POST /submit` (authMiddleware → validateTransactionSubmit → idempotencyMiddleware → wrapAndSubmitFeeBump) ve `GET /:txHash` — gerçek testnet E2E ile doğrulandı (bkz. Bölüm 8) |
 | **Orchestrator** | `orchestrator/src/models/GibDocument.model.js` | Gerçek Mantık | GİB UBL-TR e-fatura MongoDB Mongoose şeması |
 | **Orchestrator** | `orchestrator/src/models/IdempotencyKey.model.js` | Gerçek Mantık | Idempotency Mongoose şeması |
-| **Orchestrator** | `orchestrator/src/models/Merchant.model.js` | Gerçek Mantık | Üye iş yeri MongoDB şeması (`apiKeyHash` alanı ile — plaintext anahtar hiçbir yerde saklanmaz) |
+| **Orchestrator** | `orchestrator/src/models/Merchant.model.js` | Gerçek Mantık | Üye iş yeri MongoDB şeması (`apiKeyHash` alanı ile — plaintext anahtar hiçbir yerde saklanmaz). v2: `ownershipVerified`, `onChainRegistered` alanları |
+| **Orchestrator** | `orchestrator/src/models/MerchantApproval.model.js` | Gerçek Mantık | v2: esnaf onay/on-chain kayıt denetim izi — kim (`operator`), ne zaman, hangi esnaf, hangi sonuç (`PoolFeed.model.js` ile aynı desen) |
 | **Orchestrator** | `orchestrator/src/models/Transaction.model.js` | Gerçek Mantık | İşlem detayları MongoDB şeması |
-| **Orchestrator** | `orchestrator/src/services/stellar-tx.service.js` | Gerçek Mantık | Soroban kontrat çağrı hazırlığı (`prepareTransaction`), simülasyon (`readContractBalance` — maliyetsiz bakiye okuma) ve Horizon'a işlem gönderme |
+| **Orchestrator** | `orchestrator/src/services/stellar-tx.service.js` | Gerçek Mantık | Soroban kontrat çağrı hazırlığı (`prepareTransaction`), simülasyon (`readContractBalance`, v2: `isMerchantOnChain`) ve Horizon'a işlem gönderme |
+| **Orchestrator** | `orchestrator/src/services/merchant-onchain.service.js` | Gerçek Mantık | v2: `registerMerchantOnChain()` (admin imzalı, Fee-Bump YOK — `burnPool4Dtl` ile aynı desen), `isMerchantAlreadyRegistered()`. Yalnızca `approve-merchant.mjs` tarafından çağrılır |
 | **Orchestrator** | `orchestrator/src/services/sse-listener.service.js` | Gerçek Mantık | Stellar Horizon SSE dinleyicisi; **Havuz 2 (fee sponsor)** üzerinden filtrelenir (Havuz 1 değil — fee-bump'lı işlemlerin `fee_account`'ı Havuz 2'dir), zincir üstü onayları yakalayıp DB günceller. `index.js`'te ARTIK AKTİF. Kalıcı cursor/reconciliation yok (bkz. ARCHITECTURE_DECISIONS.md §6.4) |
 | **Orchestrator** | `orchestrator/src/services/gib-simulator.service.js` | Gerçek Mantık | İşlem tamamlandığında GİB UBL-TR e-fatura taslağı oluşturup DB kaydı yapma |
 | **Orchestrator** | `orchestrator/src/services/fee-bump.service.js` | Gerçek Mantık | Fee-Bump (CAP-0015) dış zarf sarmalama: iç zarf güvenlik doğrulaması, ön-simülasyon, ücret hesaplama/tavan, Havuz 2 imzası, ağa iletim |
@@ -69,6 +71,7 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Orchestrator** | `orchestrator/src/services/notification.service.js` | İskelet / Stub | Müşteri/Tüccar push/webhook bildirim servisi taslağı |
 | **Orchestrator** | `orchestrator/src/services/pool-feeder.service.js` | Gerçek Mantık | Havuz 4→2 besleme cron döngüsü: bakiye kontrolü, doğrudan burn (bkz. ARCHITECTURE_DECISIONS.md §5.1 sapma notu), hibrit DEMO_MODE XLM enjeksiyonu |
 | **Orchestrator** | `orchestrator/src/models/PoolFeed.model.js` | Gerçek Mantık | Havuz 4→2 besleme döngüsü denetim kaydı ve çift-burn kilidi (kısmi unique index) |
+| **Orchestrator** | `orchestrator/scripts/approve-merchant.mjs` | Gerçek Mantık | v2: Esnaf onay CLI script'i — `ownershipVerified` kontrolü, gerçek on-chain duruma bakarak idempotent karar, `MerchantApproval` denetim kaydı, admin onaylı `register_merchant()` tetikleme |
 | **Orchestrator** | `orchestrator/src/utils/crypto.js` | Kısmi (AES stub) / Gerçek (API key) | `encrypt`/`decrypt` (AES-256-GCM) henüz Faz 2 Aşama 2.4 TODO'sudur; `generateApiKey`/`hashApiKey` (SHA-256) gerçek mantıkla tamamlandı |
 | **Orchestrator** | `orchestrator/src/utils/logger.js` | Gerçek Mantık | Winston tabanlı yapılandırılmış loglama |
 | **Orchestrator** | `orchestrator/src/utils/xdr-parser.js` | Gerçek Mantık | Stellar XDR çözme ve veri ayıklama yardımcısı |
@@ -78,8 +81,10 @@ Aşağıdaki tablo projedeki **TÜM** dosyaların gerçek durumunu gösterir:
 | **Orchestrator** | `orchestrator/test/fee-bump.service.test.js` | Gerçek Mantık | Fee-Bump dış zarf sarmalama, güvenlik doğrulaması ve ücret hesabı birim testleri (PASS) |
 | **Orchestrator** | `orchestrator/test/pool-feeder.service.test.js` | Gerçek Mantık | Havuz 4→2 besleme döngüsü, burn ve DEMO_MODE enjeksiyon birim testleri (PASS) |
 | **Orchestrator** | `orchestrator/test/auth.middleware.test.js` | Gerçek Mantık | Bearer API-Key doğrulama, 401/403/500 senaryoları ve `req.merchant` ataması birim testleri (PASS) |
-| **Orchestrator** | `orchestrator/test/validation.middleware.test.js` | Gerçek Mantık | `validateTransactionSubmit` ve `validateMerchantRegister` alan doğrulama birim testleri (PASS) |
-| **Orchestrator** | `orchestrator/test/merchant.routes.test.js` | Gerçek Mantık | Üye işyeri kaydı (409/201, API anahtarı hash'leme) ve bakiye sorgulama (400/403/404/502/200) birim testleri (PASS) |
+| **Orchestrator** | `orchestrator/test/validation.middleware.test.js` | Gerçek Mantık | `validateTransactionSubmit` ve `validateMerchantRegister` (v2: `signature` şekil kontrolü dahil) alan doğrulama birim testleri (PASS) |
+| **Orchestrator** | `orchestrator/test/merchant-onchain.service.test.js` | Gerçek Mantık | v2: `registerMerchantOnChain`/`isMerchantAlreadyRegistered` birim testleri (PASS) |
+| **Orchestrator** | `orchestrator/test/approve-merchant.script.test.js` | Gerçek Mantık | v2: `approveMerchant()` — reddet/idempotent/başarılı/başarısız akış birim testleri (PASS) |
+| **Orchestrator** | `orchestrator/test/merchant.routes.test.js` | Gerçek Mantık | Üye işyeri kaydı (409/201/403, API anahtarı hash'leme, v2: gerçek Ed25519 imza doğrulaması + yanlış-anahtar reddi) ve bakiye sorgulama (400/403/404/502/200) birim testleri (PASS) |
 | **Orchestrator** | `orchestrator/test/idempotency.service.test.js` | Gerçek Mantık | Kilit alma (yeni/processing/completed/failed→retry/yarış), finalize ve Mongoose `create()` dizi-formu regresyon testi (PASS) |
 | **Orchestrator** | `orchestrator/test/idempotency.middleware.test.js` | Gerçek Mantık | Header eksik/geçersiz UUID (400), yeni key, processing (409), completed replay (200), 500 birim testleri (PASS) |
 | **Orchestrator** | `orchestrator/test/transaction.routes.test.js` | Gerçek Mantık | Submit (403/400/201/502, gerçek `wrapAndSubmitFeeBump` çağrısı stellarConfig sınırında mock'lanarak) ve `GET /:txHash` (404/403/200) birim testleri (PASS) |
@@ -138,15 +143,16 @@ d201353 docs: SEP-41 kapalı devre fonksiyonları (allowance, approve, transfer_
   ✔ readContractBalance: Bakiyeyi Horizon'a hiç gitmeden simülasyonla okumalıdır
   ✔ readContractBalance: Simülasyon hatasında fırlatmalıdır
   ✔ readContractBalance: Soroban RPC yapılandırılmamışsa fırlatmalıdır
+  ✔ isMerchantOnChain: true/false/simülasyon hatası (v2, 3 test)
 ✔ StellarTx Service Unit Tests
 
-▶ Validation Middleware Unit Tests (12 test)
+▶ Validation Middleware Unit Tests (13 test)
 ✔ Validation Middleware Unit Tests
 
 ▶ Auth Middleware Unit Tests (6 test)
 ✔ Auth Middleware Unit Tests
 
-▶ Merchant Routes Unit Tests (7 test)
+▶ Merchant Routes Unit Tests (8 test)
 ✔ Merchant Routes Unit Tests
 
 ▶ Idempotency Service Unit Tests (9 test)
@@ -158,26 +164,32 @@ d201353 docs: SEP-41 kapalı devre fonksiyonları (allowance, approve, transfer_
 ▶ Transaction Routes Unit Tests (7 test)
 ✔ Transaction Routes Unit Tests
 
-ℹ tests 95
-ℹ suites 19
-ℹ pass 95
+▶ MerchantOnChain Service Unit Tests (4 test)
+✔ MerchantOnChain Service Unit Tests
+
+▶ approve-merchant.mjs Unit Tests (9 test)
+✔ approve-merchant.mjs Unit Tests
+
+ℹ tests 113
+ℹ suites 25
+ℹ pass 113
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
 ```
-**Sonuç:** **95/95 Test BAŞARILI (PASS)**. Fee-Bump ve Pool-Feeder testleri gerçek ağ/DB bağlantısı açmadan, mevcut monkey-patch test kalıbıyla çalışır — bkz. `test/fee-bump.service.test.js`, `test/pool-feeder.service.test.js`. Auth/Validation/Idempotency middleware ve Merchant/Transaction route testleri de aynı kalıbı (Mongoose statik metod / `stellarConfig.sorobanServer` monkey-patch) izler — `wrapAndSubmitFeeBump` gibi servis fonksiyonları asla doğrudan mock'lanmaz, yalnızca SDK/DB sınırı (`stellarConfig`, model statikleri) mock'lanıp gerçek kod yolu çalıştırılır.
+**Sonuç:** **113/113 Test BAŞARILI (PASS)**. Fee-Bump ve Pool-Feeder testleri gerçek ağ/DB bağlantısı açmadan, mevcut monkey-patch test kalıbıyla çalışır — bkz. `test/fee-bump.service.test.js`, `test/pool-feeder.service.test.js`. Auth/Validation/Idempotency middleware ve Merchant/Transaction/MerchantOnChain route/servis testleri de aynı kalıbı (Mongoose statik metod / `stellarConfig.sorobanServer` monkey-patch) izler — `wrapAndSubmitFeeBump`, `registerMerchantOnChain` gibi servis fonksiyonları asla doğrudan mock'lanmaz, yalnızca SDK/DB sınırı (`stellarConfig`, model statikleri) mock'lanıp gerçek kod yolu çalıştırılır.
 
 **Önemli:** Unit testlerin yeşil olması tek başına "submit rotası uçtan uca çalışıyor" anlamına gelmez. Bu iddia yalnızca gerçek bir testnet işlemiyle (tx hash + Stellar Expert linki) doğrulanabilir — fee-bump için bkz. Bölüm 7, submit rotası + idempotency için bkz. Bölüm 8.
 
 ### B. Soroban Kontrat Birim Testleri (`cargo test`)
 Çalıştırılan komut: `cargo test` (`kalem/contracts` klasöründe)
 
-* **Kontrat Test İçeriği:** 
-  * `contracts/dtl-token/src/test.rs`: 19 adet Soroban birim testi.
-  * `contracts/pool-manager/src/test.rs`: 6 adet Soroban birim testi.
-  * `contracts/shared/src/lib.rs`: 6 adet Soroban birim testi.
-  * **Toplam: 31 adet Soroban Rust birim testi mevcuttur.**
+* **Kontrat Test İçeriği (v2 dahil):** 
+  * `contracts/dtl-token/src/test.rs`: 25 adet Soroban birim testi (v1: 19, v2 — esnaf kaydı/gönderemez/alabilir: 6).
+  * `contracts/pool-manager/src/test.rs`: 7 adet Soroban birim testi (v1: 6, v2 — `pay_merchant` dağılım oranı: 1).
+  * `contracts/shared/src/lib.rs`: 6 adet Soroban birim testi (v2'de DEĞİŞMEDİ — `calculate_distribution()` reuse edildi).
+  * **Toplam: 38 adet Soroban Rust birim testi mevcuttur (v1: 31 + v2: 7 yeni).**
 * **Çalıştırma Ortam Durumu (Windows MSVC Note):**
   Windows ortamında default host target (`x86_64-pc-windows-msvc`) derlenirken sistemdeki PATH üzerinde `link.exe` (MSVC Build Tools) bulunmadığı için `error: linker link.exe not found` çıktısı alınmaktadır. Visual Studio C++ Build Tools bulunan Windows veya Linux/macOS ortamlarında 31 testin tamamı sorunsuz çalışmaktadır. Soroban WASM derlemesi (`stellar contract build`) bu durumdan etkilenmemektedir.
 
@@ -185,9 +197,14 @@ d201353 docs: SEP-41 kapalı devre fonksiyonları (allowance, approve, transfer_
 
 ## 5. Testnet Canlı Dağıtım Adresleri (Stellar Testnet)
 
-* **dTL Token Contract ID:** `CC4ME5GZASQP456TPFEEADRK4NOFVV4KWX5TJGHJBO7SGK34IMIPWTX4`
-* **Pool Manager Contract ID:** `CBFJOXNUATWPCSONJMQUOFL3QML2VHZCT5A5SOOJ3BSN5BSFAGPOR4WF`
-* **Canlı Doğrulama:** `distribute()` fonksiyonu Testnet üzerinde çağrılmış; Havuz 1, Havuz 3 ve Havuz 4 bakiyelerinin belirlenen oranlarda (%99.6 Havuz 1 — Likidite, %0.1 Havuz 3 — Sosyal Destek, %0.3 Havuz 4 — Operasyonel) atomik olarak aktarıldığı zincir üzerinde (`TESTNET_DEPLOYMENT.md` belgesinde detaylandırıldığı üzere) doğrulanmıştır.
+> **v2'ye geçildi — orkestrasyon `.env`'i artık aşağıdaki v2 ID'lerini kullanıyor.** v1 ID'leri KORUNMUŞTUR (silinmemiş, hâlâ testnet'te canlı) — bkz. `TESTNET_DEPLOYMENT.md` "Mimari v1/v2", ARCHITECTURE_DECISIONS.md §7.
+
+* **dTL Token Contract ID (v2, aktif):** `CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO`
+* **Pool Manager Contract ID (v2, aktif):** `CDR7WMMQLINNIC2PCSWUU27FHUWWLZPHBJU7MQK5EZVOJBIWQA47LQSA`
+* **dTL Token Contract ID (v1, korunan kanıt):** `CC4ME5GZASQP456TPFEEADRK4NOFVV4KWX5TJGHJBO7SGK34IMIPWTX4`
+* **Pool Manager Contract ID (v1, korunan kanıt):** `CBFJOXNUATWPCSONJMQUOFL3QML2VHZCT5A5SOOJ3BSN5BSFAGPOR4WF`
+* **Canlı Doğrulama (v1):** `distribute()` fonksiyonu Testnet üzerinde çağrılmış; Havuz 1, Havuz 3 ve Havuz 4 bakiyelerinin belirlenen oranlarda (%99.6 Havuz 1 — Likidite, %0.1 Havuz 3 — Sosyal Destek, %0.3 Havuz 4 — Operasyonel) atomik olarak aktarıldığı zincir üzerinde doğrulanmıştır.
+* **Canlı Doğrulama (v2):** `pay_merchant()` fonksiyonu Testnet üzerinde çağrılmış; esnaf (%99.6), Havuz 3 (%0.1) ve Havuz 4 (%0.3) bakiyelerinin atomik olarak aktarıldığı, gerçek Fee-Bump ile `/transactions/submit` üzerinden gönderildiği ve esnafın gönderen olamayacağının gerçek ağda doğrulandığı — bkz. Bölüm 10.
 
 ---
 
@@ -208,6 +225,7 @@ Claude Code projeyi devraldığında sırasıyla şu adımlarla devam edebilir:
    * 29 yeni birim test eklendi (`auth.middleware.test.js`, `validation.middleware.test.js`, `merchant.routes.test.js`, + `stellar-tx.service.test.js`'e 3 test) — toplam 71/71 PASS (bkz. Bölüm 4.A).
    * **Kapsam dışı bırakılan:** rate limiting (bkz. ARCHITECTURE_DECISIONS.md §6.2 — artık kimliği doğrulanmış tek işyerinin ardışık isteklerle Havuz 2'yi tüketebilmesi riski açıkça belgeli), KYC/KYB gerçek doğrulaması (`kycStatus` hâlâ `pending` sabit başlar).
 5. ~~**`sse-listener.service.js` Havuz Filtresi Düzeltmesi**~~ — **TAMAMLANDI** (bkz. Bölüm 9). `forAccount(config.pools.pool1Address)` → `forAccount(config.pools.pool2Address)`. Gerçek testnet doğrulaması: Havuz 1'in Horizon işlem listesinde Madde 3'ün 3 fee-bump tx'inden HİÇBİRİ görünmüyordu, Havuz 2'nin listesinde üçü de vardı. `index.js`'te `startSSEListener()` artık etkinleştirildi (önceki blokaj sebebi ortadan kalktı). Yol boyunca `sse-listener.service.js`'in kalıcı cursor/reconciliation eksikliği tespit edilip ARCHITECTURE_DECISIONS.md §6.4'e "Bilinen Eksik" olarak not düşüldü (düzeltilmedi, kapsam dışı bırakıldı — process restart'ında SSE'nin `cursor('now')` ile sıfırdan başlaması, restart penceresindeki onayların kalıcı olarak kaçırılabileceği anlamına gelir).
+6. ~~**Müşteri→Esnaf Gerçek Ödeme (`pay_merchant`) — Rapor 5.2 Sapması**~~ — **TAMAMLANDI** (bkz. Bölüm 10, ARCHITECTURE_DECISIONS.md §7). Kullanıcı onayıyla, dTL artık gerçek zincir-üstü müşteri→esnaf ödemesini destekliyor — `pool-manager.pay_merchant()` ile atomik %99.6/%0.1/%0.3 bölüşümü korunarak (çıplak `transfer()` genişletmesi REDDEDİLDİ — vergi kesintisini atlardı). Esnaf her zaman yalnızca alıcı, asla gönderen olamaz (`MerchantCannotSend`, koşulsuz guard). Müşteri on-chain hiç kaydedilmez. Esnaf kaydı artık iki adımlı: (1) `POST /merchants/register`'da gerçek Ed25519 imzasıyla adres sahipliği kanıtı, (2) ayrı, admin onaylı `approve-merchant.mjs` CLI script'i ile on-chain `register_merchant()`. **Redeploy gerekti** (yeni contract ID'ler, v1 kanıtları silinmeden korundu — bkz. TESTNET_DEPLOYMENT.md "Mimari v1/v2"). Gerçek testnet E2E ile 3 ayrı işlem (register_merchant, mint, pay_merchant) ve 1 negatif kanıt (esnaf gönderemez, gerçek ağda) doğrulandı. 38/38 Rust + 113/113 orkestrasyon testi PASS.
 
 ---
 
@@ -301,6 +319,62 @@ Bu, eski `forAccount(config.pools.pool1Address)` filtresinin fee-bump'lı işlem
 **Bilinen ve belgelenen sınır:** Bu doğrulama SSE bağlantısının transient kesintilere karşı dayanıklılığını test etmedi (SDK'nın 15sn staleness watchdog'u + cursor koruması zaten koda dahil — bkz. ARCHITECTURE_DECISIONS.md §6.4); process restart'ında kalıcı cursor olmaması hâlâ açık bir eksik olarak belgelenmiştir, düzeltilmemiştir.
 
 **Doğrulama script'i** (`orchestrator/tmp-verify-sse.mjs`, geçiciydi) çalıştırma sonrası **silinmiştir** — repoda kalmamıştır.
+
+---
+
+## 10. Müşteri→Esnaf Gerçek Ödeme (`pay_merchant`, v2) — Gerçek Testnet Doğrulaması
+
+> Bu bölüm, ARCHITECTURE_DECISIONS.md §7'de tasarım kararı olarak belgelenen v2 mimarisinin gerçek testnet'te uçtan uca çalıştığını kanıtlar. Tam teknik gerekçe, kontrat diff'i ve güvenlik notları için §7'ye bakınız — burada yalnızca çalıştırma kanıtı özetlenir.
+
+**Durum: TAMAMLANDI.**
+
+**Redeploy:** `dtl-token` ve `pool-manager` yeniden derlenip deploy edildi (upgrade hook yok). v1 kontratları/kanıtları KORUNDU, silinmedi. Yeni ID'ler ve tam deploy tx'leri: `TESTNET_DEPLOYMENT.md` "Mimari v2".
+
+**Akış (geçici script, `orchestrator/tmp-verify-paymerchant.mjs`, doğrulama sonrası silindi):**
+
+1. Test esnafı (fresh keypair) gerçek bir Ed25519 imzasıyla `POST /merchants/register`'a kaydedildi → `ownershipVerified: true`.
+2. `approve-merchant.mjs --taxId=... --operator="E2E-test-operator"` çalıştırıldı → gerçek on-chain `register_merchant()`:
+   Tx: [`f1f835db78582bd45a819a26c1da56cf4cbe65c90e5fc225a0f3e7bbf44d6d6f`](https://stellar.expert/explorer/testnet/tx/f1f835db78582bd45a819a26c1da56cf4cbe65c90e5fc225a0f3e7bbf44d6d6f)
+3. **AYNI script AYNI esnaf için TEKRAR çalıştırıldı** → `status: already_registered`, `registerTxHash: yok` — gerçek on-chain `is_merchant()` sorgusuyla idempotent karar verildiği kanıtlandı (MongoDB bayrağına güvenilmedi).
+4. Müşteriye (fresh keypair, Friendbot ile fonlandı) 1 dTL mint edildi:
+   Tx: [`f04aab520abb4a34dd94a762b8f87f505b3d6e56d01067cc2492e8b16951cc94`](https://stellar.expert/explorer/testnet/tx/f04aab520abb4a34dd94a762b8f87f505b3d6e56d01067cc2492e8b16951cc94)
+5. `pay_merchant` iç zarfı müşteri tarafından imzalandı, **mevcut `/transactions/submit` ucuna, HİÇBİR KOD DEĞİŞİKLİĞİ OLMADAN** gönderildi (`authMiddleware → validateTransactionSubmit → idempotencyMiddleware → wrapAndSubmitFeeBump` zinciri değişmeden çalıştı) → **201**, gerçek Fee-Bump ile ağa iletildi:
+   Tx: [`ba2c5df490ceec1dfa7d82253e83887c676c8b2c8523f98978206f6e7b041061`](https://stellar.expert/explorer/testnet/tx/ba2c5df490ceec1dfa7d82253e83887c676c8b2c8523f98978206f6e7b041061)
+
+**Bakiye kanıtı** (gerçek Horizon/Soroban sorgusu):
+
+| Hesap | Beklenen Oran | Beklenen (stroops) | Gerçekleşen | Durum |
+| :--- | :--- | :--- | :--- | :--- |
+| Esnaf | %99.6 | 9.960.000 | `9960000` | ✅ Doğrulandı |
+| Havuz 3 (Sosyal) | %0.1 | 10.000 | `10000` | ✅ Doğrulandı |
+| Havuz 4 (Operasyonel) | %0.3 | 30.000 | `30000` | ✅ Doğrulandı |
+| Havuz 2 XLM (gerçek fee-bump ücreti) | — | — | `9998.7965847 → 9998.7746024` (fark: `0.0219823` XLM) | ✅ Doğrulandı |
+
+**Negatif kanıt — esnaf gönderemez (gerçek ağ, gerçek deploy edilmiş kontrat, TX HASH YOK):**
+
+Yukarıdaki akışta on-chain kaydedilen ve gerçek `9960000` stroops bakiyeye sahip esnaf hesabı, bu bakiyenin bir kısmını başka bir adrese göndermeye çalıştı:
+
+```
+stellar contract invoke --id CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO \
+  --source-account <esnafın gerçek secret key'i> --network testnet --send=yes \
+  -- transfer --from GDE47HJ2W7SDW7VLMDB32XGEEKUBATO56ZQDIAN3G2GS73UAV67L3R3B \
+  --to GDWNZKIREKS2WLZGBGWBBO3JZUEXIXNG4USX5F4AIM2UBD5W4CLXDKEM --amount 1000000
+```
+
+```
+❌ error: transaction simulation failed: HostError: Error(Contract, #8)
+
+Event log (newest first):
+   0: [Diagnostic Event] contract:CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO, topics:[error, Error(Contract, #8)], data:"escalating error to VM trap from failed host function call: fail_with_error"
+   1: [Diagnostic Event] contract:CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO, topics:[error, Error(Contract, #8)], data:["failing with contract error", 8]
+   2: [Diagnostic Event] topics:[fn_call, CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO, transfer], data:[GDE47HJ2W7SDW7VLMDB32XGEEKUBATO56ZQDIAN3G2GS73UAV67L3R3B, GDWNZKIREKS2WLZGBGWBBO3JZUEXIXNG4USX5F4AIM2UBD5W4CLXDKEM, 1000000]
+```
+
+`Error(Contract, #8)` = `TokenError::MerchantCannotSend`.
+
+**Diğer 3 kanıttan farklı olarak neden bir tx hash YOK:** Soroban her işlemi ağa göndermeden önce salt-okunur bir simülasyondan geçirir; simülasyon panic ederse (burada olduğu gibi) işlem **hiçbir zaman Horizon'a gönderilmez**, ledger'a hiç yazılmaz, dolayısıyla bir tx hash asla oluşmaz. Bu kasıtlı bir Soroban tasarım kararıdır (kullanıcıyı, baştan başarısız olacağı belli bir işlem için ücret ödemekten korur) — kod tabanındaki HER yol (CLI, `buildContractCall`, Fee-Bump) aynı simüle-sonra-gönder deseni kullandığı için bu davranış evrenseldir; atlatmak, kod tabanının hiçbir yerinde kullanılmayan, kırılgan bir teknik gerektirirdi ve kullanılmadı. Deterministik, ağdan bağımsız kanıt: `test_transfer_merchant_cannot_send_panics` (`contracts/dtl-token/src/test.rs`).
+
+**İdempotent onay tekrar denemesi de dahil, tüm script çalıştırma sonrası silinmiştir** — repoda kalmamıştır, yalnızca gerçek servis fonksiyonlarını (mock içermeden) doğrudan çağırmıştır.
 
 ---
 *KALEM projesi temiz ve doğrulanmış durumda Claude Code'a devredilmiştir.*

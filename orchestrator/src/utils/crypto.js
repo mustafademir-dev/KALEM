@@ -66,3 +66,21 @@ export function generateApiKey() {
 export function hashApiKey(apiKey) {
   return crypto.createHash('sha256').update(apiKey, 'utf8').digest('hex');
 }
+
+/**
+ * Esnaf kaydı sırasında adres sahipliğini kanıtlamak için imzalanacak
+ * deterministik mesajı üretir (v2 — Müşteri→Esnaf Ödeme).
+ *
+ * Durumsuz (stateless) tasarım: sunucuda ayrıca bir nonce/challenge
+ * saklanmaz — mesaj tamamen istekten türetilir. Aynı imzanın tekrar
+ * gönderilmesi (replay), `Merchant`'ın zaten mevcut `taxId`/`stellarAddress`
+ * unique kısıtı tarafından otomatik olarak reddedilir (yeni bir
+ * anti-replay mekanizması gerekmez).
+ *
+ * @param {string} taxId - Vergi kimlik numarası.
+ * @param {string} stellarAddress - Esnafın iddia ettiği Stellar adresi (G...).
+ * @returns {string} İstemcinin Ed25519 ile imzalaması gereken düz metin mesaj.
+ */
+export function buildMerchantOwnershipChallenge(taxId, stellarAddress) {
+  return `KALEM-MERCHANT-REGISTER:${taxId}:${stellarAddress}`;
+}

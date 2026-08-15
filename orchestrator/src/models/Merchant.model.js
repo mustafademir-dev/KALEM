@@ -36,11 +36,33 @@ const merchantSchema = new mongoose.Schema(
       select: false,
     },
 
-    /** KYC/KYB doğrulama durumu. */
+    /** KYC/KYB doğrulama durumu. 'verified' = admin onaylı (approve-merchant.mjs). */
     kycStatus: {
       type: String,
       enum: ['pending', 'verified', 'rejected'],
       default: 'pending',
+    },
+
+    /**
+     * v2: Kayıt sırasında `stellarAddress`'in özel anahtarına sahip olunduğu
+     * bir imza (`KALEM-MERCHANT-REGISTER:{taxId}:{stellarAddress}` mesajının
+     * Ed25519 imzası) ile kanıtlandı mı? `approve-merchant.mjs` bu alan
+     * `true` olmadan on-chain kayıt yapmayı REDDEDER (bkz. merchant.routes.js).
+     */
+    ownershipVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    /**
+     * v2: dtl-token kontratında `register_merchant()` ile GERÇEKTEN
+     * kaydedildi mi? Yalnızca `approve-merchant.mjs` başarılı bir on-chain
+     * işlemden sonra `true` yapar — bu alan asla API üzerinden doğrudan
+     * yazılamaz.
+     */
+    onChainRegistered: {
+      type: Boolean,
+      default: false,
     },
 
     /** İletişim e-posta adresi. */

@@ -7,9 +7,10 @@
 
 import { Router } from 'express';
 import mongoose from 'mongoose';
+import * as StellarSdk from '@stellar/stellar-sdk';
 import Merchant from '../../models/Merchant.model.js';
 import config from '../../config/index.js';
-import { generateApiKey, hashApiKey } from '../../utils/crypto.js';
+import { generateApiKey, hashApiKey, buildMerchantOwnershipChallenge } from '../../utils/crypto.js';
 import { readContractBalance } from '../../services/stellar-tx.service.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { validateMerchantRegister } from '../middleware/validation.middleware.js';
@@ -29,19 +30,44 @@ const router = Router();
  *   "businessName": "...",
  *   "taxId": "...",
  *   "stellarAddress": "G...",
+ *   "signature": "<base64 Ed25519 imzası>",
  *   "email": "...",
  *   "phone": "..."
  * }
+ *
+ * `signature`, istemcinin `stellarAddress`'e ait ÖZEL ANAHTARIYLA
+ * `buildMerchantOwnershipChallenge(taxId, stellarAddress)` mesajını imzalayarak
+ * ürettiği kanıttır (v2 — Müşteri→Esnaf Ödeme). Bu, kaydın gerçekten o
+ * adresin sahibi tarafından yapıldığını garanti eder. Bu adım, esnafı
+ * on-chain KAYDETMEZ — yalnızca `ownershipVerified:true` işaretler;
+ * on-chain `register_merchant()` çağrısı ayrı, admin onaylı bir CLI
+ * script iledir (bkz. `scripts/approve-merchant.mjs`).
  */
 export async function registerMerchant(req, res) {
   try {
-    const { businessName, taxId, stellarAddress, email, phone } = req.body;
+    const { businessName, taxId, stellarAddress, email, phone, signature } = req.body;
 
     const existing = await Merchant.findOne({ $or: [{ taxId }, { stellarAddress }] });
     if (existing) {
       return res.status(409).json({
         error: 'ALREADY_REGISTERED',
         message: 'Bu vergi kimlik numarası veya Stellar adresi zaten kayıtlı.',
+      });
+    }
+
+    // v2: adres sahipliği kanıtı — imza gerçekten stellarAddress'e mi ait?
+    const challenge = buildMerchantOwnershipChallenge(taxId, stellarAddress);
+    let ownershipVerified = false;
+    try {
+      const keypair = StellarSdk.Keypair.fromPublicKey(stellarAddress);
+      ownershipVerified = keypair.verify(Buffer.from(challenge, 'utf8'), Buffer.from(signature, 'base64'));
+    } catch {
+      ownershipVerified = false;
+    }
+    if (!ownershipVerified) {
+      return res.status(403).json({
+        error: 'OWNERSHIP_PROOF_FAILED',
+        message: 'signature, stellarAddress sahipliğini kanıtlamıyor.',
       });
     }
 
@@ -53,6 +79,7 @@ export async function registerMerchant(req, res) {
       email,
       phone,
       apiKeyHash: hashApiKey(apiKey),
+      ownershipVerified: true,
     });
 
     logger.info(`[Merchant] Yeni üye işyeri kaydedildi: ${merchant._id} (${businessName})`);

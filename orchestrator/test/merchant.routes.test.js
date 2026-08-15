@@ -4,8 +4,14 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import Merchant from '../src/models/Merchant.model.js';
 import config from '../src/config/index.js';
 import stellarConfig from '../src/config/stellar.js';
-import { hashApiKey } from '../src/utils/crypto.js';
+import { hashApiKey, buildMerchantOwnershipChallenge } from '../src/utils/crypto.js';
 import { registerMerchant, getMerchantBalance } from '../src/api/routes/merchant.routes.js';
+
+/** Gerçek bir Ed25519 keypair ile adres sahipliği kanıtı imzası üretir. */
+function signOwnershipChallenge(keypair, taxId) {
+  const challenge = buildMerchantOwnershipChallenge(taxId, keypair.publicKey());
+  return keypair.sign(Buffer.from(challenge, 'utf8')).toString('base64');
+}
 
 function createMockRes() {
   const res = { statusCode: null, body: null };
@@ -40,7 +46,7 @@ describe('Merchant Routes Unit Tests', () => {
       }
     });
 
-    it('yeni kayıt oluşturmalı, apiKeyHash saklamalı ve plaintext apiKey\'i bir kez döndürmelidir', async () => {
+    it('yeni kayıt oluşturmalı, apiKeyHash saklamalı, ownershipVerified:true işaretlemeli ve plaintext apiKey\'i bir kez döndürmelidir', async () => {
       const originalFindOne = Merchant.findOne;
       const originalCreate = Merchant.create;
 
@@ -51,11 +57,14 @@ describe('Merchant Routes Unit Tests', () => {
         return { _id: { toString: () => '507f1f77bcf86cd799439011' }, businessName: doc.businessName, kycStatus: 'pending' };
       };
 
+      const kp = StellarSdk.Keypair.random();
+      const taxId = '1234567890';
       const req = {
         body: {
           businessName: 'Test Ticaret',
-          taxId: '1234567890',
-          stellarAddress: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUV',
+          taxId,
+          stellarAddress: kp.publicKey(),
+          signature: signOwnershipChallenge(kp, taxId),
           email: 'test@example.com',
         },
       };
@@ -72,9 +81,37 @@ describe('Merchant Routes Unit Tests', () => {
         // Saklanan hash, döndürülen plaintext anahtarın SHA-256 hash'i ile eşleşmelidir.
         assert.equal(createdDoc.apiKeyHash, hashApiKey(res.body.apiKey));
         assert.notEqual(createdDoc.apiKeyHash, res.body.apiKey, 'Plaintext anahtar DB dokümanına yazılmamalıdır');
+        assert.equal(createdDoc.ownershipVerified, true);
       } finally {
         Merchant.findOne = originalFindOne;
         Merchant.create = originalCreate;
+      }
+    });
+
+    it('signature stellarAddress ile eşleşmiyorsa (yanlış anahtarla imzalanmışsa) 403 döndürmelidir', async () => {
+      const originalFindOne = Merchant.findOne;
+      Merchant.findOne = async () => null;
+
+      const claimedKp = StellarSdk.Keypair.random(); // stellarAddress olarak iddia edilen
+      const wrongKp = StellarSdk.Keypair.random(); // gerçekte imzalayan (başka bir anahtar)
+      const taxId = '1234567890';
+
+      const req = {
+        body: {
+          businessName: 'Test Ticaret',
+          taxId,
+          stellarAddress: claimedKp.publicKey(),
+          signature: signOwnershipChallenge(wrongKp, taxId), // yanlış anahtarla imzalandı
+        },
+      };
+      const res = createMockRes();
+
+      try {
+        await registerMerchant(req, res);
+        assert.equal(res.statusCode, 403);
+        assert.equal(res.body.error, 'OWNERSHIP_PROOF_FAILED');
+      } finally {
+        Merchant.findOne = originalFindOne;
       }
     });
 
@@ -89,8 +126,15 @@ describe('Merchant Routes Unit Tests', () => {
         throw err;
       };
 
+      const kp = StellarSdk.Keypair.random();
+      const taxId = '1234567890';
       const req = {
-        body: { businessName: 'Test Ticaret', taxId: '1234567890', stellarAddress: 'GABC...' },
+        body: {
+          businessName: 'Test Ticaret',
+          taxId,
+          stellarAddress: kp.publicKey(),
+          signature: signOwnershipChallenge(kp, taxId),
+        },
       };
       const res = createMockRes();
 

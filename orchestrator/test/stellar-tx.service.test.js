@@ -7,6 +7,7 @@ import {
   buildContractCall,
   submitTransaction,
   readContractBalance,
+  isMerchantOnChain,
 } from '../src/services/stellar-tx.service.js';
 
 describe('StellarTx Service Unit Tests', () => {
@@ -140,6 +141,58 @@ describe('StellarTx Service Unit Tests', () => {
 
     try {
       await assert.rejects(() => readContractBalance(dummyContractId, dummyAddress), /yapılandırılmamış/);
+    } finally {
+      stellarConfig.sorobanServer = originalSoroban;
+    }
+  });
+
+  it('isMerchantOnChain: true dönmelidir (kayıtlı esnaf)', async () => {
+    const originalSoroban = stellarConfig.sorobanServer;
+    let capturedTx = null;
+
+    stellarConfig.sorobanServer = {
+      simulateTransaction: async (tx) => {
+        capturedTx = tx;
+        return { transactionData: {}, result: { retval: StellarSdk.nativeToScVal(true, { type: 'bool' }) } };
+      },
+    };
+
+    try {
+      const result = await isMerchantOnChain(dummyContractId, dummyAddress);
+      assert.equal(result, true);
+      assert.ok(capturedTx instanceof StellarSdk.Transaction);
+    } finally {
+      stellarConfig.sorobanServer = originalSoroban;
+    }
+  });
+
+  it('isMerchantOnChain: false dönmelidir (kayıtsız adres)', async () => {
+    const originalSoroban = stellarConfig.sorobanServer;
+
+    stellarConfig.sorobanServer = {
+      simulateTransaction: async () => ({
+        transactionData: {},
+        result: { retval: StellarSdk.nativeToScVal(false, { type: 'bool' }) },
+      }),
+    };
+
+    try {
+      const result = await isMerchantOnChain(dummyContractId, dummyAddress);
+      assert.equal(result, false);
+    } finally {
+      stellarConfig.sorobanServer = originalSoroban;
+    }
+  });
+
+  it('isMerchantOnChain: Simülasyon hatasında fırlatmalıdır', async () => {
+    const originalSoroban = stellarConfig.sorobanServer;
+
+    stellarConfig.sorobanServer = {
+      simulateTransaction: async () => ({ error: 'HostError' }),
+    };
+
+    try {
+      await assert.rejects(() => isMerchantOnChain(dummyContractId, dummyAddress), /simülasyonu başarısız/);
     } finally {
       stellarConfig.sorobanServer = originalSoroban;
     }

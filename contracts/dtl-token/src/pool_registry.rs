@@ -20,7 +20,7 @@
 use soroban_sdk::{contracttype, panic_with_error, Address, Env, Vec};
 
 use crate::errors::TokenError;
-use crate::storage_types::DataKey;
+use crate::storage_types::{DataKey, BALANCE_BUMP_AMOUNT, BALANCE_LIFETIME_THRESHOLD};
 
 // ---------------------------------------------------------------------------
 // Havuz Adres Tipi
@@ -173,4 +173,55 @@ pub fn get_pool(env: &Env, pool_id: PoolId) -> Option<PoolEntry> {
     env.storage()
         .instance()
         .get::<DataKey, PoolEntry>(&DataKey::Pool(index))
+}
+
+// ---------------------------------------------------------------------------
+// Esnaf (Merchant) Kaydı — v2: Müşteri→Esnaf Ödeme
+// ---------------------------------------------------------------------------
+//
+// Havuzlardan farklı olarak esnaf sayısı değişken (N) olabileceği için
+// sabit index'li Pool(u32) yerine adres-anahtarlı persistent storage
+// kullanılır — `Balance(Address)` ile aynı desen (existence-as-membership).
+//
+// Müşteri tarafında KARŞILIK GELEN bir kayıt YOKTUR (bilinçli tasarım
+// kararı): transfer()'da "gönderen" hiçbir zaman zincirde sorgulanmaz,
+// yalnızca "gönderen kayıtlı esnaf mı" kontrol edilir. Havuz/esnaf
+// olmayan her gönderen örtük olarak müşteri sayılır.
+
+/// Verilen adresi kayıtlı esnaf olarak işaretler.
+///
+/// Yalnızca `token::register_merchant()` içinden, admin yetki kontrolünden
+/// SONRA çağrılır — bu fonksiyon kendi başına yetki kontrolü yapmaz.
+///
+/// # Panics
+/// - Adres zaten kayıtlı bir esnafsa `TokenError::AlreadyRegisteredMerchant`.
+/// - Adres kayıtlı bir havuz adresiyse `TokenError::AlreadyRegisteredMerchant`
+///   (bir havuz asla esnaf olamaz — rol karışıklığını önler).
+pub fn register_merchant(env: &Env, merchant: &Address) {
+    if is_merchant(env, merchant) || is_authorized_recipient(env, merchant) {
+        panic_with_error!(env, TokenError::AlreadyRegisteredMerchant);
+    }
+    let key = DataKey::MerchantFlag(merchant.clone());
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+/// Verilen adresin kayıtlı bir esnaf olup olmadığını kontrol eder.
+///
+/// `transfer()`'da hem "gönderen esnaf mı" (koşulsuz reddet) hem de
+/// "alıcı esnaf mı" (havuzlara ek olarak izin ver) kontrolü için kullanılır.
+/// Bulunursa TTL'yi `Balance` ile aynı politikayla yeniler (kayıt, sık
+/// okunan bir persistent entry olarak süresiz arşive düşmemeli).
+pub fn is_merchant(env: &Env, address: &Address) -> bool {
+    let key = DataKey::MerchantFlag(address.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+        true
+    } else {
+        false
+    }
 }

@@ -159,12 +159,24 @@ describe('Validation Middleware Unit Tests', () => {
       assert.equal(nextCalled, false);
     });
 
+    it('signature eksikse 400 döndürmelidir (v2 — adres sahipliği kanıtı zorunlu)', () => {
+      const req = {
+        body: { businessName: 'Test Ticaret', taxId: '9876543210', stellarAddress: validAddress },
+      };
+      const res = createMockRes();
+      let nextCalled = false;
+      validateMerchantRegister(req, res, () => (nextCalled = true));
+      assert.equal(res.statusCode, 400);
+      assert.equal(nextCalled, false);
+    });
+
     it('geçerli girdi ile next() ÇAĞRILMALIDIR', () => {
       const req = {
         body: {
           businessName: 'Test Ticaret',
           taxId: '9876543210',
           stellarAddress: validAddress,
+          signature: 'ZmFrZS1zaWduYXR1cmU=',
           email: 'test@example.com',
           phone: '+905551112233',
         },

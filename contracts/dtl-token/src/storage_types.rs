@@ -71,4 +71,9 @@ pub enum DataKey {
     /// Adres bazlı dTL bakiyesi (stroops cinsinden).
     /// Storage: Persistent (bağımsız TTL)
     Balance(Address),
+
+    /// Adresin kayıtlı esnaf (merchant) olup olmadığını gösteren bayrak.
+    /// Yalnızca `true` olarak yazılır (varlık = üyelik).
+    /// Storage: Persistent (bağımsız TTL, Balance ile aynı desen)
+    MerchantFlag(Address),
 }

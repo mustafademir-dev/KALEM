@@ -58,7 +58,7 @@ export function validateTransactionSubmit(req, res, next) {
  * @param {import('express').NextFunction} next
  */
 export function validateMerchantRegister(req, res, next) {
-  const { businessName, taxId, stellarAddress, email, phone } = req.body || {};
+  const { businessName, taxId, stellarAddress, email, phone, signature } = req.body || {};
 
   if (!businessName || typeof businessName !== 'string' || !businessName.trim()) {
     return res
@@ -83,6 +83,15 @@ export function validateMerchantRegister(req, res, next) {
 
   if (phone !== undefined && phone !== null && typeof phone !== 'string') {
     return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'phone string olmalıdır.' });
+  }
+
+  // v2: adres sahipliği kanıtı — şekil kontrolü burada, kriptografik
+  // doğrulama (imza gerçekten stellarAddress'e mi ait) handler'da yapılır.
+  if (!signature || typeof signature !== 'string' || !signature.trim()) {
+    return res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      message: 'signature zorunludur — stellarAddress sahipliğini kanıtlayan Ed25519 imzası (base64).',
+    });
   }
 
   next();

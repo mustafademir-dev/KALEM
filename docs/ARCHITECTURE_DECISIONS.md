@@ -234,3 +234,120 @@ Madde 5 (`sse-listener.service.js` havuz filtresi düzeltmesi) sırasında incel
 
 **Öneri (üretim öncesi yapılmalı, bu iş paketinin kapsamı dışında bırakıldı):** son işlenen cursor'ı MongoDB'de kalıcı tutmak, sunucu başlangıcında oradan devam etmek; ayrıca periyodik bir reconciliation job'ı ile belirli bir süreden uzun `'submitted'` durumunda kalan işlemleri Horizon'dan tekil sorgulayıp durumlarını düzeltmek (SSE'nin bir yedeği olarak). **Bu henüz yapılmamıştır.**
 
+---
+
+## 7. Müşteri→Esnaf Gerçek Ödeme (`pay_merchant`) ve Rapor 5.2 Sapması
+
+> Bu bölüm, `dtl-token.transfer()`'ın P2P blokaj kapsamının genişletilmesini belgeler: müşteriden (kayıtlı olması gerekmeyen, zincirde hiç ayrıca tanımlanmayan herhangi bir gönderen) kayıtlı bir esnafa gerçek, atomik ve vergi/komisyon kesintili dTL ödemesi artık mümkündür. **v1 Bölüm 1-6 DEĞİŞTİRİLMEMİŞTİR** — bu, kullanıcı onaylı, bilinçli bir sonraki-nesil (v2) mimari karardır.
+
+### Rapor ne diyordu
+
+Rapor Bölüm 5.2: dTL'nin "ödeme aracı olarak [P2P] kullanımını kriptografik olarak imkânsız kılar" — yani dTL'nin yalnızca havuzlar arası (esnaf→sistem) hareket edebileceği, müşteriden esnafa doğrudan bir zincir-üstü ödemenin asla var olmayacağı ima edilir.
+
+### Kod gerçekte ne yapıyor (v2)
+
+Proje bir ödeme sistemi olduğu için ödeyen tarafın **gerçekten zincir üzerinde ödeme yapması**, konseptin teknik kanıtı için gerekli görüldü. Bu nedenle `transfer()`'ın alıcı kısıtlaması genişletildi (kayıtlı 4 havuza EK olarak kayıtlı esnaf adresleri de kabul edilir), ancak ikincil piyasa/P2P spekülasyon riski şu üç kuralla KAPALI tutuldu:
+- Esnaf **asla gönderen olamaz** (koşulsuz guard, `transfer()`'ın en başında — `MerchantCannotSend`, #8).
+- Müşteriden müşteriye veya kayıtsız/anonim herhangi bir adrese transfer **hâlâ reddedilir** (`UnauthorizedRecipient`, #2, genişletilmiş koşulla).
+- Vergi/komisyon kesintisi (Havuz 3/0.1%, Havuz 4/0.3%) gerçek satışlarda da **atlanmaz** — çıplak `transfer()` yerine `pool-manager.pay_merchant()` zorunlu kılındı (aşağıya bakınız).
+
+### Neden bu şekilde karar verildi
+
+Değerlendirme sürecinde (kod incelemesiyle) şu kritik bulgu ortaya çıktı: çıplak `transfer()` genişletmesi (yalnızca alıcı kısıtını gevşetmek) esnafın tutarın **%100'ünü** almasına, Havuz 3/4 vergi kesintisinin **hiç olmamasına** yol açardı — sistemin ekonomik temeli (her işlemden vergi/komisyon toplanması) sessizce kırılırdı. Bu KABUL EDİLMEDİ. Bunun yerine `pool-manager.pay_merchant(from, merchant, total_amount)` eklendi — `distribute()` ile birebir aynı atomik desen, `kalem-shared::calculate_distribution()` DEĞİŞTİRİLMEDEN reuse edilerek (ilk dönüş değeri "esnaf payı" olarak yorumlanır): esnaf %99.6, Havuz 3 %0.1, Havuz 4 %0.3. Müşteri kimliği zincirde HİÇBİR ZAMAN ayrıca kaydedilmez — yalnızca "gönderen kayıtlı esnaf mı" kontrol edilir (havuz/esnaf olmayan her gönderen örtük olarak müşteri sayılır); bu, çift-rol kaydı ve sahte GİB belge üretimi gibi riskleri, ek güvenlik sağlamadan davet edeceği için bilinçli olarak tercih edilmedi.
+
+Esnaf adresleri artık gerçek para alabildiği için, kim esnaf ilan edilebileceği de sıkılaştırıldı: `POST /merchants/register` artık on-chain `register_merchant()`'ı OTOMATİK TETİKLEMEZ — (a) kayıt sırasında istemci `stellarAddress`'in özel anahtarıyla bir mesaj imzalayarak adres sahipliğini kanıtlamak zorundadır, (b) on-chain kayıt yalnızca ayrı, admin onaylı bir CLI script (`approve-merchant.mjs`) ile yapılır (bkz. §7.4).
+
+### §7.1. v1 Kontratları (korunmuş kanıt)
+
+**DEĞİŞTİRİLMEMİŞ, SİLİNMEMİŞ.** v1 WASM hash'leri, contract ID'leri ve 31 birim test sonucu (§3, §4) geçerliliğini korur:
+- `dtl-token` v1: `CC4ME5GZASQP456TPFEEADRK4NOFVV4KWX5TJGHJBO7SGK34IMIPWTX4` (WASM: `c1ad6c61e0047da8967265b45a4527fdbd5782451b072e6aa45f6507e0e82cc6`)
+- `pool-manager` v1: `CBFJOXNUATWPCSONJMQUOFL3QML2VHZCT5A5SOOJ3BSN5BSFAGPOR4WF` (WASM: `115f8a4d46a2cbd4e6048dcd4a1f366e19d7add74fecaac88220099ea0762bb8`)
+
+Bu kontratlar testnet'te hâlâ canlıdır ve v1'de belgelenen davranışı sergilemeye devam eder — yalnızca orkestrasyon katmanı artık onlara değil v2'ye bağlıdır (bkz. `.env`).
+
+### §7.2. v2 Kontratları
+
+**Redeploy zorunluydu** — `dtl-token`'da bir upgrade/self-update hook yoktur (`lib.rs` incelenerek doğrulandı), dolayısıyla `transfer()`'ın mantığını değiştirmek yeni bir WASM derlemesi ve yeni bir `stellar contract deploy` gerektirdi (yeni contract ID kaçınılmazdır). Tam deploy komutları, WASM hash'leri, tx linkleri: `docs/TESTNET_DEPLOYMENT.md` **"Mimari v2"** bölümü.
+
+- `dtl-token` v2: `CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO`
+- `pool-manager` v2: `CDR7WMMQLINNIC2PCSWUU27FHUWWLZPHBJU7MQK5EZVOJBIWQA47LQSA`
+- Havuz 1/2/3/4 adresleri, `POOL2_SECRET_KEY`, `ISSUER_SECRET_KEY` DEĞİŞMEDİ.
+
+### §7.3. Kontrat Değişiklikleri (Teknik Özet)
+
+**`dtl-token`:**
+- Yeni persistent-storage kaydı: `DataKey::MerchantFlag(Address)` (`Balance(Address)` ile aynı desen — existence-as-membership, TTL `Balance` ile aynı politikayla yenilenir).
+- Yeni admin-only fonksiyon `register_merchant(merchant)` — `mint`/`burn` ile birebir aynı yetki deseni (`auth::require_admin`). Zaten kayıtlı bir esnafı veya bir havuz adresini tekrar kaydetmeye çalışmak `AlreadyRegisteredMerchant` (#9) ile reddedilir.
+- Yeni view fonksiyon `is_merchant(address) -> bool`.
+- `transfer()`'ın yeni sırası: (1) `from.require_auth()` (2) **koşulsuz** — `from` kayıtlı esnafsa `MerchantCannotSend` (#8) (3) tutar doğrulaması (4) alıcı kontrolü — `is_authorized_recipient(to) || is_merchant(to)` değilse `UnauthorizedRecipient` (#2) (5) bakiye taşıma.
+
+**`pool-manager`:**
+- Yeni fonksiyon `pay_merchant(from, merchant, total_amount)` — `distribute()`'un birebir aynı atomik iskeleti (`from.require_auth()`, tutar doğrulaması, 3× cross-contract `dtl-token.transfer()`), tek fark hedeflerden birinin Havuz 1 yerine `merchant` parametresi olması. `PoolConfig`/`pool_config.rs` DEĞİŞMEDİ (`pool3_address`/`pool4_address` zaten mevcuttu).
+- dtl-token'ın `transfer()`'ı `merchant`'ın kayıtlı esnaf olduğunu (ve `from`'un esnaf OLMADIĞINI) zaten doğrulayacaktır — `distribute()`'un dosya başı dokümantasyonunda zaten övülen "çift katmanlı güvenlik" deseni aynen uygulanmış olur.
+
+**Rust birim testleri:** 31 → 38 (dtl-token 19→25, pool-manager 6→7, kalem-shared 6→6 değişmedi). Tümü PASS.
+
+**Orkestrasyon tarafında sıfır-değişiklik gerektiren noktalar (kod incelemesiyle doğrulandı):** `kalem-shared::calculate_distribution()`, `submitTransactionHandler` (`transaction.routes.js`), `assertValidInnerTransaction` (`fee-bump.service.js`), `sse-listener.service.js` — hiçbiri hangi kontrat FONKSİYONUNUN çağrıldığını sorgulamadığı için `pay_merchant`'ı hiçbir kod değişikliği olmadan otomatik olarak destekler. `merchant.routes.js`'teki `GET /:id/balance` (`readContractBalance(dtlTokenId, merchant.stellarAddress)`) daha önce "esnaf adresleri asla on-chain bakiye tutamayacağı için her zaman 0 döner" olarak işaretlenmiş bir mimari boşluktu — bu değişiklikle o boşluk KENDİLİĞİNDEN ÇÖZÜLDÜ, esnaf adresleri artık gerçek bakiye tutar.
+
+### §7.4. Esnaf Kayıt/Onay Süreci (Güvenlik)
+
+Değerlendirme sırasında tespit edilen açık: `POST /merchants/register` hiçbir doğrulama olmadan anında "esnaf" statüsü veriyordu (`isActive:true` varsayılan, `kycStatus:'pending'` hiçbir yeri gate'lemiyordu). Esnaf adresleri artık gerçek dTL alabildiği için bu, kim esnaf ilan edilebileceğinin anlık/kendinden-servis bir REST çağrısına bırakılamayacağı anlamına gelir. İki katmanlı çözüm:
+
+1. **Adres sahipliği kanıtı (kayıt anında, `merchant.routes.js`):** İstemci `KALEM-MERCHANT-REGISTER:{taxId}:{stellarAddress}` mesajını `stellarAddress`'in özel anahtarıyla imzalar (`utils/crypto.js` → `buildMerchantOwnershipChallenge`), `signature` (base64) ile birlikte gönderir. Sunucu, `fee-bump.service.js`'in `assertValidInnerTransaction`'ında zaten kullanılan AYNI doğrulama birincilini (`Keypair.fromPublicKey(...).verify(...)`) tekrar kullanarak imzayı doğrular. Başarısızsa `403 OWNERSHIP_PROOF_FAILED`. Başarılıysa `Merchant.ownershipVerified = true` — ama on-chain kayıt YAPILMAZ. Durumsuz (stateless) tasarım: sunucuda ayrı bir nonce saklanmaz, replay zaten mevcut `taxId`/`stellarAddress` unique kısıtıyla engellenir.
+2. **Admin onaylı on-chain kayıt (ayrı adım, `orchestrator/scripts/approve-merchant.mjs`):** `ISSUER_SECRET_KEY`'e sahip bir operatör CLI'ı elle çalıştırır (`--taxId=... --operator="..."`). Script: (a) `ownershipVerified !== true` ise KESİNLİKLE reddeder, (b) MongoDB bayrağına değil GERÇEK on-chain duruma bakar (`is_merchant()` simülasyonu) ve zaten kayıtlıysa idempotent şekilde çıkar (ikinci tx göndermez), (c) her denemeyi (başarılı/başarısız/zaten-kayıtlı) `MerchantApproval` koleksiyonuna kim/ne zaman/hangi esnaf/hangi sonuç olarak denetim kaydı yazar, (d) başarılı olursa `register_merchant()`'ı admin imzasıyla (Fee-Bump YOK — mint/burn gibi doğrudan operasyonel bir işlem) gönderir ve `Merchant.kycStatus='verified'`, `onChainRegistered=true` yapar.
+
+**Bilinçli kapsam kararı:** Yeni bir admin-auth/RBAC alt sistemi İCAT EDİLMEDİ — CLI script'in kendisi (ve onu çalıştırabilmek için gereken `ISSUER_SECRET_KEY` erişimi) yetkilendirme sınırıdır. Bu, mevcut mint/burn/pool-feeder operasyonel deseniyle tutarlıdır.
+
+### §7.5. Gerçek Testnet E2E Doğrulaması (15 Ağustos 2026)
+
+Geçici script (`orchestrator/tmp-verify-paymerchant.mjs`, doğrulama sonrası **silinmiştir**) ile gerçek testnet üzerinde uçtan uca akış:
+
+1. Test esnafı gerçek bir Ed25519 imzasıyla kaydedildi (`ownershipVerified:true`).
+2. `approve-merchant.mjs` çalıştırıldı → gerçek `register_merchant` tx:
+   [`f1f835db78582bd45a819a26c1da56cf4cbe65c90e5fc225a0f3e7bbf44d6d6f`](https://stellar.expert/explorer/testnet/tx/f1f835db78582bd45a819a26c1da56cf4cbe65c90e5fc225a0f3e7bbf44d6d6f)
+3. AYNI script AYNI esnaf için TEKRAR çalıştırıldı → `already_registered`, **ikinci bir tx GÖNDERİLMEDİ** (idempotent davranış kanıtlandı — gerçek on-chain `is_merchant()` sorgusuyla).
+4. Müşteriye (fresh, Friendbot ile fonlanmış bir keypair) 1 dTL mint edildi:
+   [`f04aab520abb4a34dd94a762b8f87f505b3d6e56d01067cc2492e8b16951cc94`](https://stellar.expert/explorer/testnet/tx/f04aab520abb4a34dd94a762b8f87f505b3d6e56d01067cc2492e8b16951cc94)
+5. `pay_merchant` iç zarfı müşteri tarafından imzalanıp **mevcut `/transactions/submit` ucuna, kod değişikliği olmadan** gönderildi → gerçek Fee-Bump ile ağa iletildi:
+   [`ba2c5df490ceec1dfa7d82253e83887c676c8b2c8523f98978206f6e7b041061`](https://stellar.expert/explorer/testnet/tx/ba2c5df490ceec1dfa7d82253e83887c676c8b2c8523f98978206f6e7b041061)
+
+**Bakiye doğrulaması** (gerçek Horizon/Soroban sorgusu, `readContractBalance`):
+
+| Hesap | Beklenen Oran | Beklenen Tutar (stroops) | Gerçekleşen Bakiye | Durum |
+| :--- | :--- | :--- | :--- | :--- |
+| **Esnaf** | %99.6 | 9.960.000 | `9960000` | ✅ Doğrulandı |
+| **Havuz 3 (Sosyal)** | %0.1 | 10.000 | `10000` | ✅ Doğrulandı |
+| **Havuz 4 (Operasyonel)** | %0.3 | 30.000 | `30000` | ✅ Doğrulandı |
+| **Havuz 2 (gerçek fee-bump ücreti)** | — | — | `9998.7965847 → 9998.7746024` (fark: `0.0219823` XLM) | ✅ Doğrulandı |
+
+**Negatif kanıt (esnaf gönderemez) — GERÇEK ağ, GERÇEK deploy edilmiş v2 kontrat, tx hash YOK:**
+
+Yukarıdaki akışta on-chain kaydedilen ve gerçek `9960000` stroops bakiyeye sahip esnaf hesabı (`GDE47HJ2W7SDW7VLMDB32XGEEKUBATO56ZQDIAN3G2GS73UAV67L3R3B`), bu bakiyenin bir kısmını Havuz 1'e (`GDWNZKIREKS2WLZGBGWBBO3JZUEXIXNG4USX5F4AIM2UBD5W4CLXDKEM`) göndermeye çalıştı:
+
+```
+stellar contract invoke \
+  --id CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO \
+  --source-account <esnafın gerçek secret key'i> \
+  --network testnet --send=yes \
+  -- transfer \
+  --from GDE47HJ2W7SDW7VLMDB32XGEEKUBATO56ZQDIAN3G2GS73UAV67L3R3B \
+  --to GDWNZKIREKS2WLZGBGWBBO3JZUEXIXNG4USX5F4AIM2UBD5W4CLXDKEM \
+  --amount 1000000
+```
+
+Tam çıktı:
+```
+❌ error: transaction simulation failed: HostError: Error(Contract, #8)
+
+Event log (newest first):
+   0: [Diagnostic Event] contract:CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO, topics:[error, Error(Contract, #8)], data:"escalating error to VM trap from failed host function call: fail_with_error"
+   1: [Diagnostic Event] contract:CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO, topics:[error, Error(Contract, #8)], data:["failing with contract error", 8]
+   2: [Diagnostic Event] topics:[fn_call, CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO, transfer], data:[GDE47HJ2W7SDW7VLMDB32XGEEKUBATO56ZQDIAN3G2GS73UAV67L3R3B, GDWNZKIREKS2WLZGBGWBBO3JZUEXIXNG4USX5F4AIM2UBD5W4CLXDKEM, 1000000]
+```
+
+`Error(Contract, #8)` = `TokenError::MerchantCannotSend` — beklenen ve doğru davranış, gerçek ağda gerçek esnaf bakiyesiyle doğrulandı.
+
+**Neden bir tx hash YOK (diğer 3 kanıttan farklı olarak):** Soroban'ın mimarisi, her işlemi ağa göndermeden önce salt-okunur bir `simulateTransaction` adımından geçirir (`prepareTransaction` — bkz. `stellar-tx.service.js`, `buildContractCall`). Bir host fonksiyonu (burada `transfer()`) simülasyon sırasında panic ederse, simülasyon `başarısız` olarak işaretlenir ve işlem **hiçbir zaman Horizon'a gönderilmez** — dolayısıyla ledger'a hiç yazılmaz ve bir tx hash asla üretilmez. Bu, kasıtlı bir Soroban tasarım kararıdır (kullanıcıyı, baştan başarısız olacağı belli bir işlem için ücret ödemekten korur) — `fee-bump.service.js`'in kendi dosya başı dokümantasyonu da AYNI davranışı bir güvenlik özelliği olarak zaten övmektedir ("başarısız/geçersiz bir kontrat çağrısı bu adımda elenir; Havuz 2'nin XLM'i hiç harcanmaz"). Kod tabanındaki HER yol (CLI, `buildContractCall`, Fee-Bump) aynı simüle-sonra-gönder deseni kullandığı için, bu üç kanıtla (register_merchant, mint, pay_merchant) aynı formatta bir "başarısız tx hash" üretmenin tek yolu, simülasyonu bilerek atlayıp ham/tahmine dayalı bir zarf göndermektir — bu, kod tabanının geri kalanıyla tutarsız, kırılgan bir teknik olacağından kullanılmamıştır. Deterministik, testnet'ten bağımsız kanıt için bkz. Rust birim testi `test_transfer_merchant_cannot_send_panics` (`dtl-token/src/test.rs`).
+
+**Doğrulama script'i** (`orchestrator/tmp-verify-paymerchant.mjs`, geçiciydi) çalıştırma sonrası **silinmiştir**.
+

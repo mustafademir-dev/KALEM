@@ -124,6 +124,48 @@ export async function readContractBalance(contractId, address) {
 }
 
 /**
+ * Bir adresin dtl-token kontratında kayıtlı esnaf olup olmadığını salt-okunur
+ * simülasyonla (ağa işlem göndermeden, maliyetsiz) sorgular.
+ *
+ * `readContractBalance()` ile AYNI simulate deseni — yalnızca çağrılan
+ * kontrat metodu (`is_merchant`) ve dönüş tipi (boolean) farklıdır. Bu,
+ * `approve-merchant.mjs` script'inin MongoDB'deki bayrağa değil, GERÇEK
+ * zincir durumuna güvenerek idempotent karar vermesini sağlar.
+ *
+ * @param {string} contractId - dtl-token kontrat adresi (C...).
+ * @param {string} address - Sorgulanacak adres (G...).
+ * @returns {Promise<boolean>} Adres kayıtlı bir esnafsa `true`.
+ */
+export async function isMerchantOnChain(contractId, address) {
+  try {
+    if (!stellarConfig.sorobanServer) {
+      throw new Error('Soroban RPC sunucusu yapılandırılmamış.');
+    }
+
+    const simulationAccount = new StellarSdk.Account(address, '0');
+    const contract = new StellarSdk.Contract(contractId);
+    const readTx = new StellarSdk.TransactionBuilder(simulationAccount, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase: stellarConfig.networkPassphrase,
+    })
+      .addOperation(contract.call('is_merchant', StellarSdk.Address.fromString(address).toScVal()))
+      .setTimeout(30)
+      .build();
+
+    const simulation = await stellarConfig.sorobanServer.simulateTransaction(readTx);
+
+    if (!StellarSdk.rpc.Api.isSimulationSuccess(simulation)) {
+      throw new Error(`is_merchant simülasyonu başarısız: ${JSON.stringify(simulation.error ?? simulation)}`);
+    }
+
+    return Boolean(StellarSdk.scValToNative(simulation.result.retval));
+  } catch (error) {
+    logger.error(`[StellarTx] isMerchantOnChain hatası (${contractId}, ${address}): ${error.message}`);
+    throw error;
+  }
+}
+
+/**
  * İmzalı bir işlemi (veya Fee-Bump zarfını) Horizon sunucusuna veya RPC ağa gönderir.
  *
  * @param {StellarSdk.Transaction | StellarSdk.FeeBumpTransaction | string} transaction - İmzalanmış işlem nesnesi veya XDR string'i.

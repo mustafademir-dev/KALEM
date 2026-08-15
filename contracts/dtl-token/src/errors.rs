@@ -32,4 +32,14 @@ pub enum TokenError {
     /// Havuz adres tipi beklenen değerle eşleşmiyor.
     /// Ör: Havuz 2 StellarAccount olmalı, Havuz 1/3/4 SorobanAddress olmalı.
     InvalidPoolType = 7,
+
+    // --- Esnaf (Merchant) Kayıt Hataları (v2 — Müşteri→Esnaf Ödeme) ---
+    /// Gönderen (`from`) kayıtlı bir esnaf adresi. Esnaf yalnızca ALICI
+    /// olabilir; dTL'yi başka bir tarafa gönderemez (fiat'a itfa dışında
+    /// çıkış yolu yoktur). transfer()'ın EN BAŞINDA, koşulsuz kontrol edilir.
+    MerchantCannotSend = 8,
+
+    /// Adres zaten kayıtlı bir esnaf (veya bir havuz adresi) —
+    /// register_merchant() tekrar çağrılamaz.
+    AlreadyRegisteredMerchant = 9,
 }

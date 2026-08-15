@@ -166,6 +166,22 @@ fn test_distribution_ratios_rounding() {
 }
 
 #[test]
+fn test_pay_merchant_distribution_ratios() {
+    // pay_merchant() DEĞİŞTİRİLMEMİŞ calculate_distribution()'ı reuse eder;
+    // ilk dönüş değeri burada "esnaf payı" olarak yorumlanır. Cross-contract
+    // invoke'un kendisi (dtl-token ayrı bir crate olduğu için, distribute()
+    // testlerinde olduğu gibi) burada test edilmiyor — gerçek kanıt testnet
+    // E2E'den gelir (bkz. ARCHITECTURE_DECISIONS.md §7).
+    let total = 10_000_000i128; // 1 dTL
+    let (merchant_share, pool3_share, pool4_share) = kalem_shared::calculate_distribution(total);
+
+    assert_eq!(merchant_share, 9_960_000); // %99,6 — esnafa
+    assert_eq!(pool3_share, 10_000);       // %0,1
+    assert_eq!(pool4_share, 30_000);       // %0,3
+    assert_eq!(merchant_share + pool3_share + pool4_share, total);
+}
+
+#[test]
 fn test_distribution_ratios_large_amount() {
     // Büyük tutar testi: 1 milyar dTL
     let total = 10_000_000_000_000_000i128; // 10^16 stroops

@@ -277,6 +277,79 @@ fn test_transfer_zero_amount_panics() {
 }
 
 // ---------------------------------------------------------------------------
+// Esnaf (Merchant) Testleri — v2: Müşteri→Esnaf Ödeme
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_register_merchant_success() {
+    let t = setup();
+    let merchant = Address::generate(&t.env);
+
+    assert_eq!(t.client.is_merchant(&merchant), false);
+    t.client.register_merchant(&merchant);
+    assert_eq!(t.client.is_merchant(&merchant), true);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_double_register_merchant_panics() {
+    let t = setup();
+    let merchant = Address::generate(&t.env);
+
+    t.client.register_merchant(&merchant);
+    // İkinci kayıt → AlreadyRegisteredMerchant (#9)
+    t.client.register_merchant(&merchant);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_register_pool_address_as_merchant_panics() {
+    let t = setup();
+    // Bir havuz adresi asla esnaf olarak kaydedilemez → AlreadyRegisteredMerchant (#9)
+    t.client.register_merchant(&t.pool1);
+}
+
+#[test]
+fn test_transfer_customer_to_merchant_success() {
+    let t = setup();
+    let customer = Address::generate(&t.env);
+    let merchant = Address::generate(&t.env);
+
+    t.client.register_merchant(&merchant);
+    t.client.mint(&customer, &10_000_000);
+    t.client.transfer(&customer, &merchant, &4_000_000);
+
+    assert_eq!(t.client.balance(&customer), 6_000_000);
+    assert_eq!(t.client.balance(&merchant), 4_000_000);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")]
+fn test_transfer_merchant_cannot_send_panics() {
+    let t = setup();
+    let merchant = Address::generate(&t.env);
+
+    t.client.register_merchant(&merchant);
+    t.client.mint(&merchant, &10_000_000);
+
+    // Esnaf, kayıtlı bir havuza bile gönderemez → MerchantCannotSend (#8)
+    t.client.transfer(&merchant, &t.pool1, &1_000_000);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_transfer_to_unregistered_merchant_still_blocked() {
+    let t = setup();
+    let customer = Address::generate(&t.env);
+    let not_a_merchant = Address::generate(&t.env); // hiç kayıt edilmedi
+
+    t.client.mint(&customer, &10_000_000);
+
+    // Kayıtsız/anonim adrese transfer — v2 sonrası da hâlâ reddedilir → UnauthorizedRecipient (#2)
+    t.client.transfer(&customer, &not_a_merchant, &1_000_000);
+}
+
+// ---------------------------------------------------------------------------
 // Bakiye Testleri
 // ---------------------------------------------------------------------------
 

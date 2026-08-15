@@ -1,5 +1,11 @@
 # KALEM — Stellar Testnet Deployment Dokümantasyonu (TESTNET_DEPLOYMENT.md)
 
+> **Not:** Bu belgede iki ayrı deploy nesli belgelidir — **Mimari v1** (aşağıda, TEK BİR SATIRI DEĞİŞTİRİLMEDEN korunmuştur) ve **Mimari v2** (dosyanın sonunda, Müşteri→Esnaf Ödeme özelliğiyle). v1 kanıtları BİLİNÇLİ OLARAK silinmemiş/üzerine yazılmamıştır — "önce şunu kanıtladık, sonra geliştirdik" tarihçesi bir zayıflık değil, gelişim kaydıdır. Ayrıntılı gerekçe için bkz. `ARCHITECTURE_DECISIONS.md §7`.
+
+---
+
+# Mimari v1 (İlk Deploy — Yalnızca Havuzlar Arası Transfer)
+
 > **Tarih:** 10 Ağustos 2026  
 > **Ağ:** Stellar Testnet (`Test SDF Network ; September 2015`)  
 > **RPC Endpoint:** `https://soroban-testnet.stellar.org`  
@@ -127,3 +133,67 @@ POOL2_PUBLIC_KEY=GAXVXYZ7DTFCK5JKXPAWSMJ3V72KCZGO5LIR32AHD73HLQOVGJMQURVK
 POOL3_PUBLIC_KEY=GDIRKWQXXJDNHLVZHTO7USR3FBSTOW7LXEJY7LSML75LSEWJA7EMXJOQ
 POOL4_PUBLIC_KEY=GBOOXSBUSUUEWK57OBKQU7WUA7V36DZATXY54ACH2V56537QBHSMV3CQ
 ```
+
+---
+
+# Mimari v2 (Müşteri→Esnaf Ödeme — `pay_merchant`)
+
+> **Tarih:** 15 Ağustos 2026
+> **Ağ:** Stellar Testnet (`Test SDF Network ; September 2015`)
+> **Stellar CLI Versiyon:** 27.1.0 (v1 ile aynı)
+> **Gerekçe ve tam tasarım kararı:** `ARCHITECTURE_DECISIONS.md §7`
+
+## v1 → v2 Ne Değişti (Özet)
+
+- `dtl-token`: `register_merchant()`/`is_merchant()` eklendi; `transfer()` artık alıcı olarak kayıtlı 4 havuza EK olarak kayıtlı esnaf adreslerini de kabul ediyor; gönderen kayıtlı bir esnafsa koşulsuz reddediliyor (`MerchantCannotSend`, #8).
+- `pool-manager`: `pay_merchant(from, merchant, total_amount)` eklendi — `distribute()` ile aynı atomik desen, hedeflerden biri Havuz 1 yerine esnaf (%99.6 esnaf, %0.1 Havuz 3, %0.3 Havuz 4).
+- Havuz 1/2/3/4 adresleri, `POOL2_SECRET_KEY`, `ISSUER_SECRET_KEY` DEĞİŞMEDİ — yalnızca iki kontrat ID'si değişti (upgrade hook olmadığı için redeploy zorunluydu).
+- Yeni `pm_config.json`'ın `dtl_token_address` alanı v2 dtl-token ID'sine güncellendi (pool1/3/4 adresleri aynı kaldı).
+
+## Kontrat ve WASM Bilgileri
+
+### A. `dtl-token` v2
+- **Contract ID:** `CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO`
+- **WASM Hash:** `e919f07caf0013b6210bbde6f87e80aa3bde2b95b8549e9e9b7a1d73861093f1`
+- **WASM Boyutu:** 14,325 bytes
+- **Dışa Aktarılan Semboller (14):** `allowance`, `approve`, `balance`, `burn`, `decimals`, `initialize`, `is_merchant`, `mint`, `name`, `register_merchant`, `symbol`, `total_supply`, `transfer`, `transfer_from`
+- **Upload Transaction:** [`a831544321ac0a8fa8ec2126294217aad123fe6429dfaa6e1e77ccd53890635d`](https://stellar.expert/explorer/testnet/tx/a831544321ac0a8fa8ec2126294217aad123fe6429dfaa6e1e77ccd53890635d)
+- **Deploy Transaction:** [`c62d5ba984faff56401c489b59501952c3e9f173a3182767f8fe1ae1a660e3ff`](https://stellar.expert/explorer/testnet/tx/c62d5ba984faff56401c489b59501952c3e9f173a3182767f8fe1ae1a660e3ff)
+- **Initialize Transaction:** [`1d8cdde586acf67ae1fbd8864c3814019ab58f61b9e40308212708be41e70c7b`](https://stellar.expert/explorer/testnet/tx/1d8cdde586acf67ae1fbd8864c3814019ab58f61b9e40308212708be41e70c7b)
+- **Stellar Expert:** [CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO](https://stellar.expert/explorer/testnet/contract/CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO)
+- **Initialize parametreleri:** admin=`deployer`, name="Dijital Türk Lirası Test", symbol="dTL", decimal=7, pools=`pools.json` (v1 ile AYNI dosya, havuz adresleri değişmedi)
+
+### B. `pool-manager` v2
+- **Contract ID:** `CDR7WMMQLINNIC2PCSWUU27FHUWWLZPHBJU7MQK5EZVOJBIWQA47LQSA`
+- **WASM Hash:** `b9a52dd64fd8af92fa9d0a6455f4b04d09637a9f9a9fa8736db066f4e7610be0`
+- **WASM Boyutu:** 11,158 bytes
+- **Dışa Aktarılan Semboller (4):** `distribute`, `get_config`, `initialize`, `pay_merchant`
+- **Upload Transaction:** [`dd9ccbdbaced16f601fe40bf69e948b07d2d1dc8885e33080cf81489309ef703`](https://stellar.expert/explorer/testnet/tx/dd9ccbdbaced16f601fe40bf69e948b07d2d1dc8885e33080cf81489309ef703)
+- **Deploy Transaction:** [`8494802b77d6ce1376261f5fa0ca2f12f6cd9c97667e22bc1d3796d1956af9c4`](https://stellar.expert/explorer/testnet/tx/8494802b77d6ce1376261f5fa0ca2f12f6cd9c97667e22bc1d3796d1956af9c4)
+- **Initialize Transaction:** [`c1d6f967f1ffa235ef95162b10d56b9d61d13b25a79f2488b73d49402de884c9`](https://stellar.expert/explorer/testnet/tx/c1d6f967f1ffa235ef95162b10d56b9d61d13b25a79f2488b73d49402de884c9)
+- **Stellar Expert:** [CDR7WMMQLINNIC2PCSWUU27FHUWWLZPHBJU7MQK5EZVOJBIWQA47LQSA](https://stellar.expert/explorer/testnet/contract/CDR7WMMQLINNIC2PCSWUU27FHUWWLZPHBJU7MQK5EZVOJBIWQA47LQSA)
+- **`get_config` ile doğrulanan konfigürasyon:**
+  ```json
+  {"dtl_token_address":"CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO","pool1_address":"GDWNZKIREKS2WLZGBGWBBO3JZUEXIXNG4USX5F4AIM2UBD5W4CLXDKEM","pool3_address":"GDIRKWQXXJDNHLVZHTO7USR3FBSTOW7LXEJY7LSML75LSEWJA7EMXJOQ","pool4_address":"GBOOXSBUSUUEWK57OBKQU7WUA7V36DZATXY54ACH2V56537QBHSMV3CQ"}
+  ```
+
+## Gerçek E2E Doğrulama Sonuçları (15 Ağustos 2026)
+
+Tam akış, senaryo, negatif kanıt ve bakiye tabloları için bkz. `HANDOFF_TO_CLAUDE_CODE.md` **Bölüm 10**. Özet tx hash'leri:
+
+| Adım | Tx Hash | Stellar Expert |
+|---|---|---|
+| register_merchant (approve-merchant.mjs) | `f1f835db78582bd45a819a26c1da56cf4cbe65c90e5fc225a0f3e7bbf44d6d6f` | [Link](https://stellar.expert/explorer/testnet/tx/f1f835db78582bd45a819a26c1da56cf4cbe65c90e5fc225a0f3e7bbf44d6d6f) |
+| mint (müşteriye 1 dTL) | `f04aab520abb4a34dd94a762b8f87f505b3d6e56d01067cc2492e8b16951cc94` | [Link](https://stellar.expert/explorer/testnet/tx/f04aab520abb4a34dd94a762b8f87f505b3d6e56d01067cc2492e8b16951cc94) |
+| pay_merchant (gerçek fee-bump, `/transactions/submit`) | `ba2c5df490ceec1dfa7d82253e83887c676c8b2c8523f98978206f6e7b041061` | [Link](https://stellar.expert/explorer/testnet/tx/ba2c5df490ceec1dfa7d82253e83887c676c8b2c8523f98978206f6e7b041061) |
+| negatif kanıt (esnaf gönderemez) | **tx hash YOK** (simülasyon aşamasında reddedildi — bkz. Bölüm 10) | — |
+
+## Orkestrasyon `.env` Güncellemesi
+
+```env
+# v1 (eski, korunan kanıt): CC4ME5GZASQP456TPFEEADRK4NOFVV4KWX5TJGHJBO7SGK34IMIPWTX4 / CBFJOXNUATWPCSONJMQUOFL3QML2VHZCT5A5SOOJ3BSN5BSFAGPOR4WF
+DTL_TOKEN_CONTRACT_ID=CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO
+POOL_MANAGER_CONTRACT_ID=CDR7WMMQLINNIC2PCSWUU27FHUWWLZPHBJU7MQK5EZVOJBIWQA47LQSA
+```
+
+Havuz adresleri ve gizli anahtarlar (`POOL2_SECRET_KEY`, `ISSUER_SECRET_KEY`) v1 ile AYNI kaldı, değiştirilmedi.
