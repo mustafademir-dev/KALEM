@@ -3,18 +3,21 @@ import { Linking, StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import Screen from '../components/Screen.js';
 import Button from '../components/Button.js';
+import GibReceiptCard from '../components/GibReceiptCard.js';
 import { colors, radii, spacing, type, cardShadow } from '../theme/index.js';
 import { useNavigation } from '../navigation/Navigator.js';
 import { getCurrentLedger, findNewPayment } from '../services/merchant-chain.service.js';
+import { getGibDocument, ApiError } from '../services/api.service.js';
 import { formatDtl, shortenMiddle, stellarExpertTxUrl } from '../utils/format.js';
 
 const POLL_INTERVAL_MS = 3000;
 
 export default function EsnafQrScreen({ params }) {
-  const { payload, totalAmount, stellarAddress } = params;
+  const { payload, totalAmount, stellarAddress, session } = params;
   const { navigate, reset } = useNavigation();
 
   const [payment, setPayment] = useState(null); // { from, amount, txHash }
+  const [gibState, setGibState] = useState({ status: 'idle', document: null, error: null });
   const sinceLedgerRef = useRef(null);
   const stoppedRef = useRef(false);
 
@@ -56,6 +59,21 @@ export default function EsnafQrScreen({ params }) {
     navigate('MerchantAmountEntry', { session: params.session ?? null, stellarAddress });
   }, [navigate, params.session, stellarAddress]);
 
+  const handleShowGib = useCallback(async () => {
+    if (!payment?.txHash || !session?.apiKey) return;
+    setGibState({ status: 'loading', document: null, error: null });
+    try {
+      const document = await getGibDocument(payment.txHash, { apiKey: session.apiKey });
+      setGibState({ status: 'loaded', document, error: null });
+    } catch (err) {
+      const message =
+        err instanceof ApiError && err.status === 404
+          ? 'Bu işlem için e-belge henüz üretilmedi — birkaç saniye sonra tekrar deneyin.'
+          : 'e-Belge alınamadı.';
+      setGibState({ status: 'error', document: null, error: message });
+    }
+  }, [payment, session]);
+
   if (payment) {
     return (
       <Screen>
@@ -76,6 +94,27 @@ export default function EsnafQrScreen({ params }) {
               {shortenMiddle(payment.txHash, 8, 8)} ↗
             </Text>
           )}
+
+          {payment.txHash && session?.apiKey && gibState.status !== 'loaded' && (
+            <Button
+              label="e-Belge Görüntüle"
+              variant="secondary"
+              onPress={handleShowGib}
+              loading={gibState.status === 'loading'}
+              style={{ marginTop: spacing.md, minWidth: 220 }}
+            />
+          )}
+          {gibState.status === 'error' && (
+            <Text style={[type.caption, { color: colors.danger, marginTop: spacing.sm, textAlign: 'center' }]}>
+              {gibState.error}
+            </Text>
+          )}
+          {gibState.status === 'loaded' && (
+            <View style={{ marginTop: spacing.md, width: '100%' }}>
+              <GibReceiptCard document={gibState.document} />
+            </View>
+          )}
+
           <Button label="Yeni Ödeme Al" onPress={handleNewPayment} style={{ marginTop: spacing.xl, minWidth: 220 }} />
         </View>
       </Screen>

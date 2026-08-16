@@ -15,11 +15,12 @@ import Button from '../components/Button.js';
 import StatusStep from '../components/StatusStep.js';
 import WebQrScanner from '../components/WebQrScanner.js';
 import BackButton from '../components/BackButton.js';
+import GibReceiptCard from '../components/GibReceiptCard.js';
 import { colors, radii, spacing, type, cardShadow } from '../theme/index.js';
 import { createWallet, loadWallet } from '../services/wallet.service.js';
 import { readDtlBalance, awaitInnerTransactionConfirmation } from '../services/stellar-read.service.js';
 import { createPaymentTransaction } from '../services/transaction.service.js';
-import { submitTransaction, ApiError } from '../services/api.service.js';
+import { submitTransaction, getGibDocument, ApiError } from '../services/api.service.js';
 import { parseQrPayload, getSampleQrPayload, QrPayloadError } from '../utils/qrPayload.js';
 import { formatDtl, shortenMiddle, stellarExpertTxUrl } from '../utils/format.js';
 
@@ -194,6 +195,7 @@ export default function PaymentScreen() {
           result={result}
           qrData={qrData}
           onDone={handleReset}
+          senderAddress={wallet.stellarAddress}
         />
       )}
     </Screen>
@@ -386,13 +388,29 @@ function ProcessingStage({ steps }) {
   );
 }
 
-function ResultStage({ result, qrData, onDone }) {
+function ResultStage({ result, qrData, onDone, senderAddress }) {
   const isSuccess = result?.ok;
+  const [gibState, setGibState] = useState({ status: 'idle', document: null, error: null });
 
   const handleCopyHash = useCallback(async () => {
     if (!result?.txHash) return;
     await Clipboard.setStringAsync(result.txHash);
   }, [result]);
+
+  const handleShowGib = useCallback(async () => {
+    if (!result?.txHash) return;
+    setGibState({ status: 'loading', document: null, error: null });
+    try {
+      const document = await getGibDocument(result.txHash, { senderAddress });
+      setGibState({ status: 'loaded', document, error: null });
+    } catch (err) {
+      const message =
+        err instanceof ApiError && err.status === 404
+          ? 'Bu işlem için e-belge henüz üretilmedi — birkaç saniye sonra tekrar deneyin.'
+          : 'e-Belge alınamadı.';
+      setGibState({ status: 'error', document: null, error: message });
+    }
+  }, [result, senderAddress]);
 
   return (
     <View style={styles.centerFill}>
@@ -435,6 +453,26 @@ function ResultStage({ result, qrData, onDone }) {
               Stellar Expert'te görüntüle ↗
             </Text>
           </Pressable>
+        )}
+
+        {isSuccess && result?.txHash && gibState.status !== 'loaded' && (
+          <Button
+            label="e-Belge Görüntüle"
+            variant="secondary"
+            onPress={handleShowGib}
+            loading={gibState.status === 'loading'}
+            style={{ marginTop: spacing.md, minWidth: 220 }}
+          />
+        )}
+        {gibState.status === 'error' && (
+          <Text style={[type.caption, { color: colors.danger, marginTop: spacing.sm, textAlign: 'center' }]}>
+            {gibState.error}
+          </Text>
+        )}
+        {gibState.status === 'loaded' && (
+          <View style={{ marginTop: spacing.md, width: '100%' }}>
+            <GibReceiptCard document={gibState.document} />
+          </View>
         )}
 
         <Button label="Ana Ekrana Dön" onPress={onDone} style={{ marginTop: spacing.xl, minWidth: 220 }} />

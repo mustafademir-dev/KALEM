@@ -109,3 +109,24 @@ export async function requestFaucetMint({ address, timestamp, signature }) {
     body: { address, timestamp, signature },
   });
 }
+
+/**
+ * Bir işleme ait GİB (e-Belge/ÖKC fiş simülasyonu) belgesini getirir.
+ *
+ * İki çağrı biçimi var (bkz. orchestrator `gib.routes.js`):
+ * - Esnaf: `{ apiKey }` — Bearer ile, yalnızca KENDİ işlemi.
+ * - Müşteri: `{ senderAddress }` — imza gerekmez, yalnızca kendi
+ *   gönderen adresini bilmesi yeterli (gizli bir finansal işlem değil).
+ *
+ * @param {string} txHash
+ * @param {object} [opts]
+ * @param {string} [opts.apiKey] - Esnaf yolu.
+ * @param {string} [opts.senderAddress] - Müşteri yolu.
+ * @returns {Promise<object>} GİB belgesi (ublContent dahil).
+ */
+export async function getGibDocument(txHash, { apiKey, senderAddress } = {}) {
+  const query = senderAddress ? `?senderAddress=${encodeURIComponent(senderAddress)}` : '';
+  return request(`/api/v1/transactions/${encodeURIComponent(txHash)}/gib-document${query}`, {
+    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+  });
+}
