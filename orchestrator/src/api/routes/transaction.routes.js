@@ -11,7 +11,7 @@ import stellarConfig from '../../config/stellar.js';
 import Transaction from '../../models/Transaction.model.js';
 import { wrapAndSubmitFeeBump } from '../../services/fee-bump.service.js';
 import { finalizeIdempotencyKey } from '../../services/idempotency.service.js';
-import { authMiddleware } from '../middleware/auth.middleware.js';
+import { authMiddleware, submitAuthMiddleware } from '../middleware/auth.middleware.js';
 import { validateTransactionSubmit } from '../middleware/validation.middleware.js';
 import { idempotencyMiddleware } from '../middleware/idempotency.middleware.js';
 import logger from '../../utils/logger.js';
@@ -25,12 +25,14 @@ const router = Router();
  * Idempotency-Key header'ı zorunludur.
  *
  * Akış:
- * 1. authMiddleware → kimlik doğrulaması
- * 2. validateTransactionSubmit → gövde doğrulaması
+ * 1. validateTransactionSubmit → gövde doğrulaması
+ * 2. submitAuthMiddleware → kimlik doğrulaması (esnaf Bearer API key YA DA
+ *    müşterinin kendi imzasıyla imzaladığı signedXdr'ın kanıtı — bkz.
+ *    auth.middleware.js'teki submitAuthMiddleware dokümantasyonu)
  * 3. idempotencyMiddleware → mükerrer istek koruması
- * 4. Bu handler → kendi kaydına erişim kontrolü, Transaction kaydı,
- *    fee-bump.service.wrapAndSubmitFeeBump() ile Stellar ağına iletim,
- *    idempotency kaydının sonuçla kapatılması
+ * 4. Bu handler → esnaf yolunda kendi kaydına erişim kontrolü, Transaction
+ *    kaydı, fee-bump.service.wrapAndSubmitFeeBump() ile Stellar ağına
+ *    iletim, idempotency kaydının sonuçla kapatılması
  *
  * Request Body:
  * {
@@ -47,7 +49,11 @@ export async function submitTransactionHandler(req, res) {
   const { signedXdr, merchantId, totalAmount } = req.body;
   const idempotencyKey = req.idempotencyKey;
 
-  if (req.merchantId !== merchantId) {
+  // Esnaf yolu (Bearer API key ile geldi): yalnızca kendi işyeri adına gönderebilir.
+  // Müşteri yolunda (req.merchantId set edilmemiş) bu kontrol atlanır — zincir
+  // zaten pay_merchant içinde merchantId'nin karşılığı olan stellarAddress'in
+  // kayıtlı esnaf olup olmadığını doğrular.
+  if (req.merchantId && req.merchantId !== merchantId) {
     await finalizeIdempotencyKey(idempotencyKey, 'failed', { error: 'FORBIDDEN' }).catch((err) => {
       logger.error(`[Transaction] finalize (forbidden) hatası: ${err.message}`);
     });
@@ -145,7 +151,7 @@ export async function getTransactionStatus(req, res) {
   }
 }
 
-router.post('/submit', authMiddleware, validateTransactionSubmit, idempotencyMiddleware, submitTransactionHandler);
+router.post('/submit', validateTransactionSubmit, submitAuthMiddleware, idempotencyMiddleware, submitTransactionHandler);
 router.get('/:txHash', authMiddleware, getTransactionStatus);
 
 export default router;

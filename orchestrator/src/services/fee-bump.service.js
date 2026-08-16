@@ -104,6 +104,31 @@ export function calculateFeeBumpBaseFee(innerTx) {
 }
 
 /**
+ * İç zarfın Ed25519 imzasının gerçekten `innerTx.source` hesabına ait
+ * olduğunu yerel olarak (ağa gitmeden) doğrular.
+ *
+ * Bu fonksiyon iki bağımsız amaçla kullanılır: (1) burada, Havuz 2'nin
+ * XLM'ini harcamadan önceki güvenlik sınırı doğrulamasının bir parçası
+ * olarak; (2) `auth.middleware.js`'teki `submitAuthMiddleware`'de, müşteri
+ * tarafından başlatılan (esnaf Bearer API key'i OLMAYAN) `/transactions/submit`
+ * çağrıları için REST auth kanıtı olarak — müşterinin işlemi kendi
+ * anahtarıyla imzalamış olması, aynı zamanda "bu isteği yapan taraf gerçekten
+ * bu Stellar adresinin sahibidir" kanıtı olarak yeniden kullanılır.
+ *
+ * @param {StellarSdk.Transaction} innerTx
+ * @returns {boolean}
+ */
+export function verifySignedBySource(innerTx) {
+  const source = innerTx.source;
+  if (!StellarSdk.StrKey.isValidEd25519PublicKey(source)) {
+    return false;
+  }
+  const txHash = innerTx.hash();
+  const sourceKeypair = StellarSdk.Keypair.fromPublicKey(source);
+  return (innerTx.signatures || []).some((sig) => sourceKeypair.verify(txHash, sig.signature()));
+}
+
+/**
  * İstemciden gelen iç zarfı güvenlik sınırı olarak doğrular.
  *
  * Havuz 2'nin XLM'i bu fonksiyondan sonra harcanır; buradaki her kontrol
@@ -173,10 +198,7 @@ export function assertValidInnerTransaction(innerTx) {
     // 7. İmzanın gerçekten kaynak hesaba ait olduğunun YEREL doğrulaması
     //    (ağa gitmeden çöp işlemleri eler)
     if (StellarSdk.StrKey.isValidEd25519PublicKey(source)) {
-      const txHash = innerTx.hash();
-      const sourceKeypair = StellarSdk.Keypair.fromPublicKey(source);
-      const signedBySource = innerTx.signatures.some((sig) => sourceKeypair.verify(txHash, sig.signature()));
-      if (!signedBySource) {
+      if (!verifySignedBySource(innerTx)) {
         throw new Error('İç zarf, kaynak hesap tarafından imzalanmamış.');
       }
     }

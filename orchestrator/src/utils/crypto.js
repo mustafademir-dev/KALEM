@@ -84,3 +84,19 @@ export function hashApiKey(apiKey) {
 export function buildMerchantOwnershipChallenge(taxId, stellarAddress) {
   return `KALEM-MERCHANT-REGISTER:${taxId}:${stellarAddress}`;
 }
+
+/**
+ * Demo musluk (faucet) mint isteği sırasında adres sahipliğini kanıtlamak
+ * için imzalanacak deterministik mesajı üretir (bkz. faucet.routes.js).
+ *
+ * `timestamp` (epoch ms) mesaja dahil edilir ki aynı imza sonsuza kadar
+ * yeniden oynatılamasın — sunucu tarafı yalnızca son birkaç dakika
+ * içindeki timestamp'leri kabul eder (bkz. `mintFaucetHandler`).
+ *
+ * @param {string} address - Mint isteğinde bulunan adres (G...).
+ * @param {number} timestamp - İstek anının epoch ms değeri.
+ * @returns {string}
+ */
+export function buildFaucetMintChallenge(address, timestamp) {
+  return `KALEM-FAUCET-MINT:${address}:${timestamp}`;
+}

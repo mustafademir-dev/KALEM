@@ -58,6 +58,24 @@ const config = {
   // --- Şifreleme ---
   aesEncryptionKey: requireEnv('AES_ENCRYPTION_KEY', ''),
 
+  // --- Demo Musluk (Faucet) — YALNIZCA testnet, bkz. faucet.routes.js ---
+  faucet: {
+    // Her istekte mint edilecek sabit tutar (stroop). Client TUTAR BELİRLEYEMEZ —
+    // bilinçli bir tasarım kararı, isteğe bağlı miktar demo musluğunu
+    // sınırsız bir para basma ucuna çevirirdi.
+    mintAmountStroops: requireEnv('FAUCET_MINT_AMOUNT_STROOPS', '100000000'), // 10 dTL
+  },
+
+  // --- CORS ---
+  // Geliştirmede herhangi bir localhost portu (Expo web dev sunucusu her
+  // başlatmada farklı porta düşebilir) daima izinlidir — bkz. index.js.
+  // Prod/demo sunucu adresi netleşince BURAYA (virgülle ayrılmış, tam
+  // origin listesi) eklenmelidir (bkz. ARCHITECTURE_DECISIONS.md §6.6).
+  corsAllowedOrigins: requireEnv('CORS_ALLOWED_ORIGINS', '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+
   // --- Havuz 2 Besleme ---
   pool2XlmThreshold: parseFloat(requireEnv('POOL2_XLM_THRESHOLD', '10')),
 

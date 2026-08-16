@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "KALEM",
+    "slug": "kalem-client",
+    "scheme": "kalem",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F7F8FA",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Esnaf QR kodunu okutmak için kameraya erişim gereklidir."
+      }
+    },
+    "android": {
+      "package": "com.kalem.client",
+      "permissions": [
+        "CAMERA"
+      ]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Esnaf QR kodunu okutmak için kameraya erişim gereklidir."
+        }
+      ],
+      "expo-font",
+      "expo-asset"
+    ]
+  }
+}

@@ -7,6 +7,7 @@
  */
 
 import express from 'express';
+import cors from 'cors';
 import mongoose from 'mongoose';
 import config from './config/index.js';
 import logger from './utils/logger.js';
@@ -15,6 +16,7 @@ import logger from './utils/logger.js';
 import transactionRoutes from './api/routes/transaction.routes.js';
 import merchantRoutes from './api/routes/merchant.routes.js';
 import healthRoutes from './api/routes/health.routes.js';
+import faucetRoutes from './api/routes/faucet.routes.js';
 
 // --- Servisler ---
 import { startSSEListener } from './services/sse-listener.service.js';
@@ -25,6 +27,27 @@ const app = express();
 // ---------------------------------------------------------------------------
 // Middleware
 // ---------------------------------------------------------------------------
+
+/**
+ * CORS: geliştirmede herhangi bir `localhost`/`127.0.0.1` portu (Expo web dev
+ * sunucusu her başlatmada farklı porta düşebilir) her zaman izinlidir; ayrıca
+ * `config.corsAllowedOrigins`'te (env `CORS_ALLOWED_ORIGINS`) listelenen sabit
+ * origin'lere de izin verilir — prod/demo sunucu adresi netleşince oraya
+ * eklenecektir (bkz. docs/ARCHITECTURE_DECISIONS.md §6.6).
+ */
+const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || LOCALHOST_ORIGIN_RE.test(origin) || config.corsAllowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS: izin verilmeyen origin: ${origin}`));
+    },
+  })
+);
+
 app.use(express.json());
 
 // ---------------------------------------------------------------------------
@@ -33,6 +56,7 @@ app.use(express.json());
 app.use('/api/v1/health', healthRoutes);
 app.use('/api/v1/transactions', transactionRoutes);
 app.use('/api/v1/merchants', merchantRoutes);
+app.use('/api/v1/faucet', faucetRoutes);
 
 // ---------------------------------------------------------------------------
 // MongoDB Bağlantısı ve Sunucu Başlatma

@@ -7,8 +7,11 @@
  * veritabanında hiçbir yerde saklanmaz (bkz. utils/crypto.js, Merchant.model.js).
  */
 
+import * as StellarSdk from '@stellar/stellar-sdk';
 import Merchant from '../../models/Merchant.model.js';
 import { hashApiKey } from '../../utils/crypto.js';
+import { verifySignedBySource } from '../../services/fee-bump.service.js';
+import stellarConfig from '../../config/stellar.js';
 import logger from '../../utils/logger.js';
 
 /**
@@ -44,5 +47,59 @@ export async function authMiddleware(req, res, next) {
   } catch (error) {
     logger.error(`[Auth] authMiddleware hatası: ${error.message}`);
     res.status(500).json({ error: 'INTERNAL_ERROR', message: 'Kimlik doğrulama sırasında hata oluştu.' });
+  }
+}
+
+/**
+ * `POST /transactions/submit` için iki yollu kimlik doğrulama.
+ *
+ * v2 — Müşteri→Esnaf Ödeme: bu uca artık YALNIZCA esnaflar değil, `pay_merchant`
+ * işlemini kendi Ed25519 anahtarıyla imzalamış müşteriler de doğrudan
+ * çağrı yapabilir. İki geçerli yol vardır:
+ *
+ * 1. `Authorization: Bearer <apiKey>` başlığı VARSA → mevcut esnaf yolu
+ *    (`authMiddleware`'e aynen devredilir, davranış değişmez).
+ * 2. YOKSA → müşteri yolu: `req.body.signedXdr` parse edilir ve
+ *    `verifySignedBySource()` ile o zarfın gerçekten kendi `source`
+ *    hesabı tarafından imzalandığı doğrulanır (merchant kaydındaki
+ *    `buildMerchantOwnershipChallenge` + `Keypair.verify()` deseniyle
+ *    AYNI kriptografik ilke — burada ayrı bir challenge mesajına gerek
+ *    yok, çünkü müşterinin zaten imzaladığı işlem zarfı bu kanıtı taşıyor).
+ *    Başarılıysa `req.senderAddress` set edilir, `req.merchantId` set
+ *    EDİLMEZ (bu istek bir esnaf kimliği taşımıyor).
+ *
+ * Bu middleware, `validateTransactionSubmit`'ten SONRA çalışacak şekilde
+ * route'a bağlanmalıdır (`signedXdr`'ın en azından bir string olduğu
+ * zaten doğrulanmış olmalı).
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
+ */
+export async function submitAuthMiddleware(req, res, next) {
+  const header = req.get('Authorization') || '';
+  if (header.startsWith('Bearer ')) {
+    return authMiddleware(req, res, next);
+  }
+
+  try {
+    const { signedXdr } = req.body || {};
+    const innerTx = StellarSdk.TransactionBuilder.fromXDR(signedXdr, stellarConfig.networkPassphrase);
+
+    if (innerTx instanceof StellarSdk.FeeBumpTransaction) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'signedXdr bir Fee-Bump zarfı olamaz.' });
+    }
+    if (!verifySignedBySource(innerTx)) {
+      return res.status(401).json({
+        error: 'UNAUTHORIZED',
+        message: 'signedXdr, kendi kaynak hesabı tarafından imzalanmamış — ne esnaf API anahtarı ne de geçerli bir müşteri imzası bulundu.',
+      });
+    }
+
+    req.senderAddress = innerTx.source;
+    next();
+  } catch (error) {
+    logger.error(`[Auth] submitAuthMiddleware hatası: ${error.message}`);
+    res.status(400).json({ error: 'VALIDATION_ERROR', message: 'signedXdr ayrıştırılamadı.' });
   }
 }
