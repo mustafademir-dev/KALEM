@@ -24,7 +24,13 @@ export default function EsnafLoginScreen() {
       if (session) {
         try {
           const result = await getMerchantBalance(session.merchantId, session.apiKey);
-          replace('MerchantDashboard', { session, balance: result.balance, stellarAddress: result.stellarAddress });
+          replace('MerchantDashboard', {
+            session,
+            balance: result.balance,
+            stellarAddress: result.stellarAddress,
+            kycStatus: result.kycStatus,
+            onChainRegistered: result.onChainRegistered,
+          });
           return;
         } catch {
           // Kayıtlı oturum artık geçersiz — normal giriş formunu göster.
@@ -49,7 +55,13 @@ export default function EsnafLoginScreen() {
         businessName: businessName.trim() || 'İşletmem',
       };
       await saveMerchantSession(session);
-      navigate('MerchantDashboard', { session, balance: result.balance, stellarAddress: result.stellarAddress });
+      navigate('MerchantDashboard', {
+        session,
+        balance: result.balance,
+        stellarAddress: result.stellarAddress,
+        kycStatus: result.kycStatus,
+        onChainRegistered: result.onChainRegistered,
+      });
     } catch (err) {
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         setError('API anahtarı veya işyeri ID hatalı.');

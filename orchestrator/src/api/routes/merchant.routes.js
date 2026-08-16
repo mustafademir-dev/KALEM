@@ -133,6 +133,8 @@ export async function getMerchantBalance(req, res) {
       stellarAddress: merchant.stellarAddress,
       balance,
       currency: 'dTL',
+      kycStatus: merchant.kycStatus,
+      onChainRegistered: merchant.onChainRegistered,
     });
   } catch (error) {
     logger.error(`[Merchant] getMerchantBalance hatası: ${error.message}`);

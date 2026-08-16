@@ -191,7 +191,12 @@ describe('Merchant Routes Unit Tests', () => {
       const stellarAddress = StellarSdk.Keypair.random().publicKey();
       config.contracts.dtlTokenId = 'CC4ME5GZASQP456TPFEEADRK4NOFVV4KWX5TJGHJBO7SGK34IMIPWTX4';
 
-      Merchant.findById = async () => ({ _id: { toString: () => id }, stellarAddress });
+      Merchant.findById = async () => ({
+        _id: { toString: () => id },
+        stellarAddress,
+        kycStatus: 'approved',
+        onChainRegistered: true,
+      });
       stellarConfig.sorobanServer = {
         simulateTransaction: async () => ({
           transactionData: {},
@@ -209,6 +214,8 @@ describe('Merchant Routes Unit Tests', () => {
         assert.equal(res.body.stellarAddress, stellarAddress);
         assert.equal(res.body.balance, '95600000');
         assert.equal(res.body.currency, 'dTL');
+        assert.equal(res.body.kycStatus, 'approved');
+        assert.equal(res.body.onChainRegistered, true);
       } finally {
         Merchant.findById = originalFindById;
         stellarConfig.sorobanServer = originalSoroban;

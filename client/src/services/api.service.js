@@ -107,7 +107,7 @@ export async function registerMerchant({ businessName, taxId, stellarAddress, si
  *
  * @param {string} merchantId - Üye işyeri ID.
  * @param {string} apiKey - Esnafın API anahtarı.
- * @returns {Promise<{merchantId: string, stellarAddress: string, balance: string, currency: string}>}
+ * @returns {Promise<{merchantId: string, stellarAddress: string, balance: string, currency: string, kycStatus: string, onChainRegistered: boolean}>}
  */
 export async function getMerchantBalance(merchantId, apiKey) {
   return request(`/api/v1/merchants/${merchantId}/balance`, {

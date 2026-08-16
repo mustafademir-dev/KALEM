@@ -11,6 +11,7 @@ import { formatDtl, shortenMiddle } from '../utils/format.js';
 export default function EsnafDashboardScreen({ params }) {
   const { session, stellarAddress } = params;
   const [balance, setBalance] = useState(params.balance);
+  const [onChainRegistered, setOnChainRegistered] = useState(params.onChainRegistered);
   const [refreshing, setRefreshing] = useState(false);
   const { navigate, reset } = useNavigation();
 
@@ -19,6 +20,7 @@ export default function EsnafDashboardScreen({ params }) {
     try {
       const result = await getMerchantBalance(session.merchantId, session.apiKey);
       setBalance(result.balance);
+      setOnChainRegistered(result.onChainRegistered);
     } catch {
       // Sessizce yok say — ekranda son bilinen bakiye görünmeye devam eder.
     } finally {
@@ -37,6 +39,21 @@ export default function EsnafDashboardScreen({ params }) {
         <View>
           <Text style={[type.caption, { color: colors.textMuted }]}>{shortenMiddle(stellarAddress, 6, 6)}</Text>
           <Text style={[type.h1, { color: colors.textPrimary }]}>{session.businessName}</Text>
+          <View
+            style={[
+              styles.badge,
+              { backgroundColor: onChainRegistered ? colors.successBg : colors.warningBg },
+            ]}
+          >
+            <Text
+              style={[
+                type.captionMedium,
+                { color: onChainRegistered ? colors.success : colors.warning },
+              ]}
+            >
+              {onChainRegistered ? 'Onaylı' : 'Beklemede'}
+            </Text>
+          </View>
         </View>
         <Pressable onPress={handleLogout}>
           <Text style={[type.captionMedium, { color: colors.textMuted }]}>Çıkış</Text>
@@ -75,6 +92,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     padding: spacing.lg,
+  },
+  badge: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.sm,
   },
   balanceCard: {
     marginHorizontal: spacing.lg,
