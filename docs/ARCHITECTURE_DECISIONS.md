@@ -378,3 +378,33 @@ Event log (newest first):
 
 **Doğrulama script'i** (`orchestrator/tmp-verify-paymerchant.mjs`, geçiciydi) çalıştırma sonrası **silinmiştir**.
 
+---
+
+## 8. Devam Noktası (16 Ağustos 2026 — proje bu tarihte askıya alındı)
+
+> Bu bölüm, projenin belirsiz bir süre (gün/hafta) askıya alınmadan hemen önceki durumunu özetler; bir sonraki oturumun sıfırdan bağlam toplamadan devam edebilmesi içindir.
+
+### Tamamlanan katmanlar (hepsi gerçek testnet'te doğrulandı)
+
+- **Kontratlar v1 + v2** (`contracts/`): `dtl-token` ve `pool-manager`, 38/38 Rust birim testi PASS, testnet'e deploy edildi. v2 ile müşteri→esnaf gerçek `pay_merchant()` ödemesi eklendi (§7); esnaf-gönderemez guard'ı gerçek ağda negatif kanıtla doğrulandı (§7.5).
+- **`orchestrator/`**: Kalıcı MongoDB Atlas bağlantısı (§6.1), CORS (§6.6), fee-bump ile gerçek işlem gönderimi + idempotency, SSE dinleyicisi ile onay yakalama, GİB e-Belge simülasyonu + görüntüleme ucu, esnaf kaydı (adres sahipliği imzası + ayrı admin onay script'i `approve-merchant.mjs`), demo musluk (`/faucet/mint`), balance ucunda `kycStatus`/`onChainRegistered`. 133/133 test PASS.
+- **`client/` (Expo)**: Müşteri akışı (bakiye yükleme/Friendbot+mint, QR okutup ödeme, GİB fişi görüntüleme) ve esnaf akışı (kayıt, giriş, tutar girip QR üretme, canlı ödeme tespiti, bakiye/rozet, GİB fişi görüntüleme) — tümü gerçek tarayıcı testleriyle ve gerçek testnet tx'leriyle doğrulandı.
+
+### Sıradaki adımlar (bu sırayla)
+
+1. **Backend'i bulut sunucuya taşıma** (Render/Railway) — şu an yalnızca yerelde (`localhost:3000`) çalışıyor; client'ın `ORCHESTRATOR_BASE_URL`'i ve orchestrator'ın `CORS_ALLOWED_ORIGINS`'i gerçek dağıtım adresine göre güncellenmeli (bkz. §6.6 son cümlesi).
+2. **Rate limiting eklenmesi** — `/transactions/submit` ve faucet (`/faucet/mint`) uçları için; kapsam ve gerekçe §6.2'de ayrıntılı yazılıdır, henüz kod YAZILMADI.
+3. **Uçtan uca gerçek prova** — bulut host + rate limit sonrası, müşteri ve esnaf cihazlarıyla (veya iki ayrı tarayıcı sekmesiyle) tam senaryo baştan sona.
+4. **Sunum senaryosu hazırlığı** — TEKNOFEST canlı sunumu için adım adım demo akışı, `DEMO_MODE` (§5.2) ve faucet tutarlarının sunuma uygunluğu gözden geçirilmeli.
+
+### Bilinçli olarak yapılmayanlar — §6 gözden geçirmesi (16 Ağustos 2026 itibarıyla hepsi hâlâ geçerli)
+
+- **§6.1 Kalıcı MongoDB** — ✅ TAMAMLANDI, geçerliliğini koruyor.
+- **§6.2 Rate limiting** — 🔴 hâlâ YAPILMADI, en yüksek öncelik (bkz. yukarıdaki "Sıradaki adımlar" #2).
+- **§6.3 `.env` operasyonel süreci** — hâlâ netleşmedi (kim/hangi kanaldan secret sağlayacak, tanımsız).
+- **§6.4 SSE kalıcı cursor/reconciliation yok** — hâlâ yapılmadı; sunucu restart'ında kaçırılan onaylar kalıcı olarak kaybolabilir.
+- **§6.5 Web'de şifrelenmemiş müşteri anahtarı** — hâlâ değişmedi; testnet/demo kapsamı için kabul edilebilir olarak işaretli kalıyor.
+- **§6.6 CORS** — ✅ TAMAMLANDI, geçerliliğini koruyor.
+- **§6.7 Faucet** — ✅ TAMAMLANDI (uygulanmış durumda); yalnızca rate-limit boşluğu §6.2 kapsamında bekliyor.
+- **İşlem Geçmişi (esnaf) sayfalama/detay eksikleri** ve **tek cihaz/oturum sınırlaması** — kullanıcı talimatıyla bu iş paketinde kapsam DIŞI bırakıldı, hâlâ eksik, demo için gerekli görülmedi.
+
