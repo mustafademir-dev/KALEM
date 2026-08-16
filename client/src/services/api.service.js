@@ -77,6 +77,32 @@ export async function submitTransaction({
 }
 
 /**
+ * Yeni bir üye işyeri kaydı oluşturur. `signature`, `stellarAddress`'in
+ * özel anahtarıyla `buildMerchantOwnershipChallenge(taxId, stellarAddress)`
+ * mesajının imzalanmasıyla üretilir (bkz. utils/merchantChallenge.js).
+ *
+ * DİKKAT: Bu, esnafı YALNIZCA off-chain kaydeder (`ownershipVerified:true`,
+ * `kycStatus:'pending'`). On-chain kayıt (`register_merchant()`), ayrı ve
+ * admin-onaylı bir CLI script'iyle (`approve-merchant.mjs`) yapılır — bu
+ * uygulamanın KAPSAMI DIŞINDADIR, arka planda ayrıca gerçekleşir.
+ *
+ * @param {object} params
+ * @param {string} params.businessName
+ * @param {string} params.taxId
+ * @param {string} params.stellarAddress
+ * @param {string} params.signature - base64.
+ * @param {string} [params.email]
+ * @param {string} [params.phone]
+ * @returns {Promise<{merchantId: string, businessName: string, kycStatus: string, apiKey: string}>}
+ */
+export async function registerMerchant({ businessName, taxId, stellarAddress, signature, email, phone }) {
+  return request('/api/v1/merchants/register', {
+    method: 'POST',
+    body: { businessName, taxId, stellarAddress, signature, email, phone },
+  });
+}
+
+/**
  * Üye işyerinin dTL bakiyesini sorgular (esnaf tarafı — kendi API anahtarıyla).
  *
  * @param {string} merchantId - Üye işyeri ID.

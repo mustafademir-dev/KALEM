@@ -18,6 +18,7 @@ import CustomerDashboardScreen from './screens/CustomerDashboardScreen.js';
 import CustomerTopUpScreen from './screens/CustomerTopUpScreen.js';
 import PaymentScreen from './screens/PaymentScreen.js';
 import EsnafLoginScreen from './screens/EsnafLoginScreen.js';
+import EsnafRegisterScreen from './screens/EsnafRegisterScreen.js';
 import EsnafDashboardScreen from './screens/EsnafDashboardScreen.js';
 import EsnafAmountEntryScreen from './screens/EsnafAmountEntryScreen.js';
 import EsnafQrScreen from './screens/EsnafQrScreen.js';
@@ -29,6 +30,7 @@ const SCREENS = {
   CustomerTopUp: CustomerTopUpScreen,
   CustomerPayment: PaymentScreen,
   MerchantLogin: EsnafLoginScreen,
+  MerchantRegister: EsnafRegisterScreen,
   MerchantDashboard: EsnafDashboardScreen,
   MerchantAmountEntry: EsnafAmountEntryScreen,
   MerchantQr: EsnafQrScreen,

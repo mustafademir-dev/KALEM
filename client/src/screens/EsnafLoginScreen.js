@@ -115,6 +115,13 @@ export default function EsnafLoginScreen() {
         ) : null}
 
         <Button label="Giriş Yap" onPress={handleLogin} loading={loading} />
+
+        <Text
+          style={[type.captionMedium, { color: colors.accent, textAlign: 'center', marginTop: spacing.lg }]}
+          onPress={() => navigate('MerchantRegister')}
+        >
+          Hesabın yok mu? Kayıt Ol
+        </Text>
       </ScrollView>
     </Screen>
   );
