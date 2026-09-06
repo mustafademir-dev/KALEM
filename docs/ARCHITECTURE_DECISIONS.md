@@ -1,6 +1,8 @@
 # KALEM — Mimari Kararlar ve Derleme Dokümantasyonu (ARCHITECTURE_DECISIONS.md)
 
 > Bu belge, KALEM projesinin mimari kararlarını, derleme ortamını ve doğrulanmış test/WASM sonuçlarını içerir.
+>
+> **Sistemin hangi kısmının gerçek, hangi kısmının simülasyon olduğunu arıyorsanız:** bkz. [`GERCEK_VS_SIMULASYON.md`](GERCEK_VS_SIMULASYON.md) — bu belgedeki §4, §5, §6.7 ve §7.5 bulgularını tek yerde, canlı zincir doğrulamasıyla birlikte özetler.
 
 ---
 

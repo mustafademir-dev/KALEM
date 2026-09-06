@@ -16,6 +16,10 @@ kalem/
 └── docs/            # Proje dokümantasyonu
 ```
 
+## Neler Gerçek, Neler Simülasyon
+
+Sistemin ödeme çekirdeği gerçek Stellar testnet üzerinde çalışır ve canlı zincirden doğrulanabilir; dış dünyayla temas eden noktalar (PSP tahsilatı, GİB, KYC) bilinçli olarak simüledir. Ayrıntılı ve kanıtlı ayrım: [`docs/GERCEK_VS_SIMULASYON.md`](docs/GERCEK_VS_SIMULASYON.md)
+
 ## Katmanlı Mimari
 
 | Katman | Teknoloji | Görev |
