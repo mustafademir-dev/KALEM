@@ -15,6 +15,7 @@ import { readContractBalance } from '../../services/stellar-tx.service.js';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { validateMerchantRegister } from '../middleware/validation.middleware.js';
 import logger from '../../utils/logger.js';
+import { merchantRegisterRateLimiter } from '../middleware/rate-limit.middleware.js';
 
 const router = Router();
 
@@ -142,7 +143,7 @@ export async function getMerchantBalance(req, res) {
   }
 }
 
-router.post('/register', validateMerchantRegister, registerMerchant);
+router.post('/register', merchantRegisterRateLimiter, validateMerchantRegister, registerMerchant);
 router.get('/:id/balance', authMiddleware, getMerchantBalance);
 
 export default router;

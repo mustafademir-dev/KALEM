@@ -63,7 +63,7 @@ MongoDB'deki bir bayrak değil, kontrat storage'ından okunan gerçek zincir dur
 
 ### 1.5. Test durumu
 
-`orchestrator/` test paketi bu doğrulama sırasında yeniden çalıştırıldı: **133/133 PASS**. Kontrat tarafındaki Rust birim testleri için bkz. `ARCHITECTURE_DECISIONS.md` §3.B ve §8 — bunlar bu doğrulama oturumunda yeniden çalıştırılmamıştır (WSL2 derleme ortamı gerektirir).
+`orchestrator/` test paketi bu doğrulama sırasında yeniden çalıştırıldı: **133/133 PASS** (6 Eylül 2026'da rate limiting testleriyle birlikte **141/141**, bkz. `ARCHITECTURE_DECISIONS.md` §6.2.1). Kontrat tarafındaki Rust birim testleri için bkz. `ARCHITECTURE_DECISIONS.md` §3.B ve §8 — bunlar bu doğrulama oturumunda yeniden çalıştırılmamıştır (WSL2 derleme ortamı gerektirir).
 
 ---
 

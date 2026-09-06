@@ -14,6 +14,10 @@ import { finalizeIdempotencyKey } from '../../services/idempotency.service.js';
 import { authMiddleware, submitAuthMiddleware } from '../middleware/auth.middleware.js';
 import { validateTransactionSubmit } from '../middleware/validation.middleware.js';
 import { idempotencyMiddleware } from '../middleware/idempotency.middleware.js';
+import {
+  submitIpRateLimiter,
+  submitIdentityRateLimiter,
+} from '../middleware/rate-limit.middleware.js';
 import logger from '../../utils/logger.js';
 
 const router = Router();
@@ -151,7 +155,17 @@ export async function getTransactionStatus(req, res) {
   }
 }
 
-router.post('/submit', validateTransactionSubmit, submitAuthMiddleware, idempotencyMiddleware, submitTransactionHandler);
+// Zincir sırası KRİTİK (bkz. rate-limit.middleware.js dosya başı):
+// IP limiti pozisyon 0'da (parse/DB yok) → kimlik limiti ilk DB yazmasından ÖNCE.
+router.post(
+  '/submit',
+  submitIpRateLimiter,
+  validateTransactionSubmit,
+  submitAuthMiddleware,
+  submitIdentityRateLimiter,
+  idempotencyMiddleware,
+  submitTransactionHandler
+);
 router.get('/:txHash', authMiddleware, getTransactionStatus);
 
 export default router;

@@ -218,15 +218,75 @@ Sistemin Madde 3/5 E2E doğrulamaları `mongodb-memory-server` ile yapılmışt�
 - Gerçek bir üye işyeri kaydı (`POST /merchants/register`) çalışan sunucu üzerinden oluşturuldu; **tamamen bağımsız, yeni bir mongoose bağlantısıyla** (aynı process'in önbelleği değil) sorgulanıp kaydın gerçekten Atlas'ta kalıcı olduğu doğrulandı, ardından test kaydı temizlendi.
 - **Not:** `MONGODB_URI`'de veritabanı adı belirtilmediği için bağlantı varsayılan `test` veritabanına düşüyor (`mongoose.connection.name === 'test'`) — işlevsel bir sorun değildir ama istenirse URI'nin sonuna `/kalem` eklenerek netleştirilebilir; bu operasyonel bir tercih olduğu için burada yalnızca not düşülmüştür, otomatik değiştirilmemiştir.
 
-### 6.2. Rate Limiting (İstek Sıklığı Sınırı) Yok — 🔴 DEMO ÖNCESİ MUTLAKA YAPILMALI
+### 6.2. Rate Limiting (İstek Sıklığı Sınırı) — ~~🔴 DEMO ÖNCESİ MUTLAKA YAPILMALI~~ ✅ TAMAMLANDI (6 Eylül 2026)
 
 **Öncelik yükseltildi (15 Ağustos 2026, client/ iş paketi sırasında):** `POST /transactions/submit`'in kimlik doğrulaması artık iki yolludur (bkz. §7'nin devamı / `auth.middleware.js` → `submitAuthMiddleware`) — `Authorization: Bearer <apiKey>` YOKSA istek, yalnızca `signedXdr`'ın kendi kaynak hesabı tarafından imzalandığının yerel doğrulamasıyla (`verifySignedBySource()`) kabul edilir. Bu değişiklik **doğru ve gerekliydi** (müşterinin esnafın gizli API anahtarına ihtiyaç duymadan kendi imzasıyla ödeme gönderebilmesi için tasarımın kendisi bunu gerektiriyordu), ancak koruma çemberini daralttı: eskiden bu uca yalnızca **kayıtlı bir esnaf** (KYC/KYB süreciyle `POST /merchants/register` üzerinden oluşturulmuş, kısıtlı sayıda hesap) çağrı yapabilirken, artık **geçerli, bedava üretilebilen herhangi bir Ed25519 anahtar çifti** (`StellarSdk.Keypair.random()`, kayıt/izin gerektirmez) bu uca istediği sıklıkta istek gönderebilir. `pay_merchant` çağrısı esnaf olmayan (kayıtsız) bir `from` için zaten `simulateInnerTransaction` aşamasında zincirde başarısız olur (esnaf `merchant` parametresi geçerli değilse) — **ama bu başarısızlık Havuz 2 ücreti harcanmadan ÖNCE gerçekleşmez**: `assertValidInnerTransaction` (senkron, ücretsiz) geçtikten SONRA çalışan `simulateInnerTransaction` bir Soroban RPC çağrısıdır ve bunun kendisi de ölçeklenebilir bir kaynak tüketimidir (RPC/Horizon üzerinde), sıklık sınırı olmadan sistemi DoS'a açık bırakır.
 
 Mevcut kısmi korumalar (değişmedi): işlem başına mutlak ücret tavanı (`maxTotalFeeStroops`), kontrat beyaz listesi (`allowedContractIds`), iç zarf başına tek operasyon sınırı (`maxInnerOperations=1`), timebounds zorunluluğu. Bunların hiçbiri istek **sıklığını** sınırlamaz — ve artık bu sınırlamanın yokluğu, "kısıtlı esnaf havuzu" varsayımına değil, "kimliksiz, bedava üretilebilen anahtarlar" gerçeğine karşı savunmasız.
 
-**Demo öncesi minimum:** `/transactions/submit`'e IP-bazlı ve/veya `signedXdr` kaynak-adresi bazlı bir `express-rate-limit` (örn. dakikada N istek) eklenmelidir — bu, mevcut `assertValidInnerTransaction`/`idempotencyMiddleware` zincirinin EN BAŞINA girmeli (Soroban RPC'ye hiç gitmeden reddetmek için). **Bu henüz yapılmamıştır.**
+**Demo öncesi minimum:** `/transactions/submit`'e IP-bazlı ve/veya `signedXdr` kaynak-adresi bazlı bir `express-rate-limit` (örn. dakikada N istek) eklenmelidir — bu, mevcut `assertValidInnerTransaction`/`idempotencyMiddleware` zincirinin EN BAŞINA girmeli (Soroban RPC'ye hiç gitmeden reddetmek için). **Bu artık YAPILMIŞTIR — uygulama ayrıntıları için aşağıdaki §6.2.1'e bakınız.**
 
-**Faucet notu (`POST /api/v1/faucet/mint`, bkz. §6.7):** Bu uçta **günlük ve/veya adres başına bir istek-sıklığı sınırı yoktur** — tek koruma, çağıranın adres sahipliğini kanıtlayan imza + 5 dakikalık `timestamp` penceresidir (yalnızca replay'i engeller, sıklığı sınırlamaz). Sahibi olunan herhangi bir adres, süresi dolmuş her `timestamp` için yeni bir imza üreterek ucu istediği sıklıkta çağırabilir ve her seferinde sabit tutarda (`FAUCET_MINT_AMOUNT_STROOPS`) gerçek bir `ISSUER_SECRET_KEY` imzalı mint işlemi tetikleyebilir. Bu, **bilinçli bir PoC kararıdır**: testnet demo para biriminin mali bir karşılığı yoktur (mainnet karşılığı da yoktur, bkz. §6.7), dolayısıyla demo/PoC kapsamında kabul edilebilir — ama Soroban RPC/Horizon üzerinde aynı sınıf kaynak-tüketimi (DoS) riskini taşır. **Demo öncesi bulut host'a taşırken**, yukarıdaki `/transactions/submit` için önerilen genel rate-limiting işiyle (bkz. bir önceki paragraf) BİRLİKTE ele alınmalıdır — ayrı bir iş kalemi değil, aynı `express-rate-limit` çalışmasının bir parçası olarak düşünülmelidir. **Bu henüz yapılmamıştır.**
+**Faucet notu (`POST /api/v1/faucet/mint`, bkz. §6.7):** Bu uçta **günlük ve/veya adres başına bir istek-sıklığı sınırı yoktur** — tek koruma, çağıranın adres sahipliğini kanıtlayan imza + 5 dakikalık `timestamp` penceresidir (yalnızca replay'i engeller, sıklığı sınırlamaz). Sahibi olunan herhangi bir adres, süresi dolmuş her `timestamp` için yeni bir imza üreterek ucu istediği sıklıkta çağırabilir ve her seferinde sabit tutarda (`FAUCET_MINT_AMOUNT_STROOPS`) gerçek bir `ISSUER_SECRET_KEY` imzalı mint işlemi tetikleyebilir. Bu, **bilinçli bir PoC kararıdır**: testnet demo para biriminin mali bir karşılığı yoktur (mainnet karşılığı da yoktur, bkz. §6.7), dolayısıyla demo/PoC kapsamında kabul edilebilir — ama Soroban RPC/Horizon üzerinde aynı sınıf kaynak-tüketimi (DoS) riskini taşır. **Demo öncesi bulut host'a taşırken**, yukarıdaki `/transactions/submit` için önerilen genel rate-limiting işiyle (bkz. bir önceki paragraf) BİRLİKTE ele alınmalıdır — ayrı bir iş kalemi değil, aynı `express-rate-limit` çalışmasının bir parçası olarak düşünülmelidir. **Bu artık YAPILMIŞTIR** — öngörüldüğü gibi ayrı bir iş kalemi olarak değil, aynı `express-rate-limit` çalışmasının parçası olarak (§6.2.1).
+
+#### 6.2.1. Uygulama (6 Eylül 2026)
+
+`express-rate-limit` (v8) eklendi; tüm limiter'lar tek dosyada toplandı: `orchestrator/src/api/middleware/rate-limit.middleware.js`.
+
+**Yol boyunca bulunan ek risk — yukarıdaki analiz eksikti.** §6.2'nin ilk yazımı riski Soroban RPC tüketimine bağlıyordu. Kod yeniden izlendiğinde, kimliksiz bir isteğin RPC'ye ULAŞMADAN ÖNCE de kalıcı maliyet ürettiği görüldü:
+
+| # | Adım | Maliyet |
+| :-- | :--- | :--- |
+| 1 | `validateTransactionSubmit` | CPU, ~sıfır |
+| 2 | `submitAuthMiddleware` | XDR parse + Ed25519 doğrulama (CPU) |
+| 3 | `idempotencyMiddleware` → `acquireIdempotencyLock()` | **MongoDB yazma** (`writeConcern: majority`) |
+| 4 | `submitTransactionHandler` → `Transaction.create()` | **İkinci MongoDB yazma** |
+| 5 | `wrapAndSubmitFeeBump` → `simulateInnerTransaction()` | **Soroban RPC** |
+| 6 | Zarf geçerliyse `submitTransaction()` | Horizon + **gerçek Havuz 2 XLM** |
+
+3. ve 4. adımdaki kayıtlar `failed` olarak işaretlenir ama **silinmez**. Yani sıklık sınırı olmaması yalnızca RPC/Horizon üzerinde yük değil, **Atlas depolama kotasını doldurup sistemi tamamen durdurabilecek** bir birikim riskiydi. Limitlerin `idempotencyMiddleware`'den önce girmesinin asıl gerekçesi budur.
+
+**Yerleşim — §6.2'nin "zincirin EN BAŞINA" önerisi iki noktaya bölündü:**
+
+```
+submitIpRateLimiter          ← pozisyon 0, hiçbir parse/DB yok
+validateTransactionSubmit
+submitAuthMiddleware         ← req.senderAddress / req.merchantId burada set edilir
+submitIdentityRateLimiter    ← İLK DB YAZMASINDAN ÖNCE
+idempotencyMiddleware        ← ilk MongoDB yazması
+submitTransactionHandler     ← DB + Soroban RPC + Horizon
+```
+
+Kimlik bazlı limit neden pozisyon 0'da değil: anahtarı üretmek için `signedXdr`'ın parse edilmesi gerekir ve `submitAuthMiddleware` bunu ZATEN yapar. En başa koymak aynı zarfı iki kez parse etmek olurdu — saldırganın değil kendi maliyetimizi artırırdı. Bu yerleşimde hiçbir istek, bir limitten geçmeden herhangi bir DB yazmasına veya RPC çağrısına ulaşamaz; §6.2'nin niyeti korunur.
+
+**Neden iki katman (IP + kimlik):** IP tek başına yetmez — TEKNOFEST standında tüm cihazlar aynı NAT arkasındadır, meşru kullanıcılar birbirinin sayacını tüketirdi. Kimlik tek başına da yetmez — Stellar adresi bedava üretilir, saldırgan her istekte yeni `Keypair.random()` ile adres limitini atlar. İkisi birlikte her iki boşluğu kapatır.
+
+**Kapsanan uçlar** (§6.2 iki uçtan bahsediyordu; grep ile iki kimliksiz uç daha bulundu ve kullanıcı onayıyla kapsama alındı):
+
+| Uç | Anahtar | Varsayılan limit |
+| :--- | :--- | :--- |
+| `POST /transactions/submit` | IP | 30 / 5 dk |
+| `POST /transactions/submit` | gönderen adres veya `merchantId` | 10 / dk |
+| `POST /faucet/mint` | adres | 5 / saat |
+| `POST /faucet/mint` | IP | 15 / saat |
+| `POST /merchants/register` | IP | 10 / saat |
+| `GET /transactions/:txHash/gib-document` | IP | 60 / dk |
+
+`/merchants/register` kimlik doğrulaması olmayan ve her istekte kalıcı bir `Merchant` kaydı yazan bir uçtur — `/transactions/submit` ile aynı sınıf açıktır. GİB belge ucu yazma yapmaz; limiti yalnızca toplu kazımayı (scraping) yavaşlatmak içindir, bu yüzden daha gevşektir.
+
+**Tüm limitler env değişkenidir** (`RATE_LIMIT_*`, bkz. `.env.example`) — amaç, sunum öncesinde kod değiştirmeden gevşetilebilmeleridir. `RATE_LIMIT_ENABLED=false` tüm limiter'ları kapatır; yalnızca yerel hata ayıklama içindir.
+
+**429 yanıt gövdesi** kod tabanının her yerindeki şekle uyar: `{ "error": "RATE_LIMITED", "message": "Çok fazla istek gönderildi, ..." }`. Client tarafında değişiklik GEREKMEDİ — `api.service.js` zaten `payload.message`'ı `ApiError`'a taşıyor ve ekranlar bunu gösteriyor.
+
+**Store: bellek-içi (`MemoryStore`) — bilinçli tercih ve bilinen sınırlama.** MongoDB destekli bir store her istekte bir DB yazması yapardı, yani tam olarak engellemeye çalıştığımız şeyi. Bedeli: sayaçlar sunucu restart'ında sıfırlanır ve **çok-instance'lı bir dağıtımda instance'lar arası paylaşılmaz**. Tek instance'lı demo dağıtımı için kabul edilebilir; yatay ölçeklemeye geçilirse paylaşımlı bir store (Redis vb.) gerekir.
+
+**🔴 `trust proxy` — bulut host'a taşırken MUTLAKA yapılacak ayar.** IP bazlı katman `req.ip`'ye dayanır. `TRUST_PROXY_HOPS` env değişkeni eklendi (`src/index.js` → `app.set('trust proxy', ...)`): **yerelde `0`, Render/Railway gibi tek proxy'li host'larda `1`**. Yanlış ayarlanırsa iki yönde de kırılır:
+
+- **Çok düşükse** (bulut host'ta `0` kalırsa): `req.ip` HERKES için proxy'nin IP'si olur, tüm kullanıcılar tek sayacı paylaşır ve **ilk 30 istekte topluca kilitlenirler**. Uygulama sağlıklı log üretmeye devam ettiği için bu, demo günü teşhisi zor bir arıza olarak görünür.
+- **`true` / çok yüksekse:** saldırgan `X-Forwarded-For` başlığını uydurarak limiti tamamen atlar.
+
+Deploy sonrası doğrulama: iki farklı ağdan (ör. mobil veri + wifi) istek atıp `RateLimit-*` başlıklarının **ayrı ayrı** saydığı teyit edilmelidir; aynı sayaçta ilerliyorlarsa `TRUST_PROXY_HOPS` yanlıştır.
+
+**Testler:** `orchestrator/test/rate-limit.middleware.test.js` — 8 test. Sayaç davranışı ve anahtar seçimi (farklı adreslerin/esnafların ayrı sayılması) birim testleriyle; asıl iddia ise gerçek router zinciri + gerçek (bellek-içi) MongoDB ile: **limit aşıldığında hiçbir `IdempotencyKey`/`Transaction` kaydının oluşmadığı** doğrulanır. Bu test "limiter var" değil "**limiter doğru yerde**" iddiasını kanıtlar — limiter zincirin sonunda olsaydı başarısız olurdu. Paket toplamı: **141/141 PASS** (önceki 133 + 8 yeni).
 
 ### 6.3. `orchestrator/.env` Operasyonel Süreci Netleşmedi
 
@@ -382,31 +442,31 @@ Event log (newest first):
 
 ---
 
-## 8. Devam Noktası (16 Ağustos 2026 — proje bu tarihte askıya alındı)
+## 8. Devam Noktası (16 Ağustos 2026 — proje bu tarihte askıya alındı; 6 Eylül 2026'da rate limiting ile devam edildi)
 
 > Bu bölüm, projenin belirsiz bir süre (gün/hafta) askıya alınmadan hemen önceki durumunu özetler; bir sonraki oturumun sıfırdan bağlam toplamadan devam edebilmesi içindir.
 
 ### Tamamlanan katmanlar (hepsi gerçek testnet'te doğrulandı)
 
 - **Kontratlar v1 + v2** (`contracts/`): `dtl-token` ve `pool-manager`, 38/38 Rust birim testi PASS, testnet'e deploy edildi. v2 ile müşteri→esnaf gerçek `pay_merchant()` ödemesi eklendi (§7); esnaf-gönderemez guard'ı gerçek ağda negatif kanıtla doğrulandı (§7.5).
-- **`orchestrator/`**: Kalıcı MongoDB Atlas bağlantısı (§6.1), CORS (§6.6), fee-bump ile gerçek işlem gönderimi + idempotency, SSE dinleyicisi ile onay yakalama, GİB e-Belge simülasyonu + görüntüleme ucu, esnaf kaydı (adres sahipliği imzası + ayrı admin onay script'i `approve-merchant.mjs`), demo musluk (`/faucet/mint`), balance ucunda `kycStatus`/`onChainRegistered`. 133/133 test PASS.
+- **`orchestrator/`**: Kalıcı MongoDB Atlas bağlantısı (§6.1), CORS (§6.6), fee-bump ile gerçek işlem gönderimi + idempotency, SSE dinleyicisi ile onay yakalama, GİB e-Belge simülasyonu + görüntüleme ucu, esnaf kaydı (adres sahipliği imzası + ayrı admin onay script'i `approve-merchant.mjs`), demo musluk (`/faucet/mint`), balance ucunda `kycStatus`/`onChainRegistered`, rate limiting (§6.2.1). 141/141 test PASS.
 - **`client/` (Expo)**: Müşteri akışı (bakiye yükleme/Friendbot+mint, QR okutup ödeme, GİB fişi görüntüleme) ve esnaf akışı (kayıt, giriş, tutar girip QR üretme, canlı ödeme tespiti, bakiye/rozet, GİB fişi görüntüleme) — tümü gerçek tarayıcı testleriyle ve gerçek testnet tx'leriyle doğrulandı.
 
 ### Sıradaki adımlar (bu sırayla)
 
 1. **Backend'i bulut sunucuya taşıma** (Render/Railway) — şu an yalnızca yerelde (`localhost:3000`) çalışıyor; client'ın `ORCHESTRATOR_BASE_URL`'i ve orchestrator'ın `CORS_ALLOWED_ORIGINS`'i gerçek dağıtım adresine göre güncellenmeli (bkz. §6.6 son cümlesi).
-2. **Rate limiting eklenmesi** — `/transactions/submit` ve faucet (`/faucet/mint`) uçları için; kapsam ve gerekçe §6.2'de ayrıntılı yazılıdır, henüz kod YAZILMADI.
+2. ~~**Rate limiting eklenmesi**~~ — ✅ **TAMAMLANDI (6 Eylül 2026)**, bkz. §6.2.1. Kapsam öngörülenden geniş tutuldu: `/transactions/submit` ve `/faucet/mint`'e ek olarak `/merchants/register` ve GİB belge okuma ucu da kapsandı. **Bu iş, yukarıdaki 1. maddeye (bulut host) bir ön koşul BIRAKTI:** `TRUST_PROXY_HOPS` deploy sırasında doğru ayarlanmalıdır (yerelde `0`, Render/Railway'de `1`) — yanlış ayarlanırsa tüm kullanıcılar topluca 429 alır ve arıza demo günü teşhisi zor bir şekilde görünür.
 3. **Uçtan uca gerçek prova** — bulut host + rate limit sonrası, müşteri ve esnaf cihazlarıyla (veya iki ayrı tarayıcı sekmesiyle) tam senaryo baştan sona.
 4. **Sunum senaryosu hazırlığı** — TEKNOFEST canlı sunumu için adım adım demo akışı, `DEMO_MODE` (§5.2) ve faucet tutarlarının sunuma uygunluğu gözden geçirilmeli.
 
 ### Bilinçli olarak yapılmayanlar — §6 gözden geçirmesi (16 Ağustos 2026 itibarıyla hepsi hâlâ geçerli)
 
 - **§6.1 Kalıcı MongoDB** — ✅ TAMAMLANDI, geçerliliğini koruyor.
-- **§6.2 Rate limiting** — 🔴 hâlâ YAPILMADI, en yüksek öncelik (bkz. yukarıdaki "Sıradaki adımlar" #2).
+- **§6.2 Rate limiting** — ✅ TAMAMLANDI (6 Eylül 2026, §6.2.1). Bilinen sınırlama: bellek-içi store, çok-instance'lı dağıtımda paylaşılmaz.
 - **§6.3 `.env` operasyonel süreci** — hâlâ netleşmedi (kim/hangi kanaldan secret sağlayacak, tanımsız).
 - **§6.4 SSE kalıcı cursor/reconciliation yok** — hâlâ yapılmadı; sunucu restart'ında kaçırılan onaylar kalıcı olarak kaybolabilir.
 - **§6.5 Web'de şifrelenmemiş müşteri anahtarı** — hâlâ değişmedi; testnet/demo kapsamı için kabul edilebilir olarak işaretli kalıyor.
 - **§6.6 CORS** — ✅ TAMAMLANDI, geçerliliğini koruyor.
-- **§6.7 Faucet** — ✅ TAMAMLANDI (uygulanmış durumda); yalnızca rate-limit boşluğu §6.2 kapsamında bekliyor.
+- **§6.7 Faucet** — ✅ TAMAMLANDI; §6.2 kapsamında bekleyen rate-limit boşluğu da 6 Eylül 2026'da kapatıldı (adres başına 5/saat, IP başına 15/saat — §6.2.1).
 - **İşlem Geçmişi (esnaf) sayfalama/detay eksikleri** ve **tek cihaz/oturum sınırlaması** — kullanıcı talimatıyla bu iş paketinde kapsam DIŞI bırakıldı, hâlâ eksik, demo için gerekli görülmedi.
 

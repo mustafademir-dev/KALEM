@@ -30,6 +30,22 @@ const app = express();
 // ---------------------------------------------------------------------------
 
 /**
+ * `trust proxy` — rate limiting'in IP bazlı katmanının doğruluğu buna bağlıdır
+ * (bkz. docs/ARCHITECTURE_DECISIONS.md §6.2, rate-limit.middleware.js).
+ *
+ * Değer, uygulamanın ÖNÜNDEKİ güvenilen reverse proxy sayısıdır:
+ * - Yerelde proxy yoktur → `0` (Express `req.ip`'yi doğrudan soketten okur).
+ * - Render/Railway gibi tek proxy'li host'larda → `1`.
+ *
+ * YANLIŞ AYARLANIRSA iki yönde de kırılır: çok düşükse `req.ip` herkes için
+ * proxy'nin IP'si olur ve tüm kullanıcılar tek sayacı paylaşıp TOPLUCA
+ * kilitlenir; `true`/çok yüksekse saldırgan `X-Forwarded-For` başlığını
+ * uydurarak limiti tamamen atlar.
+ */
+app.set('trust proxy', config.trustProxyHops);
+logger.info(`[Server] trust proxy = ${config.trustProxyHops} (TRUST_PROXY_HOPS)`);
+
+/**
  * CORS: geliştirmede herhangi bir `localhost`/`127.0.0.1` portu (Expo web dev
  * sunucusu her başlatmada farklı porta düşebilir) her zaman izinlidir; ayrıca
  * `config.corsAllowedOrigins`'te (env `CORS_ALLOWED_ORIGINS`) listelenen sabit

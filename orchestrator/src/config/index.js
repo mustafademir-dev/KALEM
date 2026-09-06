@@ -25,6 +25,19 @@ const config = {
   port: parseInt(requireEnv('PORT', '3000'), 10),
   nodeEnv: requireEnv('NODE_ENV', 'development'),
 
+  /**
+   * Express `trust proxy` ayarı — güvenilen reverse proxy "hop" sayısı.
+   *
+   * Rate limiting'in IP bazlı katmanı `req.ip`'ye dayanır ve bu değer YANLIŞSA
+   * iki yönde de kırılır (bkz. docs/ARCHITECTURE_DECISIONS.md §6.2):
+   * - Çok DÜŞÜK (bulut host'ta 0): `req.ip` herkes için proxy'nin IP'si olur,
+   *   tüm kullanıcılar tek sayacı paylaşır ve topluca kilitlenir.
+   * - Çok YÜKSEK / `true`: saldırgan `X-Forwarded-For` uydurup limiti atlar.
+   *
+   * Yerelde (proxy yok) `0`; Render/Railway gibi tek proxy'li host'larda `1`.
+   */
+  trustProxyHops: parseInt(requireEnv('TRUST_PROXY_HOPS', '0'), 10),
+
   // --- MongoDB ---
   mongodbUri: requireEnv('MONGODB_URI', 'mongodb://localhost:27017/kalem'),
 
@@ -103,6 +116,51 @@ const config = {
       .filter(Boolean),
     // İç zarfın sonlu bir maxTime (timebounds) taşımasını zorunlu kılar.
     requireTimeBounds: requireEnv('FEE_BUMP_REQUIRE_TIMEBOUNDS', 'false') === 'true',
+  },
+
+  /**
+   * --- Rate Limiting (İstek Sıklığı Sınırı) Ayarları ---
+   *
+   * Tüm değerler env'den okunur; amaç, sunum öncesinde kod değiştirmeden
+   * gevşetilebilmeleridir (bkz. docs/ARCHITECTURE_DECISIONS.md §6.2).
+   * `windowMs` pencere uzunluğu (ms), `max` o pencerede izin verilen istek sayısı.
+   */
+  rateLimit: {
+    // Genel anahtar: false yapılırsa TÜM limiter'lar devre dışı kalır.
+    // Yalnızca yerel geliştirme/hata ayıklama içindir — demo/prod'da ASLA false olmamalı.
+    enabled: requireEnv('RATE_LIMIT_ENABLED', 'true') === 'true',
+
+    // POST /transactions/submit — IP bazlı (kaba katman, zincirin en başında).
+    submitIp: {
+      windowMs: parseInt(requireEnv('RATE_LIMIT_SUBMIT_IP_WINDOW_MS', '300000'), 10), // 5 dk
+      max: parseInt(requireEnv('RATE_LIMIT_SUBMIT_IP_MAX', '30'), 10),
+    },
+    // POST /transactions/submit — kimlik bazlı (gönderen Stellar adresi ya da esnaf).
+    // IP limitinin NAT boşluğunu kapatır: aynı standda herkes tek IP'den gelir.
+    submitIdentity: {
+      windowMs: parseInt(requireEnv('RATE_LIMIT_SUBMIT_IDENTITY_WINDOW_MS', '60000'), 10), // 1 dk
+      max: parseInt(requireEnv('RATE_LIMIT_SUBMIT_IDENTITY_MAX', '10'), 10),
+    },
+    // POST /faucet/mint — adres bazlı. En sıkı limit: bu uç gerçekten para basıyor.
+    faucetAddress: {
+      windowMs: parseInt(requireEnv('RATE_LIMIT_FAUCET_ADDRESS_WINDOW_MS', '3600000'), 10), // 1 saat
+      max: parseInt(requireEnv('RATE_LIMIT_FAUCET_ADDRESS_MAX', '5'), 10),
+    },
+    // POST /faucet/mint — IP bazlı (bedava üretilen adreslerle limit atlamayı sınırlar).
+    faucetIp: {
+      windowMs: parseInt(requireEnv('RATE_LIMIT_FAUCET_IP_WINDOW_MS', '3600000'), 10), // 1 saat
+      max: parseInt(requireEnv('RATE_LIMIT_FAUCET_IP_MAX', '15'), 10),
+    },
+    // POST /merchants/register — kimliksiz, her istek kalıcı bir Merchant kaydı yazar.
+    merchantRegister: {
+      windowMs: parseInt(requireEnv('RATE_LIMIT_MERCHANT_REGISTER_WINDOW_MS', '3600000'), 10), // 1 saat
+      max: parseInt(requireEnv('RATE_LIMIT_MERCHANT_REGISTER_MAX', '10'), 10),
+    },
+    // GET /transactions/:txHash/gib-document — kimliksiz okuma ucu.
+    gibRead: {
+      windowMs: parseInt(requireEnv('RATE_LIMIT_GIB_READ_WINDOW_MS', '60000'), 10), // 1 dk
+      max: parseInt(requireEnv('RATE_LIMIT_GIB_READ_MAX', '60'), 10),
+    },
   },
 
   // --- Havuz 4 → Havuz 2 Besleme (Pool Feeder) Ayarları ---

@@ -19,6 +19,10 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import config from '../../config/index.js';
 import { buildFaucetMintChallenge } from '../../utils/crypto.js';
 import { mintDemoDtl } from '../../services/faucet.service.js';
+import {
+  faucetIpRateLimiter,
+  faucetAddressRateLimiter,
+} from '../middleware/rate-limit.middleware.js';
 import logger from '../../utils/logger.js';
 
 const router = Router();
@@ -88,6 +92,6 @@ export async function mintFaucetHandler(req, res) {
   }
 }
 
-router.post('/mint', mintFaucetHandler);
+router.post('/mint', faucetIpRateLimiter, faucetAddressRateLimiter, mintFaucetHandler);
 
 export default router;

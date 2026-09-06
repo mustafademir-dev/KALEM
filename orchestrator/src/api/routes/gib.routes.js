@@ -28,6 +28,7 @@ import GibDocument from '../../models/GibDocument.model.js';
 import Merchant from '../../models/Merchant.model.js';
 import { hashApiKey } from '../../utils/crypto.js';
 import logger from '../../utils/logger.js';
+import { gibReadRateLimiter } from '../middleware/rate-limit.middleware.js';
 
 const router = Router();
 
@@ -87,6 +88,6 @@ export async function getGibDocumentHandler(req, res) {
   }
 }
 
-router.get('/:txHash/gib-document', getGibDocumentHandler);
+router.get('/:txHash/gib-document', gibReadRateLimiter, getGibDocumentHandler);
 
 export default router;
