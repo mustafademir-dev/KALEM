@@ -38,11 +38,43 @@ function readMongoStatus() {
 }
 
 /**
+ * İsteğin proxy zincirinden nasıl göründüğünü raporlar.
+ *
+ * NEDEN: `trust proxy` ayarının DEĞERİNİ bilmek, doğru ÇALIŞTIĞINI kanıtlamaz.
+ * Render'da 10 Eylül 2026'da gerçek ölçümle görüldü ki sabit hop sayısı (`1`)
+ * ile tek bir istemci sunucu tarafında ÜÇ farklı IP olarak görülebiliyordu —
+ * XFF zincirinin uzunluğu her istekte aynı olmadığı için sağdan n. eleman
+ * kayıyordu. Sonuç: IP bazlı rate limit ~3 kat gevşek çalışıyordu.
+ *
+ * Bu blok, o sınıf arızayı dışarıdan tek bir `curl` ile teşhis edilebilir kılar.
+ *
+ * GİZLİLİK: İstemci burada yalnızca KENDİ adresini görür; başka kullanıcıya ait
+ * hiçbir veri sızmaz.
+ *
+ * @param {import('express').Request} req
+ * @returns {object}
+ */
+function describeProxy(req) {
+  return {
+    // Yapılandırılan değer (config'ten)
+    trustProxyHops: config.trustProxyHops,
+    // Express'in bu değere göre ÇÖZDÜĞÜ istemci adresi — rate limit anahtarı budur.
+    resolvedClientIp: req.ip ?? null,
+    // Express'in güvenilir kabul ettiği zincir.
+    forwardedChain: Array.isArray(req.ips) ? req.ips : [],
+    // Ham başlık — zincirin gerçek şekli ve uzunluğu buradan görülür.
+    rawForwardedFor: req.get('x-forwarded-for') ?? null,
+    // Soket seviyesindeki karşı taraf (proxy'nin kendisi olmalı).
+    socketRemoteAddress: req.socket?.remoteAddress ?? null,
+  };
+}
+
+/**
  * Sistemin anlık durumunu toplar.
  *
  * @returns {{healthy: boolean, payload: object}} `healthy`, readiness kararı içindir.
  */
-function collectStatus() {
+function collectStatus(req) {
   const mongodb = readMongoStatus();
   const sse = getSSEStatus();
 
@@ -81,6 +113,7 @@ function collectStatus() {
     // Rate limiting'in IP katmanının doğruluğu buna bağlıdır; deploy sonrası
     // gözle doğrulanabilsin diye raporlanır (bkz. §6.2.1 trust proxy uyarısı).
     trustProxyHops: config.trustProxyHops,
+    proxy: describeProxy(req),
   };
 
   const healthy = mongodb === 'connected' && sse.started && !sseStale;
@@ -91,7 +124,7 @@ function collectStatus() {
  * GET /api/v1/health — liveness. Her zaman 200.
  */
 router.get('/', (req, res) => {
-  const { payload } = collectStatus();
+  const { payload } = collectStatus(req);
   res.status(200).json(payload);
 });
 
@@ -99,7 +132,7 @@ router.get('/', (req, res) => {
  * GET /api/v1/health/ready — readiness. Bağımlılık bozuksa 503.
  */
 router.get('/ready', (req, res) => {
-  const { healthy, payload } = collectStatus();
+  const { healthy, payload } = collectStatus(req);
   res.status(healthy ? 200 : 503).json({ ...payload, status: healthy ? 'ready' : 'not_ready' });
 });
 
