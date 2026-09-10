@@ -20,6 +20,35 @@ import { generateGibDocument } from './gib-simulator.service.js';
 import { notifyClient } from './notification.service.js';
 
 /**
+ * SSE dinleyicisinin canlılık durumu — `/health` ucu tarafından okunur.
+ *
+ * NEDEN GEREKLİ: Ücretsiz bulut planlarında servis trafik almadığında uyutulur;
+ * uyanınca HTTP tekrar cevap verse bile SSE akışı ölü kalabilir. Bu durumda
+ * ödeme zincire yazılır ama onay yakalanmaz ve GİB belgesi HİÇ üretilmez —
+ * dışarıdan bakınca "sistem çalışıyor" görünür. Bu durum bilgisi, o sessiz
+ * arızayı `/health` üzerinden görünür kılar (bkz. §6.4: kalıcı cursor yok,
+ * uyku sırasında kaçan onay kalıcı olarak kaybolur).
+ */
+const sseState = {
+  started: false,
+  startedAt: null,
+  lastMessageAt: null,
+  lastErrorAt: null,
+  lastError: null,
+  messageCount: 0,
+};
+
+/**
+ * SSE dinleyicisinin anlık durumunu döner (salt okunur kopya).
+ *
+ * @returns {{started: boolean, startedAt: string|null, lastMessageAt: string|null,
+ *            lastErrorAt: string|null, lastError: string|null, messageCount: number}}
+ */
+export function getSSEStatus() {
+  return { ...sseState };
+}
+
+/**
  * Gelen SSE işlem kaydını işler ve MongoDB durumunu günceller.
  *
  * @param {object} record - Stellar Horizon transaction kaydı (hash, memo, ledger, vb.).
@@ -110,6 +139,9 @@ export async function handleTransaction(record) {
 export function startSSEListener() {
   try {
     if (!stellarConfig.horizonServer) {
+      sseState.started = false;
+      sseState.lastError = 'Horizon sunucusu yapılandırılmamış.';
+      sseState.lastErrorAt = new Date().toISOString();
       logger.warn('[SSE] Horizon sunucusu yapılandırılmadığı için SSE listener başlatılamadı.');
       return null;
     }
@@ -134,15 +166,21 @@ export function startSSEListener() {
       .cursor('now')
       .stream({
         onmessage: (record) => {
+          sseState.lastMessageAt = new Date().toISOString();
+          sseState.messageCount += 1;
           handleTransaction(record).catch((err) => {
             logger.error(`[SSE] Asenkron işlem işleme hatası: ${err.message}`);
           });
         },
         onerror: (error) => {
+          sseState.lastErrorAt = new Date().toISOString();
+          sseState.lastError = String(error?.message || error);
           logger.error(`[SSE] Akış hatası oluştu: ${error?.message || error}`);
         },
       });
 
+    sseState.started = true;
+    sseState.startedAt = new Date().toISOString();
     logger.info('[SSE] SSE dinleyicisi başarıyla aktif edildi.');
     return closeStream;
   } catch (error) {

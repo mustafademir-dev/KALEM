@@ -2,8 +2,25 @@
  * İstemci Sabitleri
  */
 
-/** Orkestrasyon katmanı base URL'i. */
-export const ORCHESTRATOR_BASE_URL = 'http://localhost:3000';
+/**
+ * Orkestrasyon katmanı base URL'i.
+ *
+ * `client/.env` dosyasındaki `EXPO_PUBLIC_ORCHESTRATOR_BASE_URL` ile ezilir;
+ * tanımlı değilse yerel geliştirme adresine düşer. Bulut dağıtımında (Render)
+ * bu değişken servisin gerçek adresine ayarlanmalıdır — bkz.
+ * `client/.env.example` ve docs/ARCHITECTURE_DECISIONS.md §6.6.
+ *
+ * DİKKAT: `EXPO_PUBLIC_*` değişkenleri **derleme anında** paketin içine gömülür,
+ * çalışma anında okunmaz. Değeri değiştirdikten sonra Expo dev sunucusunu
+ * yeniden başlatmak (veya web build'i yeniden almak) GEREKİR — yoksa eski
+ * adres paketin içinde kalmaya devam eder.
+ *
+ * Sondaki `/` karakteri temizlenir: `api.service.js` yolları `/api/v1/...`
+ * şeklinde ekliyor, aksi halde `//api/v1/...` oluşurdu.
+ */
+export const ORCHESTRATOR_BASE_URL = (
+  process.env.EXPO_PUBLIC_ORCHESTRATOR_BASE_URL || 'http://localhost:3000'
+).replace(/\/+$/, '');
 
 /** Stellar ağ ayarları (istemci tarafında yalnızca XDR oluşturma ve doğrudan zincir okuması için). */
 export const STELLAR_NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';

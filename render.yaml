@@ -1,0 +1,141 @@
+# KALEM — Render Blueprint (Infrastructure as Code)
+#
+# Kullanım: Render panelinde "New → Blueprint" ile bu repo seçildiğinde
+# aşağıdaki servis otomatik oluşturulur. Elle "New → Web Service" ile de
+# kurulabilir; o durumda bu dosya, hangi ayarların girileceğinin referansıdır.
+#
+# ÖNEMLİ — `sync: false` işaretli değişkenler bu dosyada TUTULMAZ; Render
+# panelindeki Environment sekmesinden elle girilir. Gizli anahtarlar
+# (POOL2_SECRET_KEY, ISSUER_SECRET_KEY, MONGODB_URI) asla repoya girmez.
+
+services:
+  - type: web
+    name: kalem-orchestrator
+    runtime: node
+    # Monorepo: orchestrator alt dizini kök kabul edilir, aksi halde
+    # repo kökünde package.json bulunamaz.
+    rootDir: orchestrator
+    buildCommand: npm install
+    startCommand: npm start
+
+    # PLAN NOTU: `free` planda servis 15 dakika trafik almazsa UYUTULUR.
+    # Uyanması ~50sn sürer ve bu sürede SSE dinleyicisi ölür — ödeme zincire
+    # yazılır ama onay yakalanmaz, GİB belgesi üretilmez ve §6.4 gereği
+    # (kalıcı cursor yok) o onay KALICI olarak kaybolur.
+    # Demo/sunum öncesi `starter` yapılması önerilir — tek satırlık değişiklik.
+    plan: free
+
+    # Liveness ucu: her zaman 200 döner. Kasıtlı olarak /health/ready DEĞİL —
+    # readiness 503 dönebildiği için geçici bir MongoDB kesintisi Render'da
+    # yeniden başlatma döngüsü tetiklerdi.
+    healthCheckPath: /api/v1/health
+
+    envVars:
+      # --- Sunucu ---
+      # PORT: Render kendisi enjekte eder, BURAYA VE PANELE EKLEMEYİN.
+      - key: NODE_ENV
+        value: production
+
+      # --- trust proxy — YANLIŞ AYARLANIRSA TÜM KULLANICILAR KİLİTLENİR ---
+      # Render tek reverse proxy arkasında çalıştırır → 1.
+      # 0 olursa req.ip herkes için proxy'nin IP'si olur, tüm kullanıcılar tek
+      # rate-limit sayacını paylaşır ve ilk 30 istekte topluca 429 alır.
+      # true/daha yüksek olursa saldırgan X-Forwarded-For uydurup limiti atlar.
+      # Ayrıntı: docs/ARCHITECTURE_DECISIONS.md §6.2.1
+      - key: TRUST_PROXY_HOPS
+        value: 1
+
+      # --- Gizli değerler: panelden girilir, repoda TUTULMAZ ---
+      - key: MONGODB_URI
+        sync: false
+      - key: POOL2_SECRET_KEY
+        sync: false
+      - key: ISSUER_SECRET_KEY
+        sync: false
+
+      # --- Stellar ağı ---
+      - key: STELLAR_NETWORK
+        value: testnet
+      - key: HORIZON_URL
+        value: https://horizon-testnet.stellar.org
+      - key: SOROBAN_RPC_URL
+        value: https://soroban-testnet.stellar.org
+
+      # --- Kontratlar (gizli değil; docs §7.2'de zaten yayınlı) ---
+      - key: DTL_TOKEN_CONTRACT_ID
+        value: CC6TSYYOENEATJRP5NXJPR35TVRPMK47JAPZZZ5JGUKM4J6EVGWWDARO
+      - key: POOL_MANAGER_CONTRACT_ID
+        value: CDR7WMMQLINNIC2PCSWUU27FHUWWLZPHBJU7MQK5EZVOJBIWQA47LQSA
+
+      # --- Havuz adresleri (public key'ler, gizli değil) ---
+      - key: POOL1_ADDRESS
+        sync: false
+      - key: POOL2_ADDRESS
+        sync: false
+      - key: POOL3_ADDRESS
+        sync: false
+      - key: POOL4_ADDRESS
+        sync: false
+
+      # --- CORS ---
+      # Client'ı da bir yere host'larsan onun tam origin'ini buraya gir
+      # (virgülle ayrılmış). Client yerelde çalışacaksa boş bırakılabilir:
+      # localhost/127.0.0.1 her port için zaten izinlidir (§6.6).
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+      # --- Demo modu (§5.2) ---
+      # false: burn otomatik, XLM enjeksiyonu manuel onay bekler (dürüst mod).
+      - key: DEMO_MODE
+        value: false
+
+      # --- Fee-Bump güvenlik sınırları ---
+      - key: FEE_BUMP_BASE_FEE_MULTIPLIER
+        value: 2
+      - key: FEE_BUMP_MAX_BASE_FEE_STROOPS
+        value: 100000
+      - key: FEE_BUMP_MAX_TOTAL_FEE_STROOPS
+        value: 10000000
+      - key: FEE_BUMP_MAX_INNER_OPERATIONS
+        value: 1
+      - key: FEE_BUMP_REQUIRE_TIMEBOUNDS
+        value: false
+
+      # --- Havuz besleme ---
+      - key: POOL_FEEDER_CRON
+        value: "*/5 * * * *"
+      - key: POOL_FEEDER_USE_SPENDABLE_BALANCE
+        value: true
+      - key: POOL_FEEDER_MIN_BURN_STROOPS
+        value: 10000000
+      - key: POOL_FEEDER_MAX_BURN_STROOPS
+        value: 1000000000
+
+      # --- Rate limiting (§6.2.1) ---
+      # Sunum öncesi kod değiştirmeden gevşetilebilsin diye hepsi env.
+      - key: RATE_LIMIT_ENABLED
+        value: true
+      - key: RATE_LIMIT_SUBMIT_IP_WINDOW_MS
+        value: 300000
+      - key: RATE_LIMIT_SUBMIT_IP_MAX
+        value: 30
+      - key: RATE_LIMIT_SUBMIT_IDENTITY_WINDOW_MS
+        value: 60000
+      - key: RATE_LIMIT_SUBMIT_IDENTITY_MAX
+        value: 10
+      - key: RATE_LIMIT_FAUCET_ADDRESS_WINDOW_MS
+        value: 3600000
+      - key: RATE_LIMIT_FAUCET_ADDRESS_MAX
+        value: 5
+      - key: RATE_LIMIT_FAUCET_IP_WINDOW_MS
+        value: 3600000
+      - key: RATE_LIMIT_FAUCET_IP_MAX
+        value: 15
+      - key: RATE_LIMIT_MERCHANT_REGISTER_WINDOW_MS
+        value: 3600000
+      - key: RATE_LIMIT_MERCHANT_REGISTER_MAX
+        value: 10
+      - key: RATE_LIMIT_GIB_READ_WINDOW_MS
+        value: 60000
+      - key: RATE_LIMIT_GIB_READ_MAX
+        value: 60

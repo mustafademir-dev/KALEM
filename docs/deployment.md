@@ -87,4 +87,128 @@ npm run dev
 curl http://localhost:3000/api/v1/health
 ```
 
-> **NOT:** Detaylı deploy scriptleri Faz 2 Aşama 2.3'te oluşturulacaktır.
+---
+
+# Bulut Dağıtımı — Orkestrasyon Katmanı (Render)
+
+> Kontrat deploy'u yukarıda anlatıldı; bu bölüm `orchestrator/` servisinin bulut
+> host'a alınmasını kapsar. Repo kökündeki `render.yaml` bu bölümün makine
+> tarafından okunabilir karşılığıdır.
+
+## 1. Ön koşul — MongoDB Atlas erişimi
+
+Render'ın ücretsiz/starter planlarında **sabit çıkış IP'si yoktur**; servisin dış
+dünyaya hangi IP'den çıktığı yeniden başlatmalarda değişir. Bu nedenle Atlas'ta
+tek bir IP'yi whitelist'e almak işe yaramaz:
+
+1. Atlas → **Network Access** → `0.0.0.0/0` ekleyin (açıklama: "Render PaaS — dinamik çıkış IP").
+2. Telafi olarak Atlas → **Database Access** → kullanıcı şifresini uzun ve rastgele bir değerle yenileyin.
+
+Bu, "veritabanı herkese açık" demek değildir — kimlik doğrulama kullanıcı adı +
+şifre ile yapılır ve bağlantı TLS'tir. PaaS dağıtımlarında standart yaklaşımdır.
+
+> Şifrede `@ : / ?` gibi karakterler varsa bağlantı dizesinde URL-encode edilmeleri
+> gerekir; şifreyi yalnızca harf ve rakamdan seçmek bu sınıf hatayı tamamen önler.
+
+## 2. Servis kurulumu
+
+Render → **New → Blueprint** ile repo seçilirse `render.yaml` otomatik uygulanır.
+Elle kurulacaksa (**New → Web Service**):
+
+| Alan | Değer |
+| :--- | :--- |
+| Root Directory | `orchestrator` |
+| Runtime | Node |
+| Build Command | `npm install` |
+| Start Command | `npm start` |
+| Health Check Path | `/api/v1/health` |
+
+**Root Directory mutlaka `orchestrator` olmalıdır** — repo bir monorepo'dur, kökte
+`package.json` yoktur.
+
+## 3. Ortam değişkenleri
+
+`orchestrator/.env.example` tam listedir. Yereldekinden **farklı** olacaklar:
+
+| Değişken | Değer | Not |
+| :--- | :--- | :--- |
+| `NODE_ENV` | `production` | |
+| `TRUST_PROXY_HOPS` | `1` | 🔴 aşağıdaki uyarıyı okuyun |
+| `PORT` | **girilmez** | Render kendisi enjekte eder |
+| `CORS_ALLOWED_ORIGINS` | client'ın tam origin'i | Client yerelde çalışacaksa boş bırakılabilir (§6.6) |
+
+Gizli değerler (`MONGODB_URI`, `POOL2_SECRET_KEY`, `ISSUER_SECRET_KEY`) yalnızca
+Render panelinden girilir; `render.yaml`'da `sync: false` ile işaretlidir ve repoya
+asla yazılmaz.
+
+`AES_ENCRYPTION_KEY` **girilmesine gerek yoktur** — `utils/crypto.js` içinde
+yalnızca yorum satırında geçer, hiçbir kod yolunda kullanılmaz.
+
+### 🔴 `TRUST_PROXY_HOPS` — en kritik ayar
+
+Render uygulamayı tek bir reverse proxy arkasında çalıştırır. Bu değer yanlışsa
+rate limiting'in IP katmanı **iki yönde de** kırılır:
+
+- **`0` kalırsa:** `req.ip` HERKES için proxy'nin IP'si olur, tüm kullanıcılar tek
+  sayacı paylaşır ve **ilk 30 istekte topluca 429 alır**. Uygulama sağlıklı log
+  ürettiği için bu, sunum günü teşhisi çok zor bir arıza olarak görünür.
+- **`true`/çok yüksekse:** saldırgan `X-Forwarded-For` uydurup limiti tamamen atlar.
+
+Ayrıntı: `ARCHITECTURE_DECISIONS.md` §6.2.1.
+
+## 4. Client'ın backend adresi
+
+`client/src/utils/constants.js` artık sabit kodlu değildir; `client/.env` içindeki
+`EXPO_PUBLIC_ORCHESTRATOR_BASE_URL` ile ezilir (örnek: `client/.env.example`).
+
+> **DİKKAT:** `EXPO_PUBLIC_*` değişkenleri **derleme anında** pakete gömülür.
+> Değeri değiştirdikten sonra Expo dev sunucusunu yeniden başlatmak veya web
+> build'i yeniden almak GEREKİR — aksi halde eski adres pakette kalır.
+
+## 5. Deploy sonrası doğrulama
+
+```bash
+# 1. Liveness — her zaman 200 dönmeli
+curl https://<servis-adi>.onrender.com/api/v1/health
+
+# 2. Readiness — mongodb: connected ve sseListener.started: true ise 200
+curl -i https://<servis-adi>.onrender.com/api/v1/health/ready
+```
+
+Kontrol listesi:
+
+- [ ] `dependencies.mongodb` → `connected` (değilse Atlas whitelist/şifre)
+- [ ] `dependencies.stellar.sseListener.started` → `true`
+- [ ] `trustProxyHops` → `1`
+- [ ] **İki farklı ağdan** (ör. mobil veri + wifi) istek atıldığında `RateLimit-*`
+      başlıkları **ayrı ayrı** sayıyor. Aynı sayaçta ilerliyorlarsa
+      `TRUST_PROXY_HOPS` yanlıştır.
+- [ ] İlk yeniden dağıtımda loglarda `[Server] SIGTERM alındı, kapatılıyor...`
+      satırı görünüyor (düzgün kapanma; Windows'ta test edilemez, Linux'ta doğrulanır).
+
+## 6. ⚠️ Ücretsiz plan ve SSE dinleyicisi
+
+`plan: free` iken Render servisi **15 dakika trafik almazsa uyutur** (~50sn soğuk
+başlatma). Bu KALEM'de yalnızca yavaşlık değil, işlevsel kayıptır:
+
+- **SSE dinleyicisi ölür** → ödeme zincire yazılır ama onay yakalanmaz →
+  **GİB belgesi hiç üretilmez**. §6.4 gereği kalıcı cursor olmadığı için uyku
+  sırasında kaçan onay **KALICI olarak kaybolur**.
+- Havuz 4→2 besleme cron'u durur.
+
+Sunumda bu, "ödeme gitti ama fiş gelmedi" şeklinde görünür ve kod hatası sanılır.
+
+Seçenekler:
+
+| Seçenek | Maliyet | Yorum |
+| :--- | :--- | :--- |
+| `plan: starter` | ~$7/ay | Uyumaz. **Sunum için önerilen** — `render.yaml`'da tek satır |
+| Uyanık tutma | 0 | Harici cron ile 10 dk'da bir `/api/v1/health`'e ping. İşe yarar ama kırılgan |
+
+`/api/v1/health` ucu bu ping için tasarlanmıştır: her zaman 200 döner ve **dış ağa
+hiç çağrı yapmaz**, bu yüzden sık çağrılması güvenlidir. Uyanma sonrası SSE'nin
+gerçekten diri olup olmadığı `sseListener.started` ve `stale` alanlarından görülür.
+
+---
+
+> **NOT:** Detaylı kontrat deploy scriptleri Faz 2 Aşama 2.3'te oluşturulacaktır.
