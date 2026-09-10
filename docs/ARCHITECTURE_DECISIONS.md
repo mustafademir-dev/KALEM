@@ -279,7 +279,7 @@ Kimlik bazlı limit neden pozisyon 0'da değil: anahtarı üretmek için `signed
 
 **Store: bellek-içi (`MemoryStore`) — bilinçli tercih ve bilinen sınırlama.** MongoDB destekli bir store her istekte bir DB yazması yapardı, yani tam olarak engellemeye çalıştığımız şeyi. Bedeli: sayaçlar sunucu restart'ında sıfırlanır ve **çok-instance'lı bir dağıtımda instance'lar arası paylaşılmaz**. Tek instance'lı demo dağıtımı için kabul edilebilir; yatay ölçeklemeye geçilirse paylaşımlı bir store (Redis vb.) gerekir.
 
-**🔴 `trust proxy` — bulut host'a taşırken MUTLAKA yapılacak ayar.** IP bazlı katman `req.ip`'ye dayanır. `TRUST_PROXY_HOPS` env değişkeni eklendi (`src/index.js` → `app.set('trust proxy', ...)`): **yerelde `0`, Render/Railway gibi tek proxy'li host'larda `1`**. Yanlış ayarlanırsa iki yönde de kırılır:
+**🔴 `trust proxy` — bulut host'a taşırken MUTLAKA yapılacak ayar.** IP bazlı katman `req.ip`'ye dayanır. `TRUST_PROXY_HOPS` env değişkeni eklendi (`src/index.js` → `app.set('trust proxy', ...)`): **yerelde `0`; Render'da ölçülen doğru değer `3`'tür — bkz. §6.2.2, ilk tahmin edilen `1` canlıda YANLIŞ çıktı**. Yanlış ayarlanırsa iki yönde de kırılır:
 
 - **Çok düşükse** (bulut host'ta `0` kalırsa): `req.ip` HERKES için proxy'nin IP'si olur, tüm kullanıcılar tek sayacı paylaşır ve **ilk 30 istekte topluca kilitlenirler**. Uygulama sağlıklı log üretmeye devam ettiği için bu, demo günü teşhisi zor bir arıza olarak görünür.
 - **`true` / çok yüksekse:** saldırgan `X-Forwarded-For` başlığını uydurarak limiti tamamen atlar.
@@ -287,6 +287,56 @@ Kimlik bazlı limit neden pozisyon 0'da değil: anahtarı üretmek için `signed
 Deploy sonrası doğrulama: iki farklı ağdan (ör. mobil veri + wifi) istek atıp `RateLimit-*` başlıklarının **ayrı ayrı** saydığı teyit edilmelidir; aynı sayaçta ilerliyorlarsa `TRUST_PROXY_HOPS` yanlıştır.
 
 **Testler:** `orchestrator/test/rate-limit.middleware.test.js` — 8 test. Sayaç davranışı ve anahtar seçimi (farklı adreslerin/esnafların ayrı sayılması) birim testleriyle; asıl iddia ise gerçek router zinciri + gerçek (bellek-içi) MongoDB ile: **limit aşıldığında hiçbir `IdempotencyKey`/`Transaction` kaydının oluşmadığı** doğrulanır. Bu test "limiter var" değil "**limiter doğru yerde**" iddiasını kanıtlar — limiter zincirin sonunda olsaydı başarısız olurdu. Paket toplamı: **141/141 PASS** (önceki 133 + 8 yeni).
+
+#### 6.2.2. `trust proxy` Canlıda Yanlış Çıktı — Ölçüm ve Düzeltme (10 Eylül 2026)
+
+§6.2.1'de `TRUST_PROXY_HOPS`'un yanlış ayarlanmasının riski yazılmıştı. **Render'a ilk dağıtımda tam olarak o hata gerçekleşti** — ve ilk tahmin edilen değer (`1`) de yanlıştı. Bu bölüm, hatanın nasıl yakalandığını ve doğru değerin nasıl ölçüldüğünü belgeler.
+
+**Nasıl yakalandı:** `/health` `trustProxyHops: 1` raporluyordu, yani ayar "doğru görünüyordu". Ancak ayarın DEĞERİNİ bilmek, doğru ÇALIŞTIĞINI kanıtlamaz. XFF göndermeden, IPv4'e sabitlenmiş 15 hızlı istekte dönen `RateLimit-Remaining` değerleri **üç bağımsız sayaca** ayrıştı:
+
+```
+A: 59 58 57 56 55 54     B: 59 58 57 56 55     C: 59 58 57 56
+```
+
+15 isteğin tamamı hesapta, her dizi kusursuz birer birer düşüyor. Tek instance olduğu ayrıca doğrulandı (10 istekte `sseListener.startedAt` aynı), istemci IP'si de sabitti — yani sapma Express'in XFF zincirinden hangi elemanı seçtiğindeydi.
+
+**Ölçüm:** `/health`'e proxy teşhis bloğu eklenip yeniden dağıtıldı. Zincirin gerçek şekli:
+
+```
+X-Forwarded-For: 88.253.38.157, 104.23.180.102, 10.25.111.8
+                    ↑ gerçek istemci   ↑ Cloudflare    ↑ Render iç ağı
+socketRemoteAddress: ::1
+```
+
+**Kritik ayrıntı:** Express hop sayarken **soket bağlantısını da bir hop sayar**. Render'ın iç proxy'si uygulamaya loopback (`::1`) üzerinden bağlandığı için gerçek hop dizilimi şudur:
+
+| Hop | Adres | Nedir |
+| :-- | :--- | :--- |
+| 0 | `::1` | Render iç proxy'sinin soket bağlantısı |
+| 1 | `10.25.111.8` | Render iç yük dengeleyici |
+| 2 | `104.23.180.102` | Cloudflare edge |
+| 3 | `88.253.38.157` | **GERÇEK İSTEMCİ** |
+
+`TRUST_PROXY_HOPS=1` iken `req.ip` = `10.25.111.8` çözülüyordu — **Render'ın iç yük dengeleyicisi**. Bu adres TÜM kullanıcılarda ortaktır ve istekten isteğe dönüşümlüdür (`10.25.111.8`, `10.24.213.77`, …). Sonuç: limitler "IP başına" değil **fiilen küresel** sayıyordu; birkaç kullanıcı diğer herkesi kilitleyebilirdi. Tek kullanıcı test ettiği için arıza gizli kalmıştı.
+
+**Spoofing sorusu da cevaplandı:** sahte `X-Forwarded-For: 1.2.3.4` gönderildiğinde ham başlık `1.2.3.4,88.253.38.157, 104.23.…` oldu — yani altyapı başlığı **ezmiyor, üstüne ekliyor**. Bu nedenle `trust proxy: true` (en soldakine güvenmek) durumu **daha kötü** hale getirirdi: herkes limiti tek bir başlıkla atlardı.
+
+**Doğru değer 3.** Saldırganın enjekte ettiği her girdi zincirin SOLUNA düştüğü ve altyapı gerçek istemcinin sağına sabit sayıda hop eklediği için, `3` hem doğru istemciyi verir hem spoof'a kapalıdır.
+
+| Değer | `req.ip` | Sonuç |
+| :--- | :--- | :--- |
+| `1` | `10.25.111.8` | 🔴 Render iç adresi — limitler küresel sayar |
+| `2` | `104.23.180.102` | 🔴 Cloudflare edge — o da paylaşımlı, aynı sınıf hata |
+| `true` | `1.2.3.4` (uydurma) | 🔴 limit tek başlıkla atlanır |
+| **`3`** | `88.253.38.157` | ✅ gerçek istemci, spoof'a kapalı |
+
+**Bir daha sessizce bozulmaması için eklenenler:**
+
+1. **Otomatik tespit** (`utils/net.js` → `isPrivateOrLoopbackIp`): rate limit anahtarı özel/loopback bir adrese çözülüyorsa bu neredeyse kesin yanlış yapılandırmadır (gerçek bir istemci internet üzerinden özel adresle gelemez). `/health` bunu `proxy.looksMisconfigured: true` ve yol gösterici bir `hint` ile raporlar.
+2. **Süreç başına bir kez uyarı logu** (`rate-limit.middleware.js`): anahtar özel bir adrese çözülürse `[RateLimit] UYARI: ...` loglanır.
+3. **Regresyon testleri** (`test/health.routes.test.js`): gerçek ölçülen zincir şekliyle, `3`'ün gerçek istemciyi, `1`'in ise iç adresi seçtiği donduruldu. Biri değeri geri alırsa test neyin bozulduğunu açıkça gösterir.
+
+**Ders:** Bir ayarın değerini raporlamak, doğru çalıştığını kanıtlamaz. `trust proxy` gibi altyapıya bağlı ayarlar **canlı ortamda ölçülerek** doğrulanmalıdır; hop sayısı platforma özgüdür ve tahmin edilemez.
 
 ### 6.3. `orchestrator/.env` Operasyonel Süreci Netleşmedi
 

@@ -67,6 +67,7 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import config from '../../config/index.js';
 import logger from '../../utils/logger.js';
+import { isPrivateOrLoopbackIp } from '../../utils/net.js';
 
 /**
  * Limit aşıldığında dönen gövde — kod tabanının her yerindeki hata şekliyle
@@ -109,6 +110,9 @@ function createLimiter({ name, limits, keyGenerator }) {
   });
 }
 
+/** `trust proxy` yanlış yapılandırma uyarısı süreç başına bir kez loglanır. */
+let misconfigWarned = false;
+
 /**
  * IP anahtarı. `ipKeyGenerator`, IPv6 adreslerini /64 alt ağına indirger —
  * aksi halde tek bir IPv6 tahsisi sahibi, her istekte farklı adres kullanarak
@@ -118,7 +122,24 @@ function createLimiter({ name, limits, keyGenerator }) {
  * @returns {string}
  */
 function ipKey(req) {
-  return ipKeyGenerator(req.ip ?? '');
+  const ip = req.ip ?? '';
+
+  // Çözülen adres özel/iç bir adresse `trust proxy` yanlıştır: o adres TÜM
+  // kullanıcılarda ortak olduğu için limitler "IP başına" değil fiilen
+  // "küresel" sayar ve birkaç kullanıcı herkesi kilitleyebilir. Sessizce
+  // bozulmasın diye SÜREÇ BAŞINA BİR KEZ uyarı loglanır (her istekte loglamak
+  // gürültü yaratırdı). Ayrıntı: utils/net.js ve §6.2.1.
+  if (!misconfigWarned && isPrivateOrLoopbackIp(ip)) {
+    misconfigWarned = true;
+    logger.warn(
+      `[RateLimit] UYARI: rate limit anahtarı özel/iç bir adrese çözülüyor (${ip}). ` +
+        `TRUST_PROXY_HOPS (şu an ${config.trustProxyHops}) muhtemelen yanlış — ` +
+        `limitler IP başına değil KÜRESEL sayıyor olabilir. ` +
+        `Teşhis: GET /api/v1/health -> proxy.rawForwardedFor`
+    );
+  }
+
+  return ipKeyGenerator(ip);
 }
 
 /**

@@ -133,7 +133,7 @@ Elle kurulacaksa (**New → Web Service**):
 | Değişken | Değer | Not |
 | :--- | :--- | :--- |
 | `NODE_ENV` | `production` | |
-| `TRUST_PROXY_HOPS` | `1` | 🔴 aşağıdaki uyarıyı okuyun |
+| `TRUST_PROXY_HOPS` | `3` | 🔴 aşağıdaki uyarıyı okuyun — canlıda ÖLÇÜLDÜ, tahmin değil |
 | `PORT` | **girilmez** | Render kendisi enjekte eder |
 | `CORS_ALLOWED_ORIGINS` | client'ın tam origin'i | Client yerelde çalışacaksa boş bırakılabilir (§6.6) |
 
@@ -146,15 +146,30 @@ yalnızca yorum satırında geçer, hiçbir kod yolunda kullanılmaz.
 
 ### 🔴 `TRUST_PROXY_HOPS` — en kritik ayar
 
-Render uygulamayı tek bir reverse proxy arkasında çalıştırır. Bu değer yanlışsa
-rate limiting'in IP katmanı **iki yönde de** kırılır:
+Render, uygulamanın önünde **iki** proxy katmanı çalıştırır (Cloudflare + kendi iç
+yük dengeleyicisi) ve Express hop sayarken **soket bağlantısını da** sayar. Canlı
+ölçümle bulunan gerçek dizilim:
 
-- **`0` kalırsa:** `req.ip` HERKES için proxy'nin IP'si olur, tüm kullanıcılar tek
-  sayacı paylaşır ve **ilk 30 istekte topluca 429 alır**. Uygulama sağlıklı log
-  ürettiği için bu, sunum günü teşhisi çok zor bir arıza olarak görünür.
-- **`true`/çok yüksekse:** saldırgan `X-Forwarded-For` uydurup limiti tamamen atlar.
+| Hop | Adres | Nedir |
+| :-- | :--- | :--- |
+| 0 | `::1` | Render iç proxy'sinin soket bağlantısı |
+| 1 | `10.25.111.8` | Render iç yük dengeleyici |
+| 2 | `104.23.180.102` | Cloudflare edge |
+| 3 | `88.253.38.157` | **gerçek istemci** |
 
-Ayrıntı: `ARCHITECTURE_DECISIONS.md` §6.2.1.
+Bu yüzden doğru değer **3**'tür. Yanlış değerlerin sonucu:
+
+- **`1`** (ilk tahmin, canlıda denendi ve YANLIŞ çıktı): `req.ip` = Render'ın iç
+  adresi. Bu adres tüm kullanıcılarda ortaktır → limitler "IP başına" değil
+  **fiilen küresel** sayar, birkaç kullanıcı herkesi kilitleyebilir.
+- **`2`**: Cloudflare edge IP'si — o da paylaşımlıdır, aynı sınıf hata.
+- **`true`**: saldırganın uydurduğu `X-Forwarded-For` girdisi seçilir, limit tek
+  bir başlıkla tamamen atlanır.
+
+**Doğrulama:** `GET /api/v1/health` → `proxy.looksMisconfigured` **false** olmalı.
+`true` ise `proxy.rawForwardedFor` zincirine bakıp hop sayısını yeniden hesaplayın.
+
+Ayrıntı ve ölçüm kayıtları: `ARCHITECTURE_DECISIONS.md` §6.2.2.
 
 ## 4. Client'ın backend adresi
 

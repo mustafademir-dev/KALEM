@@ -77,6 +77,94 @@ describe('GET /api/v1/health — liveness ve readiness', () => {
     assert.equal(typeof body.trustProxyHops, 'number');
   });
 
+  it('proxy teşhis bloğunu raporlamalı (zincirin gerçek şekli görülebilsin)', async () => {
+    const res = await fetch(baseUrl);
+    const body = await res.json();
+
+    assert.ok(body.proxy, 'proxy bloğu bulunmalı');
+    assert.equal(typeof body.proxy.trustProxyHops, 'number');
+    assert.ok(Array.isArray(body.proxy.forwardedChain));
+    assert.equal(typeof body.proxy.looksMisconfigured, 'boolean');
+    // Bu testte istek loopback'ten geliyor; XFF yok, trust proxy kapalı →
+    // req.ip = 127.0.0.1 → tespit doğru şekilde "yanlış yapılandırma" demeli.
+    assert.equal(body.proxy.looksMisconfigured, true, 'loopback adres tespit edilmeli');
+    assert.ok(body.proxy.hint, 'yanlış yapılandırmada yol gösterici mesaj olmalı');
+  });
+
+  it('trust proxy = 3 GERÇEK Render zincirinde gerçek istemciyi seçmeli', async () => {
+    // 10 Eylül 2026'da canlı Render'dan ÖLÇÜLEN zincir şekli birebir kullanılır:
+    //   <gerçek istemci>, <Cloudflare>, <Render iç ağı>
+    // Express SOKET bağlantısını da bir hop sayar (Render'da ::1 üzerinden gelir):
+    //   hop0=::1, hop1=Render-iç, hop2=Cloudflare, hop3=GERÇEK İSTEMCİ
+    // Bu yüzden doğru değer 3'tür (2 değil — 2, Cloudflare'i seçerdi).
+    const app = express();
+    app.set('trust proxy', 3);
+    app.use('/api/v1/health', healthRoutes);
+    const srv = await new Promise((resolve) => {
+      const s = app.listen(0, () => resolve(s));
+    });
+    try {
+      const res = await fetch(`http://127.0.0.1:${srv.address().port}/api/v1/health`, {
+        headers: { 'X-Forwarded-For': '88.253.38.157, 104.23.180.102, 10.25.111.8' },
+      });
+      const body = await res.json();
+
+      assert.equal(body.proxy.resolvedClientIp, '88.253.38.157', 'gerçek istemci seçilmeli');
+      assert.equal(body.proxy.looksMisconfigured, false);
+      assert.equal(body.proxy.hint, null);
+    } finally {
+      await new Promise((resolve) => srv.close(resolve));
+    }
+  });
+
+  it('trust proxy = 1 (ESKİ HATALI değer) Render iç adresini seçmeli — regresyon koruması', async () => {
+    // Bu test, hatanın kendisini dondurur: 1 ile aynı zincir Render'ın İÇ
+    // adresine çözülür ve o adres tüm kullanıcılarda ortak olduğu için limitler
+    // "IP başına" değil KÜRESEL sayar. Biri TRUST_PROXY_HOPS'u 1'e geri alırsa
+    // bu test neyin bozulduğunu açıkça gösterir.
+    const app = express();
+    app.set('trust proxy', 1);
+    app.use('/api/v1/health', healthRoutes);
+    const srv = await new Promise((resolve) => {
+      const s = app.listen(0, () => resolve(s));
+    });
+    try {
+      const res = await fetch(`http://127.0.0.1:${srv.address().port}/api/v1/health`, {
+        headers: { 'X-Forwarded-For': '88.253.38.157, 104.23.180.102, 10.25.111.8' },
+      });
+      const body = await res.json();
+
+      assert.equal(body.proxy.resolvedClientIp, '10.25.111.8', 'hatalı değer iç adresi seçer');
+      assert.equal(body.proxy.looksMisconfigured, true, 'tespit bu hatayı yakalamalı');
+    } finally {
+      await new Promise((resolve) => srv.close(resolve));
+    }
+  });
+
+  it('saldırgan XFF enjekte etse bile trust proxy = 3 gerçek istemciyi seçmeli', async () => {
+    // Altyapı zincire EKLER (ezmez) — ölçümle doğrulandı. Saldırganın uydurduğu
+    // girdiler zincirin SOLUNA düşer, güvenilen hop konumunu etkileyemez.
+    const app = express();
+    app.set('trust proxy', 3);
+    app.use('/api/v1/health', healthRoutes);
+    const srv = await new Promise((resolve) => {
+      const s = app.listen(0, () => resolve(s));
+    });
+    try {
+      const res = await fetch(`http://127.0.0.1:${srv.address().port}/api/v1/health`, {
+        headers: {
+          'X-Forwarded-For': '1.2.3.4, 9.9.9.9, 88.253.38.157, 104.23.180.102, 10.25.111.8',
+        },
+      });
+      const body = await res.json();
+
+      assert.equal(body.proxy.resolvedClientIp, '88.253.38.157', 'sahte girdiler seçilmemeli');
+      assert.notEqual(body.proxy.resolvedClientIp, '1.2.3.4');
+    } finally {
+      await new Promise((resolve) => srv.close(resolve));
+    }
+  });
+
   it('Horizon/Soroban adreslerini raporlamalı ama canlı ağ çağrısı YAPMAMALI', async () => {
     // Bu uç dakikada bir çağrılabilir (uyanık tutma ping'i); her çağrıda dış ağa
     // gitmek gereksiz yük ve ek başarısızlık kaynağı olurdu.

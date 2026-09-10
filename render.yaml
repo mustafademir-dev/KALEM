@@ -36,14 +36,28 @@ services:
       - key: NODE_ENV
         value: production
 
-      # --- trust proxy — YANLIŞ AYARLANIRSA TÜM KULLANICILAR KİLİTLENİR ---
-      # Render tek reverse proxy arkasında çalıştırır → 1.
-      # 0 olursa req.ip herkes için proxy'nin IP'si olur, tüm kullanıcılar tek
-      # rate-limit sayacını paylaşır ve ilk 30 istekte topluca 429 alır.
-      # true/daha yüksek olursa saldırgan X-Forwarded-For uydurup limiti atlar.
-      # Ayrıntı: docs/ARCHITECTURE_DECISIONS.md §6.2.1
+      # --- trust proxy — YANLIŞ AYARLANIRSA RATE LIMIT SESSİZCE BOZULUR ---
+      # DEĞER 3'TÜR. Canlı Render dağıtımında 10 Eylül 2026'da ÖLÇÜLDÜ.
+      #
+      # Express hop sayarken SOKET bağlantısını da sayar. Render'da gerçek zincir:
+      #   hop0 = ::1              (Render iç proxy'si loopback'ten bağlanır)
+      #   hop1 = 10.25.111.8      (Render iç yük dengeleyici)
+      #   hop2 = 104.23.180.102   (Cloudflare edge)
+      #   hop3 = 88.253.38.157    (GERÇEK İSTEMCİ)
+      #
+      # 1 (ilk denenen değer): req.ip = 10.x.x.x → Render'ın İÇ adresi. Bu adres
+      #   TÜM kullanıcılarda ortaktır → limitler "IP başına" değil fiilen KÜRESEL
+      #   sayar; birkaç kullanıcı herkesi kilitleyebilir. Canlıda böyle oldu.
+      # 2: Cloudflare edge IP'sini seçer — o da paylaşımlıdır, aynı sınıf hata.
+      # true: saldırganın enjekte ettiği XFF girdisi (zincirin SOLUNA eklenir)
+      #   seçilir → limit tek bir başlıkla tamamen atlanır.
+      # 3: gerçek istemciyi verir VE spoof'a kapalıdır — altyapı zincire ekleme
+      #   yaptığı için saldırganın uydurduğu girdiler hep SOLDA kalır.
+      #
+      # DOĞRULAMA: GET /api/v1/health -> proxy.looksMisconfigured false olmalı.
+      # Ayrıntı: docs/ARCHITECTURE_DECISIONS.md §6.2.2
       - key: TRUST_PROXY_HOPS
-        value: 1
+        value: 3
 
       # --- Gizli değerler: panelden girilir, repoda TUTULMAZ ---
       - key: MONGODB_URI

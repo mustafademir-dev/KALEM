@@ -25,6 +25,7 @@ import { Router } from 'express';
 import mongoose from 'mongoose';
 import config from '../../config/index.js';
 import { getSSEStatus } from '../../services/sse-listener.service.js';
+import { isPrivateOrLoopbackIp } from '../../utils/net.js';
 
 const router = Router();
 
@@ -55,11 +56,25 @@ function readMongoStatus() {
  * @returns {object}
  */
 function describeProxy(req) {
+  const resolvedClientIp = req.ip ?? null;
+
+  // Gerçek bir istemci internet üzerinden ÖZEL bir adresle gelemez. Çözülen
+  // adres özel/loopback ise `trust proxy` neredeyse kesin olarak yanlıştır ve
+  // limitler "IP başına" değil fiilen "küresel" sayıyordur.
+  const misconfigured = isPrivateOrLoopbackIp(resolvedClientIp);
+
   return {
     // Yapılandırılan değer (config'ten)
     trustProxyHops: config.trustProxyHops,
     // Express'in bu değere göre ÇÖZDÜĞÜ istemci adresi — rate limit anahtarı budur.
-    resolvedClientIp: req.ip ?? null,
+    resolvedClientIp,
+    // 🔴 true ise rate limiting SESSİZCE bozuktur — TRUST_PROXY_HOPS düzeltilmeli.
+    looksMisconfigured: misconfigured,
+    hint: misconfigured
+      ? 'resolvedClientIp özel/iç bir adres — TRUST_PROXY_HOPS yanlış. ' +
+        'rawForwardedFor zincirinde gerçek istemci soldan 1., altyapı hop sayısı ' +
+        'ise sağdaki eleman sayısıdır; TRUST_PROXY_HOPS o sayıya eşit olmalıdır.'
+      : null,
     // Express'in güvenilir kabul ettiği zincir.
     forwardedChain: Array.isArray(req.ips) ? req.ips : [],
     // Ham başlık — zincirin gerçek şekli ve uzunluğu buradan görülür.
