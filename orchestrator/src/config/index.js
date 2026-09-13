@@ -163,6 +163,20 @@ const config = {
     },
   },
 
+  /**
+   * --- Mutabakat (Reconciliation) Ayarları ---
+   *
+   * SSE dinleyicisinin yedeği (§6.4). `submitted` durumunda takılı kalan
+   * işlemleri periyodik olarak Horizon'dan doğrular. Canlı Render dağıtımında
+   * SSE'nin hiç mesaj almadığı GERÇEK bir arızayla gerekliliği kanıtlandı.
+   */
+  reconciliation: {
+    enabled: requireEnv('RECONCILIATION_ENABLED', 'true') === 'true',
+    // Varsayılan: dakikada bir. Demo sırasında GİB fişinin makul sürede
+    // görünmesi için sık, Horizon'u yormayacak kadar seyrek.
+    cronExpression: requireEnv('RECONCILIATION_CRON', '* * * * *'),
+  },
+
   // --- Havuz 4 → Havuz 2 Besleme (Pool Feeder) Ayarları ---
   poolFeeder: {
     cronExpression: requireEnv('POOL_FEEDER_CRON', '*/5 * * * *'),

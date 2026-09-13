@@ -342,7 +342,7 @@ socketRemoteAddress: ::1
 
 `.env` dosyası `.gitignore`'dadır ve `POOL2_SECRET_KEY`/`ISSUER_SECRET_KEY` gibi gizli anahtarları içerir; repoda hiçbir zaman bulunmaz. Gerçek testnet işlemi gönderebilmek için bu dosyanın doldurulmuş olması gerekir. Anahtarların kimin tarafından, hangi güvenli kanaldan sağlanacağı (örn. HSM, secret manager, elle) operasyonel olarak henüz tanımlanmamıştır — bkz. Bölüm 5.1 "Yan not — ihraççı clawback yetkisi" ile aynı üretim-öncesi sertleştirme kapsamı.
 
-### 6.4. SSE Dinleyicisinde Kalıcı Cursor / Reconciliation Yok
+### 6.4. SSE Dinleyicisinde Kalıcı Cursor / Reconciliation — ~~Yok~~ ✅ MUTABAKAT EKLENDİ (13 Eylül 2026)
 
 Madde 5 (`sse-listener.service.js` havuz filtresi düzeltmesi) sırasında incelenmiştir. `@stellar/stellar-sdk`'in `stream()` implementasyonu (`horizon/call_builder.js`) kısa süreli ağ kesintilerine karşı makul bir koruma sağlar: her mesajda sıfırlanan 15 saniyelik bir durgunluk (staleness) sayacı bağlantıyı otomatik kapatıp yeniden açar, alttaki `EventSource` de kendi native retry'ını çalıştırır, ve son işlenen `paging_token` bellekte tutulup yeniden bağlanırken kullanılır — yani saniyeler-dakikalar süren kesintilerde veri kaybı olmaz.
 
@@ -350,7 +350,39 @@ Madde 5 (`sse-listener.service.js` havuz filtresi düzeltmesi) sırasında incel
 - **Sabit 15sn retry aralığı, exponential backoff yoktur** — uzun süreli bir Horizon kesintisinde sistem aralıksız denemeye devam eder, hız kesme/geri çekilme mantığı yoktur.
 - **Kalıcı cursor yoktur (asıl önemli olan bu):** `startSSEListener()` her çağrıldığında `.cursor('now')` ile sıfırdan başlar; cursor hiçbir yerde (DB'de) saklanmaz. Orkestrasyon süreci yeniden başlarsa (deploy, crash, restart) — o pencerede zincire yazılan ama henüz yakalanmamış bir onay **kalıcı olarak kaçırılır**. Hiçbir reconciliation/backfill job'ı `'submitted'` durumunda takılı kalan işlemleri sonradan Horizon'dan sorgulayıp düzeltmiyor; `/health` endpoint'i de SSE bağlantı durumunu yansıtmıyor — dolayısıyla bu durum operasyonel olarak fark edilmeyebilir.
 
-**Öneri (üretim öncesi yapılmalı, bu iş paketinin kapsamı dışında bırakıldı):** son işlenen cursor'ı MongoDB'de kalıcı tutmak, sunucu başlangıcında oradan devam etmek; ayrıca periyodik bir reconciliation job'ı ile belirli bir süreden uzun `'submitted'` durumunda kalan işlemleri Horizon'dan tekil sorgulayıp durumlarını düzeltmek (SSE'nin bir yedeği olarak). **Bu henüz yapılmamıştır.**
+**Öneri (üretim öncesi yapılmalı, bu iş paketinin kapsamı dışında bırakıldı):** son işlenen cursor'ı MongoDB'de kalıcı tutmak, sunucu başlangıcında oradan devam etmek; ayrıca periyodik bir reconciliation job'ı ile belirli bir süreden uzun `'submitted'` durumunda kalan işlemleri Horizon'dan tekil sorgulayıp durumlarını düzeltmek (SSE'nin bir yedeği olarak).
+
+**Durum güncellemesi (13 Eylül 2026):** Önerinin **ikinci yarısı (reconciliation job) UYGULANDI** — bkz. §6.4.1. Kalıcı cursor hâlâ yoktur, ancak mutabakat job'ı onun çözdüğü sorunu (kaçan onay) pratikte kapattığı için öncelik düşmüştür.
+
+#### 6.4.1. Mutabakat Job'ı — Gerçek Bir Arızayla Gerekliliği Kanıtlandı (13 Eylül 2026)
+
+§6.4 bu açığı teorik bir risk olarak yazmıştı. Render'daki canlı dağıtımda yapılan **uçtan uca gerçek provada risk gerçekleşti.**
+
+**Gözlem:** Müşteri→esnaf ödemesi zincire başarıyla yazıldı — tx [`b5466573…`](https://stellar.expert/explorer/testnet/tx/b5466573a0233c4d2c8df82f783e11d3a844bf1c24ea1a2c708abd7ea39983d9), Havuz 2 ücreti ödedi, esnaf tam `2.4900000` dTL (%99,6) aldı. **Ancak GİB belgesi hiç üretilmedi.** `/health` şunu gösteriyordu:
+
+```
+sseListener: { started: true, messageCount: 0, lastMessageAt: null, lastError: null }
+```
+
+Yani dinleyici "başlatıldı" görünüyor, hata da yok, ama **hiç mesaj almamış**. Bu, §6.4'ün öngördüğü sessiz arızanın ta kendisidir; `/health`'e `messageCount` alanı eklenmiş olmasaydı teşhis edilemezdi (uygulama dışarıdan tamamen sağlıklı görünüyordu).
+
+**Kodun suçsuz olduğu kanıtlandı:** Aynı SDK, aynı `forAccount(Havuz2)` filtresi ve aynı Horizon ile YEREL bir testte akış sorunsuz çalıştı ve **tam da bu ödeme tx'ini yakaladı** (`cursor('0')` ile geçmiş oynatıldığında 11 mesaj, ödeme dahil). Dolayısıyla sorun kodda veya filtrede değil, dağıtım ortamındadır.
+
+**Alınan karar — SSE'yi Render'da kovalamak yerine yedek eklemek:** SSE düzelse bile tek bir ağ akışına bağımlılık kırılgandır; ayrıca ücretsiz planda süreç uykuya geçip yeniden başladığında `.cursor('now')` sıfırdan başlar ve o penceredeki onaylar zaten kalıcı olarak kaybolur. Bu nedenle `orchestrator/src/services/reconciliation.service.js` eklendi:
+
+- Periyodik olarak (varsayılan: dakikada bir, `RECONCILIATION_CRON`) `submitted` durumunda **ve belirli bir yaştan eski** işlemleri bulur.
+- Her biri için Horizon'a **tekil** sorgu atar.
+- Zincirde başarılıysa **`handleTransaction()`'ı çağırır** — onay, GİB üretimi ve bildirim mantığı SSE yolundakiyle BİREBİR AYNI kod yolundan geçer, kopyalanmaz.
+- Zincirde bulunamayan (404) işlem `submitted` bırakılır (henüz onaylanmamış olabilir); zincirde başarısız olan `failed` yapılır, aksi halde sonsuza kadar sorgulanırdı.
+- Çok taze işlemler atlanır: normal akışta önce SSE'ye şans verilir, gereksiz Horizon sorgusu yapılmaz.
+
+**Doğrulama:** Job, kaybolan gerçek ödeme üzerinde çalıştırıldı — işlem `confirmed` oldu, `ledgerNumber` yazıldı ve **GİB belgesi üretildi** (`status: generated`, canlı backend'den doğrulandı).
+
+**Yol boyunca bulunan bug:** Horizon SDK yanıtında `tx.ledger` bir **fonksiyondur** (ilgili ledger'ı çeken link takipçisi), sayı değil; ledger numarası `ledger_attr`'dadır. İlk implementasyon `tx.ledger`'ı önce okuduğu için Mongoose `Cast to Number failed` hatası veriyor ve hiçbir işlem mutabakattan geçemiyordu. Düzeltildi ve bu tuzak için ayrı bir regresyon testi yazıldı.
+
+**Testler:** `orchestrator/test/reconciliation.service.test.js` — 7 test (onay+GİB üretimi, `ledger` fonksiyonu tuzağı, 404 davranışı, başarısız işlem, taze işlem atlama, confirmed'a dokunmama, Horizon yapılandırılmamış). Paket toplamı: **167/167 PASS**.
+
+---
 
 ### 6.6. CORS Eklendi — client/ iş paketi sırasında GERÇEK tarayıcıda bulundu
 
@@ -499,22 +531,47 @@ Event log (newest first):
 ### Tamamlanan katmanlar (hepsi gerçek testnet'te doğrulandı)
 
 - **Kontratlar v1 + v2** (`contracts/`): `dtl-token` ve `pool-manager`, 38/38 Rust birim testi PASS, testnet'e deploy edildi. v2 ile müşteri→esnaf gerçek `pay_merchant()` ödemesi eklendi (§7); esnaf-gönderemez guard'ı gerçek ağda negatif kanıtla doğrulandı (§7.5).
-- **`orchestrator/`**: Kalıcı MongoDB Atlas bağlantısı (§6.1), CORS (§6.6), fee-bump ile gerçek işlem gönderimi + idempotency, SSE dinleyicisi ile onay yakalama, GİB e-Belge simülasyonu + görüntüleme ucu, esnaf kaydı (adres sahipliği imzası + ayrı admin onay script'i `approve-merchant.mjs`), demo musluk (`/faucet/mint`), balance ucunda `kycStatus`/`onChainRegistered`, rate limiting (§6.2.1), liveness/readiness sağlık uçları + SSE canlılık raporlaması. 149/149 test PASS.
+- **`orchestrator/`**: Kalıcı MongoDB Atlas bağlantısı (§6.1), CORS (§6.6), fee-bump ile gerçek işlem gönderimi + idempotency, SSE dinleyicisi ile onay yakalama, GİB e-Belge simülasyonu + görüntüleme ucu, esnaf kaydı (adres sahipliği imzası + ayrı admin onay script'i `approve-merchant.mjs`), demo musluk (`/faucet/mint`), balance ucunda `kycStatus`/`onChainRegistered`, rate limiting (§6.2.1), liveness/readiness sağlık uçları + SSE canlılık raporlaması, mutabakat job'ı (§6.4.1). 167/167 test PASS.
 - **`client/` (Expo)**: Müşteri akışı (bakiye yükleme/Friendbot+mint, QR okutup ödeme, GİB fişi görüntüleme) ve esnaf akışı (kayıt, giriş, tutar girip QR üretme, canlı ödeme tespiti, bakiye/rozet, GİB fişi görüntüleme) — tümü gerçek tarayıcı testleriyle ve gerçek testnet tx'leriyle doğrulandı.
 
 ### Sıradaki adımlar (bu sırayla)
 
 1. **Backend'i bulut sunucuya taşıma** (Render) — 🟡 **HAZIRLIK TAMAM (10 Eylül 2026), deploy BEKLİYOR.** Kod tarafı hazır: repo kökünde `render.yaml`, `/api/v1/health` (liveness, her zaman 200 — uyanık tutma ping'i için dış ağ çağrısı yapmaz) ve `/api/v1/health/ready` (readiness, bağımlılık bozuksa 503) ayrımı, SSE dinleyicisinin canlılık raporlaması, client'ın backend adresi `EXPO_PUBLIC_ORCHESTRATOR_BASE_URL` ile parametreleştirildi. Atlas erişimi `0.0.0.0/0` + yenilenmiş şifreyle açıldı ve yerelden doğrulandı. **Kalan:** Render'da servisin oluşturulması ve env değişkenlerinin girilmesi — adım adım rehber `docs/deployment.md` "Bulut Dağıtımı" bölümünde. ⚠️ `TRUST_PROXY_HOPS=1` ve ücretsiz plan/SSE uyarısı orada.
 2. ~~**Rate limiting eklenmesi**~~ — ✅ **TAMAMLANDI (6 Eylül 2026)**, bkz. §6.2.1. Kapsam öngörülenden geniş tutuldu: `/transactions/submit` ve `/faucet/mint`'e ek olarak `/merchants/register` ve GİB belge okuma ucu da kapsandı. **Bu iş, yukarıdaki 1. maddeye (bulut host) bir ön koşul BIRAKTI:** `TRUST_PROXY_HOPS` deploy sırasında doğru ayarlanmalıdır (yerelde `0`, Render/Railway'de `1`) — yanlış ayarlanırsa tüm kullanıcılar topluca 429 alır ve arıza demo günü teşhisi zor bir şekilde görünür.
-3. **Uçtan uca gerçek prova** — bulut host + rate limit sonrası, müşteri ve esnaf cihazlarıyla (veya iki ayrı tarayıcı sekmesiyle) tam senaryo baştan sona.
+3. **Uçtan uca gerçek prova** — ✅ **YAPILDI (13 Eylül 2026)**, canlı Render backend'i + iki tarayıcı sekmesiyle tam senaryo. Akış baştan sona çalıştı (tx [`b5466573…`](https://stellar.expert/explorer/testnet/tx/b5466573a0233c4d2c8df82f783e11d3a844bf1c24ea1a2c708abd7ea39983d9), esnafa `2.4900000` dTL = %99,6). **Prova üç gerçek hata ortaya çıkardı, üçü de düzeltildi:** (a) client SDK 12.3.0 bugünkü testnet'in Soroban yanıtını ayrıştıramıyordu → SDK 16.2.0'a yükseltildi (§8.1), (b) SDK 16'nın `bignumber.js` bağımlılığı Metro'da boş çözülüp uygulamayı beyaz ekranla öldürüyordu → `client/metro.config.js` (§8.1), (c) SSE hiç mesaj almadığı için GİB belgesi üretilmiyordu → mutabakat job'ı (§6.4.1).
 4. **Sunum senaryosu hazırlığı** — TEKNOFEST canlı sunumu için adım adım demo akışı, `DEMO_MODE` (§5.2) ve faucet tutarlarının sunuma uygunluğu gözden geçirilmeli.
+
+### §8.1. Client SDK Yükseltmesi ve Metro Çözümleyici Kuralı (13 Eylül 2026)
+
+Uçtan uca prova sırasında ödeme adımı **`Bad union switch: 1`** ile patlıyordu. Bu bir prova aksaklığı değil, **sunumda ödeme akışının tamamen çökmesi** demekti.
+
+**Kök neden (tahmin değil, ölçümle):** Aynı `pay_merchant` işlemi iki SDK sürümüyle yan yana çalıştırıldı:
+
+```
+client  SDK 12.3.0  -> HATA: Bad union switch: 1
+orchestrator 16.2.0 -> BAŞARILI (prepareTransaction çalıştı)
+```
+
+Stellar testnet Protocol 23'e geçtiğinde Soroban simülasyon yanıtındaki XDR'a yeni bir union kolu eklendi; SDK 12 onu ayrıştıramıyor. Akışın Ağustos 2026'da çalışıp bugün çalışmamasının sebebi budur — kodda hiçbir şey değişmedi, **ağ değişti**.
+
+**Düzeltme:** `client/package.json` → `@stellar/stellar-sdk@^16.2.0` (orchestrator ile sürüm eşitliği). İstemci kodu zaten SDK 13+ API'si olan `StellarSdk.rpc.*` kullandığı için yükseltme kodla daha tutarlıdır; kullanılan tüm API'lerin 16'da mevcut olduğu tek tek doğrulandı.
+
+**Yükseltmenin ortaya çıkardığı ikinci hata:** Uygulama açılışta beyaz ekranla öldü —
+
+```
+TypeError: _bignumber.default.clone is not a function
+```
+
+SDK 16, `bignumber.js` v11'e bağımlıdır. Bu paketin `exports` haritası üç koşul sunar ve **`browser` koşuluna karşılık gelen `dist/bignumber.js` hiçbir şey ihraç etmez** (yalnızca `globalThis.BigNumber` atar). Metro web hedefinde bu koşulu tercih ettiği için modül boş görünür. Node tarafı `require` koşulunu aldığından orchestrator etkilenmez — yani SDK'nın değil, **paketleme koşullarının** uyumsuzluğudur ve yalnızca web'i vurur.
+
+**Düzeltme:** `client/metro.config.js` eklendi; yalnızca `bignumber.js` içe aktarmaları CommonJS derlemesine yönlendirilir. Sürüm düşürmekten (SDK `^11.1.4` istiyor) ve `browser` koşulunu tüm paketler için kapatmaktan (diğer paketlerin web uyumluluğunu bozardı) daha dar kapsamlıdır.
 
 ### Bilinçli olarak yapılmayanlar — §6 gözden geçirmesi (16 Ağustos 2026 itibarıyla hepsi hâlâ geçerli)
 
 - **§6.1 Kalıcı MongoDB** — ✅ TAMAMLANDI, geçerliliğini koruyor.
 - **§6.2 Rate limiting** — ✅ TAMAMLANDI (6 Eylül 2026, §6.2.1). Bilinen sınırlama: bellek-içi store, çok-instance'lı dağıtımda paylaşılmaz.
 - **§6.3 `.env` operasyonel süreci** — hâlâ netleşmedi (kim/hangi kanaldan secret sağlayacak, tanımsız).
-- **§6.4 SSE kalıcı cursor/reconciliation yok** — hâlâ yapılmadı; sunucu restart'ında kaçırılan onaylar kalıcı olarak kaybolabilir.
+- **§6.4 SSE kalıcı cursor/reconciliation** — 🟡 mutabakat job'ı ✅ EKLENDİ (§6.4.1, canlı arızayla gerekliliği kanıtlandı); kalıcı cursor hâlâ yok ama mutabakat aynı sorunu pratikte kapatıyor.
 - **§6.5 Web'de şifrelenmemiş müşteri anahtarı** — hâlâ değişmedi; testnet/demo kapsamı için kabul edilebilir olarak işaretli kalıyor.
 - **§6.6 CORS** — ✅ TAMAMLANDI, geçerliliğini koruyor.
 - **§6.7 Faucet** — ✅ TAMAMLANDI; §6.2 kapsamında bekleyen rate-limit boşluğu da 6 Eylül 2026'da kapatıldı (adres başına 5/saat, IP başına 15/saat — §6.2.1).

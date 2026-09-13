@@ -125,6 +125,15 @@ services:
       - key: POOL_FEEDER_MAX_BURN_STROOPS
         value: 1000000000
 
+      # --- Mutabakat (§6.4) — SSE dinleyicisinin yedegi ---
+      # Canlı dağıtımda SSE'nin sessizce hiç mesaj almadığı gözlendi; ayrıca
+      # ücretsiz planda süreç uykuya geçip yeniden başladığı için o pencerede
+      # kaçan onaylar kalıcı olarak kaybolur. Bu job onları Horizon'dan yakalar.
+      - key: RECONCILIATION_ENABLED
+        value: true
+      - key: RECONCILIATION_CRON
+        value: "* * * * *"
+
       # --- Rate limiting (§6.2.1) ---
       # Sunum öncesi kod değiştirmeden gevşetilebilsin diye hepsi env.
       - key: RATE_LIMIT_ENABLED

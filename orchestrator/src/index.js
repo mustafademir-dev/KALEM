@@ -22,6 +22,7 @@ import gibRoutes from './api/routes/gib.routes.js';
 // --- Servisler ---
 import { startSSEListener } from './services/sse-listener.service.js';
 import { startPoolFeederCron } from './services/pool-feeder.service.js';
+import { startReconciliationCron } from './services/reconciliation.service.js';
 
 const app = express();
 
@@ -92,6 +93,11 @@ async function start() {
     // Havuz 4→2 besleme cron job'ını başlat
     const poolFeederTask = startPoolFeederCron();
 
+    // Mutabakat job'ı — SSE'nin kaçırdığı onayları Horizon'dan yakalar (§6.4).
+    // SSE tek başına güvenilir bir garanti DEĞİLDİR: canlı dağıtımda akış
+    // sessizce hiç mesaj almayabiliyor ve ücretsiz planda süreç uykuya geçiyor.
+    const reconciliationTask = startReconciliationCron();
+
     // HTTP sunucusu
     const server = app.listen(config.port, () => {
       logger.info(`[Server] KALEM Orkestrasyon Katmanı — port ${config.port}`);
@@ -102,6 +108,7 @@ async function start() {
       logger.info(`[Server] ${signal} alındı, kapatılıyor...`);
       closeSSEStream?.();
       poolFeederTask?.stop();
+      reconciliationTask?.stop();
       server.close(() => {
         mongoose.connection.close(false).finally(() => process.exit(0));
       });
