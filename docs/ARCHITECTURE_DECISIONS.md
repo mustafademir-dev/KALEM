@@ -524,22 +524,39 @@ Event log (newest first):
 
 ---
 
-## 8. Devam Noktası (16 Ağustos 2026 — proje bu tarihte askıya alındı; 6 Eylül 2026'da rate limiting ile devam edildi)
+## 8. Devam Noktası (son güncelleme: 14 Eylül 2026 — backend canlıda, uçtan uca prova geçti; sırada yalnızca sunum senaryosu var)
 
-> Bu bölüm, projenin belirsiz bir süre (gün/hafta) askıya alınmadan hemen önceki durumunu özetler; bir sonraki oturumun sıfırdan bağlam toplamadan devam edebilmesi içindir.
+> Bu bölüm, bir sonraki oturumun sıfırdan bağlam toplamadan devam edebilmesi içindir.
+>
+> **Tek cümlelik durum (14 Eylül 2026):** Backend Render'da canlı ve doğrulanmış (<https://kalem-5i08.onrender.com>), rate limiting canlıda ölçümle düzeltilip kanıtlandı, SSE için mutabakat yedeği eklendi ve uçtan uca ödeme provası gerçek testnet'te baştan sona geçti. **Kalan tek iş paketi: sunum senaryosu (§8 adım 4) — henüz BAŞLANMADI.** Bilinen tek açık doğrulama: QR okuma gerçek telefon kamerasıyla test edilmedi (bkz. "Bilinen açık nokta").
 
 ### Tamamlanan katmanlar (hepsi gerçek testnet'te doğrulandı)
 
 - **Kontratlar v1 + v2** (`contracts/`): `dtl-token` ve `pool-manager`, 38/38 Rust birim testi PASS, testnet'e deploy edildi. v2 ile müşteri→esnaf gerçek `pay_merchant()` ödemesi eklendi (§7); esnaf-gönderemez guard'ı gerçek ağda negatif kanıtla doğrulandı (§7.5).
 - **`orchestrator/`**: Kalıcı MongoDB Atlas bağlantısı (§6.1), CORS (§6.6), fee-bump ile gerçek işlem gönderimi + idempotency, SSE dinleyicisi ile onay yakalama, GİB e-Belge simülasyonu + görüntüleme ucu, esnaf kaydı (adres sahipliği imzası + ayrı admin onay script'i `approve-merchant.mjs`), demo musluk (`/faucet/mint`), balance ucunda `kycStatus`/`onChainRegistered`, rate limiting (§6.2.1), liveness/readiness sağlık uçları + SSE canlılık raporlaması, mutabakat job'ı (§6.4.1). 167/167 test PASS.
-- **`client/` (Expo)**: Müşteri akışı (bakiye yükleme/Friendbot+mint, QR okutup ödeme, GİB fişi görüntüleme) ve esnaf akışı (kayıt, giriş, tutar girip QR üretme, canlı ödeme tespiti, bakiye/rozet, GİB fişi görüntüleme) — tümü gerçek tarayıcı testleriyle ve gerçek testnet tx'leriyle doğrulandı.
+- **`client/` (Expo)**: Müşteri akışı (bakiye yükleme/Friendbot+mint, QR okutup ödeme, GİB fişi görüntüleme) ve esnaf akışı (kayıt, giriş, tutar girip QR üretme, canlı ödeme tespiti, bakiye/rozet, GİB fişi görüntüleme) — tümü gerçek tarayıcı testleriyle ve gerçek testnet tx'leriyle doğrulandı. Stellar SDK 16.2.0 + `metro.config.js` çözümleyici kuralı (§8.1). **Tek istisna: QR okuma gerçek telefon kamerasıyla denenmedi** — bkz. "Bilinen açık nokta".
 
 ### Sıradaki adımlar (bu sırayla)
 
-1. **Backend'i bulut sunucuya taşıma** (Render) — 🟡 **HAZIRLIK TAMAM (10 Eylül 2026), deploy BEKLİYOR.** Kod tarafı hazır: repo kökünde `render.yaml`, `/api/v1/health` (liveness, her zaman 200 — uyanık tutma ping'i için dış ağ çağrısı yapmaz) ve `/api/v1/health/ready` (readiness, bağımlılık bozuksa 503) ayrımı, SSE dinleyicisinin canlılık raporlaması, client'ın backend adresi `EXPO_PUBLIC_ORCHESTRATOR_BASE_URL` ile parametreleştirildi. Atlas erişimi `0.0.0.0/0` + yenilenmiş şifreyle açıldı ve yerelden doğrulandı. **Kalan:** Render'da servisin oluşturulması ve env değişkenlerinin girilmesi — adım adım rehber `docs/deployment.md` "Bulut Dağıtımı" bölümünde. ⚠️ `TRUST_PROXY_HOPS=1` ve ücretsiz plan/SSE uyarısı orada.
-2. ~~**Rate limiting eklenmesi**~~ — ✅ **TAMAMLANDI (6 Eylül 2026)**, bkz. §6.2.1. Kapsam öngörülenden geniş tutuldu: `/transactions/submit` ve `/faucet/mint`'e ek olarak `/merchants/register` ve GİB belge okuma ucu da kapsandı. **Bu iş, yukarıdaki 1. maddeye (bulut host) bir ön koşul BIRAKTI:** `TRUST_PROXY_HOPS` deploy sırasında doğru ayarlanmalıdır (yerelde `0`, Render/Railway'de `1`) — yanlış ayarlanırsa tüm kullanıcılar topluca 429 alır ve arıza demo günü teşhisi zor bir şekilde görünür.
+1. **Backend'i bulut sunucuya taşıma** (Render) — ✅ **TAMAMLANDI (12 Eylül 2026).** Servis canlı: <https://kalem-5i08.onrender.com>. Repo kökünde `render.yaml`, `/api/v1/health` (liveness, her zaman 200) ve `/api/v1/health/ready` (readiness, bağımlılık bozuksa 503) ayrımı, SSE canlılık raporlaması, client'ın backend adresi `EXPO_PUBLIC_ORCHESTRATOR_BASE_URL` ile parametreleştirildi. Atlas erişimi `0.0.0.0/0` + yenilenmiş şifreyle açıldı. Canlı doğrulama: `mongodb: connected`, `sseListener.started: true`, CORS tarayıcıdan çalışıyor. Adım adım rehber: `docs/deployment.md` "Bulut Dağıtımı". **Plan: `free` — servis 15 dk trafik almazsa uyur (~50sn soğuk başlatma); sunum öncesi `starter`'a geçiş kararı ASKIDA.**
+2. ~~**Rate limiting eklenmesi**~~ — ✅ **TAMAMLANDI (6 Eylül 2026), canlıda DÜZELTİLDİ ve DOĞRULANDI (12 Eylül 2026).** Kapsam öngörülenden geniş tutuldu: `/transactions/submit` ve `/faucet/mint`'e ek olarak `/merchants/register` ve GİB belge okuma ucu da kapsandı (§6.2.1). **Deploy sırasında öngörülen `trust proxy` tuzağı GERÇEKLEŞTİ ve ilk tahmin edilen değer de yanlış çıktı:** `TRUST_PROXY_HOPS=1` iken `req.ip` Render'ın **iç yük dengeleyicisine** (`10.x`) çözülüyordu; o adres tüm kullanıcılarda ortak olduğu için limitler "IP başına" değil **fiilen küresel** sayıyordu. Doğru değer canlı ölçümle **`3`** olarak bulundu (Express soket bağlantısını da hop sayar: `::1` → Render iç → Cloudflare → gerçek istemci) ve uygulandı — bkz. §6.2.2. **Doğrulama:** 15 hızlı istek tek kesintisiz sayaçta düştü (59→45; düzeltmeden önce üç ayrı sayaca bölünüyordu) ve üç farklı sahte `X-Forwarded-For` denemesi gerçek istemciyi değiştiremedi. Tekrarını önlemek için otomatik tespit (`proxy.looksMisconfigured`), tek seferlik uyarı logu ve regresyon testleri eklendi.
 3. **Uçtan uca gerçek prova** — ✅ **YAPILDI (13 Eylül 2026)**, canlı Render backend'i + iki tarayıcı sekmesiyle tam senaryo. Akış baştan sona çalıştı (tx [`b5466573…`](https://stellar.expert/explorer/testnet/tx/b5466573a0233c4d2c8df82f783e11d3a844bf1c24ea1a2c708abd7ea39983d9), esnafa `2.4900000` dTL = %99,6). **Prova üç gerçek hata ortaya çıkardı, üçü de düzeltildi:** (a) client SDK 12.3.0 bugünkü testnet'in Soroban yanıtını ayrıştıramıyordu → SDK 16.2.0'a yükseltildi (§8.1), (b) SDK 16'nın `bignumber.js` bağımlılığı Metro'da boş çözülüp uygulamayı beyaz ekranla öldürüyordu → `client/metro.config.js` (§8.1), (c) SSE hiç mesaj almadığı için GİB belgesi üretilmiyordu → mutabakat job'ı (§6.4.1).
-4. **Sunum senaryosu hazırlığı** — TEKNOFEST canlı sunumu için adım adım demo akışı, `DEMO_MODE` (§5.2) ve faucet tutarlarının sunuma uygunluğu gözden geçirilmeli.
+4. **Sunum senaryosu hazırlığı** — 🔴 **SIRADAKİ İŞ, HENÜZ BAŞLANMADI.** TEKNOFEST canlı sunumu için adım adım demo akışı, `DEMO_MODE` (§5.2) ve faucet tutarlarının sunuma uygunluğu gözden geçirilmeli. **Provadan çıkan ve bu senaryoya mutlaka girmesi gereken üç pratik nokta:**
+   - **İlk istek ~50 saniye sürebilir** — ücretsiz planda servis uykuya geçiyor. Sunumdan hemen önce `/api/v1/health`'e bir istek atıp servisi ısıtmak gerekir.
+   - **GİB fişi ~1 dakika gecikebilir** — SSE çalışmazsa mutabakat turu devreye girer (§6.4.1). Sunumda "fiş birazdan gelecek" diyebilmek için bu süre bilinmeli.
+   - **Faucet adres başına saatte 5 istek** — prova tekrarlarında bu limite takılmak mümkündür; gerekirse Render'dan `RATE_LIMIT_FAUCET_ADDRESS_MAX` geçici olarak yükseltilebilir.
+
+### Bilinen açık nokta — QR okuma gerçek telefon kamerasıyla TEST EDİLMEDİ
+
+Uçtan uca provada (13 Eylül 2026) QR okuma adımı **sentetik bir kamera akışıyla** yapıldı: `navigator.mediaDevices.getUserMedia` geçici olarak, esnaf ekranından alınan gerçek QR'ın çizildiği bir `canvas.captureStream()` akışıyla değiştirildi.
+
+**Bu yaklaşımın test ETTİĞİ şey:** `jsQR` çözümleme yolu gerçekten çalıştı — QR görüntüden okundu, `parseQrPayload()` doğruladı, esnaf adı ve tutar ekranda doğru göründü, ödeme o veriyle imzalandı. Yani `WebQrScanner` → `parseQrPayload` → ödeme zinciri **gerçek koddur ve doğrulanmıştır**.
+
+**Test ETMEDİĞİ şey:** Gerçek bir kameranın donanım yolu — `getUserMedia` izin akışı, kamera seçimi (`facingMode: environment`), otomatik odaklama, gerçek ışık koşulları, ekrandan QR okumada oluşan moiré/parlama, düşük çözünürlük ve titreme. Sentetik akış kusursuz, sabit ve tam kadrajlı bir görüntü sağlar; gerçek dünya bunların hiçbirini garanti etmez.
+
+**Yapılması gereken (kullanıcı yapacak):** Sunum öncesinde en az bir kez **gerçek bir telefonla** müşteri akışı baştan sona denenmelidir — esnaf QR'ı bir ekranda gösterilirken telefon kamerasıyla okutulmalı. Özellikle kamera izni istemi ve ekrandan okuma kalitesi gözlenmelidir. Bu, kalan tek doğrulanmamış kullanıcı yolu adımıdır.
+
+> İlgili kısıt: web hedefinde `expo-camera`'nın barkod çözümlemesi ÇALIŞMAZ; bu yüzden web'de kendi `getUserMedia` + `jsQR` döngümüz kullanılır (bkz. `client/src/components/WebQrScanner.js` dosya başı). Native (iOS/Android) hedefte farklı bir kod yolu devrededir ve o yol da ayrıca doğrulanmamıştır.
 
 ### §8.1. Client SDK Yükseltmesi ve Metro Çözümleyici Kuralı (13 Eylül 2026)
 

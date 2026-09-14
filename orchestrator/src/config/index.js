@@ -34,7 +34,13 @@ const config = {
    *   tüm kullanıcılar tek sayacı paylaşır ve topluca kilitlenir.
    * - Çok YÜKSEK / `true`: saldırgan `X-Forwarded-For` uydurup limiti atlar.
    *
-   * Yerelde (proxy yok) `0`; Render/Railway gibi tek proxy'li host'larda `1`.
+   * Yerelde (proxy yok) `0`; **Render'da `3`** — canlı ölçümle bulundu, tahmin
+   * DEĞİLDİR (§6.2.2). Express soket bağlantısını da hop sayar, Render'da zincir:
+   * `::1` (soket) → `10.x` (Render iç LB) → Cloudflare → gerçek istemci.
+   * İlk denenen `1`, `req.ip`'yi Render'ın İÇ adresine çözüyordu; o adres tüm
+   * kullanıcılarda ortak olduğu için limitler fiilen KÜRESEL sayıyordu.
+   * Değer platforma özgüdür: yeni bir host'a taşınırsa YENİDEN ÖLÇÜLMELİDİR
+   * (`GET /api/v1/health` → `proxy.looksMisconfigured` false olmalı).
    */
   trustProxyHops: parseInt(requireEnv('TRUST_PROXY_HOPS', '0'), 10),
 

@@ -36,7 +36,9 @@ const app = express();
  *
  * Değer, uygulamanın ÖNÜNDEKİ güvenilen reverse proxy sayısıdır:
  * - Yerelde proxy yoktur → `0` (Express `req.ip`'yi doğrudan soketten okur).
- * - Render/Railway gibi tek proxy'li host'larda → `1`.
+ * - **Render'da `3`** — canlı ölçümle bulundu (§6.2.2), tahmin DEĞİLDİR.
+ *   Express soket bağlantısını da hop sayar; zincir: `::1` → Render iç LB →
+ *   Cloudflare → gerçek istemci. Yeni bir host'a taşınırsa YENİDEN ÖLÇÜLMELİ.
  *
  * YANLIŞ AYARLANIRSA iki yönde de kırılır: çok düşükse `req.ip` herkes için
  * proxy'nin IP'si olur ve tüm kullanıcılar tek sayacı paylaşıp TOPLUCA
