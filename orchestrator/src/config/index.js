@@ -167,6 +167,11 @@ const config = {
       windowMs: parseInt(requireEnv('RATE_LIMIT_GIB_READ_WINDOW_MS', '60000'), 10), // 1 dk
       max: parseInt(requireEnv('RATE_LIMIT_GIB_READ_MAX', '60'), 10),
     },
+    // GET /flow/latest ve /flow/stream — panel okuma uçları (token'lı).
+    flowRead: {
+      windowMs: parseInt(requireEnv('RATE_LIMIT_FLOW_READ_WINDOW_MS', '60000'), 10), // 1 dk
+      max: parseInt(requireEnv('RATE_LIMIT_FLOW_READ_MAX', '60'), 10),
+    },
   },
 
   /**
@@ -180,7 +185,26 @@ const config = {
     enabled: requireEnv('RECONCILIATION_ENABLED', 'true') === 'true',
     // Varsayılan: dakikada bir. Demo sırasında GİB fişinin makul sürede
     // görünmesi için sık, Horizon'u yormayacak kadar seyrek.
+    // node-cron 6 alanlı (saniyeli) ifadeyi de kabul eder: Render'da
+    // "*/10 * * * * *" (10 sn) — canlı işlem akışının 7. adımı için.
     cronExpression: requireEnv('RECONCILIATION_CRON', '* * * * *'),
+    // Bu yaştan genç 'submitted' işlemler atlanır (önce SSE'ye şans verilir).
+    minAgeMs: parseInt(requireEnv('RECONCILIATION_MIN_AGE_MS', '20000'), 10),
+  },
+
+  /**
+   * --- Canlı İşlem Akışı Paneli (`/flow`) ---
+   *
+   * Panelin veri uçları (`/api/v1/flow/*`) bu token olmadan çalışmaz. Boşsa
+   * panel tamamen KAPALIDIR (503). EventSource başlık gönderemediği için token
+   * `?token=` sorgu parametresiyle gelir — gizli bir sır değil, demo panelini
+   * rastgele tarayıcılardan ayıran bir bariyerdir (gösterilen veriler zaten
+   * zincirde herkese açık: hash, adres, tutar; ek olarak işletme adı).
+   */
+  flowPanel: {
+    token: requireEnv('FLOW_PANEL_TOKEN', ''),
+    // Aynı anda açık tutulabilecek canlı yayın bağlantısı sayısı.
+    maxStreams: parseInt(requireEnv('FLOW_PANEL_MAX_STREAMS', '20'), 10),
   },
 
   // --- Havuz 4 → Havuz 2 Besleme (Pool Feeder) Ayarları ---

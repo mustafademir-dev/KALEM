@@ -156,3 +156,39 @@ export async function getGibDocument(txHash, { apiKey, senderAddress } = {}) {
     headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
   });
 }
+
+/**
+ * Esnaf ekranının bir ödemeyi zincirde GÖRDÜĞÜNÜ backend'e bildirir — canlı
+ * işlem akışı (`/flow` paneli) 9. adımı. Backend bu anı başka yoldan bilemez:
+ * esnaf ekranı ödemeyi Soroban RPC'den kendisi tespit eder
+ * (bkz. merchant-chain.service.js).
+ *
+ * Kısa aralıkla yeniden dener: esnaf, backend ödemenin hash'ini kaydetmeden
+ * birkaç ms önce görmüş olabilir (404) ya da bağlantı anlık kopmuş olabilir.
+ * Başarısız olursa ödeme akışını ETKİLEMEZ — yalnızca panelde 9. adım
+ * beklemede kalır.
+ *
+ * @param {string} txHash - Zincirdeki (fee-bump dış zarf) hash.
+ * @param {object} params
+ * @param {string} params.apiKey - Esnafın API anahtarı.
+ * @param {number} [params.detectedLedger]
+ * @returns {Promise<boolean>} Bildirim kaydedildiyse true.
+ */
+export async function acknowledgePaymentSeen(txHash, { apiKey, detectedLedger } = {}) {
+  const attempts = 4;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      await request(`/api/v1/transactions/${encodeURIComponent(txHash)}/merchant-ack`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: { detectedLedger },
+      });
+      return true;
+    } catch (err) {
+      const retriable = !(err instanceof ApiError) || err.code === 'NETWORK_ERROR' || err.status === 404 || err.status >= 500;
+      if (!retriable || i === attempts - 1) return false;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  }
+  return false;
+}

@@ -225,3 +225,15 @@ export const gibReadRateLimiter = createLimiter({
   limits: config.rateLimit.gibRead,
   keyGenerator: ipKey,
 });
+
+/**
+ * `GET /flow/latest` ve `GET /flow/stream` — IP bazlı.
+ * Token'lı okuma uçlarıdır; limit, token sızsa bile toplu sorgu/bağlantı
+ * açma hızını sınırlar. EventSource koptuğunda birkaç saniyede bir yeniden
+ * bağlandığı için dakikada 60 meşru kullanımı rahat karşılar.
+ */
+export const flowReadRateLimiter = createLimiter({
+  name: 'flow:read',
+  limits: config.rateLimit.flowRead,
+  keyGenerator: ipKey,
+});

@@ -354,11 +354,11 @@ Madde 5 (`sse-listener.service.js` havuz filtresi düzeltmesi) sırasında incel
 
 **Durum güncellemesi (13 Eylül 2026):** Önerinin **ikinci yarısı (reconciliation job) UYGULANDI** — bkz. §6.4.1. Kalıcı cursor hâlâ yoktur, ancak mutabakat job'ı onun çözdüğü sorunu (kaçan onay) pratikte kapattığı için öncelik düşmüştür.
 
-#### 6.4.1. Mutabakat Job'ı — Gerçek Bir Arızayla Gerekliliği Kanıtlandı (13 Eylül 2026)
+#### 6.4.1. Mutabakat Job'ı — Gerçek Bir Arızayla Gerekliliği Kanıtlandı (arıza: 12 Eylül 2026)
 
 §6.4 bu açığı teorik bir risk olarak yazmıştı. Render'daki canlı dağıtımda yapılan **uçtan uca gerçek provada risk gerçekleşti.**
 
-**Gözlem:** Müşteri→esnaf ödemesi zincire başarıyla yazıldı — tx [`b5466573…`](https://stellar.expert/explorer/testnet/tx/b5466573a0233c4d2c8df82f783e11d3a844bf1c24ea1a2c708abd7ea39983d9), Havuz 2 ücreti ödedi, esnaf tam `2.4900000` dTL (%99,6) aldı. **Ancak GİB belgesi hiç üretilmedi.** `/health` şunu gösteriyordu:
+**Gözlem:** Müşteri→esnaf ödemesi zincire başarıyla yazıldı — tx [`b5466573…`](https://stellar.expert/explorer/testnet/tx/b5466573a0233c4d2c8df82f783e11d3a844bf1c24ea1a2c708abd7ea39983d9) (ledger `4628674`, zincir zaman damgası **11 Eylül 2026 22:49:17 UTC = 12 Eylül 2026 01:49 TSİ**), Havuz 2 ücreti ödedi, esnaf tam `2.4900000` dTL (%99,6) aldı. **Ancak GİB belgesi hiç üretilmedi.** `/health` şunu gösteriyordu:
 
 ```
 sseListener: { started: true, messageCount: 0, lastMessageAt: null, lastError: null }
@@ -533,14 +533,15 @@ Event log (newest first):
 ### Tamamlanan katmanlar (hepsi gerçek testnet'te doğrulandı)
 
 - **Kontratlar v1 + v2** (`contracts/`): `dtl-token` ve `pool-manager`, 38/38 Rust birim testi PASS, testnet'e deploy edildi. v2 ile müşteri→esnaf gerçek `pay_merchant()` ödemesi eklendi (§7); esnaf-gönderemez guard'ı gerçek ağda negatif kanıtla doğrulandı (§7.5).
-- **`orchestrator/`**: Kalıcı MongoDB Atlas bağlantısı (§6.1), CORS (§6.6), fee-bump ile gerçek işlem gönderimi + idempotency, SSE dinleyicisi ile onay yakalama, GİB e-Belge simülasyonu + görüntüleme ucu, esnaf kaydı (adres sahipliği imzası + ayrı admin onay script'i `approve-merchant.mjs`), demo musluk (`/faucet/mint`), balance ucunda `kycStatus`/`onChainRegistered`, rate limiting (§6.2.1), liveness/readiness sağlık uçları + SSE canlılık raporlaması, mutabakat job'ı (§6.4.1). 167/167 test PASS.
+- **`orchestrator/`**: Kalıcı MongoDB Atlas bağlantısı (§6.1), CORS (§6.6), fee-bump ile gerçek işlem gönderimi + idempotency, SSE dinleyicisi ile onay yakalama, GİB e-Belge simülasyonu + görüntüleme ucu, esnaf kaydı (adres sahipliği imzası + ayrı admin onay script'i `approve-merchant.mjs`), demo musluk (`/faucet/mint`), balance ucunda `kycStatus`/`onChainRegistered`, rate limiting (§6.2.1), liveness/readiness sağlık uçları + SSE canlılık raporlaması, mutabakat job'ı (§6.4.1), canlı işlem akışı paneli `/flow` + esnaf ack ucu (§9 — **kod ve testler tamam, canlıda henüz doğrulanmadı**). 190/190 test PASS.
 - **`client/` (Expo)**: Müşteri akışı (bakiye yükleme/Friendbot+mint, QR okutup ödeme, GİB fişi görüntüleme) ve esnaf akışı (kayıt, giriş, tutar girip QR üretme, canlı ödeme tespiti, bakiye/rozet, GİB fişi görüntüleme) — tümü gerçek tarayıcı testleriyle ve gerçek testnet tx'leriyle doğrulandı. Stellar SDK 16.2.0 + `metro.config.js` çözümleyici kuralı (§8.1). **Tek istisna: QR okuma gerçek telefon kamerasıyla denenmedi** — bkz. "Bilinen açık nokta".
 
 ### Sıradaki adımlar (bu sırayla)
 
 1. **Backend'i bulut sunucuya taşıma** (Render) — ✅ **TAMAMLANDI (12 Eylül 2026).** Servis canlı: <https://kalem-5i08.onrender.com>. Repo kökünde `render.yaml`, `/api/v1/health` (liveness, her zaman 200) ve `/api/v1/health/ready` (readiness, bağımlılık bozuksa 503) ayrımı, SSE canlılık raporlaması, client'ın backend adresi `EXPO_PUBLIC_ORCHESTRATOR_BASE_URL` ile parametreleştirildi. Atlas erişimi `0.0.0.0/0` + yenilenmiş şifreyle açıldı. Canlı doğrulama: `mongodb: connected`, `sseListener.started: true`, CORS tarayıcıdan çalışıyor. Adım adım rehber: `docs/deployment.md` "Bulut Dağıtımı". **Plan: `free` — servis 15 dk trafik almazsa uyur (~50sn soğuk başlatma); sunum öncesi `starter`'a geçiş kararı ASKIDA.**
 2. ~~**Rate limiting eklenmesi**~~ — ✅ **TAMAMLANDI (6 Eylül 2026), canlıda DÜZELTİLDİ ve DOĞRULANDI (12 Eylül 2026).** Kapsam öngörülenden geniş tutuldu: `/transactions/submit` ve `/faucet/mint`'e ek olarak `/merchants/register` ve GİB belge okuma ucu da kapsandı (§6.2.1). **Deploy sırasında öngörülen `trust proxy` tuzağı GERÇEKLEŞTİ ve ilk tahmin edilen değer de yanlış çıktı:** `TRUST_PROXY_HOPS=1` iken `req.ip` Render'ın **iç yük dengeleyicisine** (`10.x`) çözülüyordu; o adres tüm kullanıcılarda ortak olduğu için limitler "IP başına" değil **fiilen küresel** sayıyordu. Doğru değer canlı ölçümle **`3`** olarak bulundu (Express soket bağlantısını da hop sayar: `::1` → Render iç → Cloudflare → gerçek istemci) ve uygulandı — bkz. §6.2.2. **Doğrulama:** 15 hızlı istek tek kesintisiz sayaçta düştü (59→45; düzeltmeden önce üç ayrı sayaca bölünüyordu) ve üç farklı sahte `X-Forwarded-For` denemesi gerçek istemciyi değiştiremedi. Tekrarını önlemek için otomatik tespit (`proxy.looksMisconfigured`), tek seferlik uyarı logu ve regresyon testleri eklendi.
-3. **Uçtan uca gerçek prova** — ✅ **YAPILDI (13 Eylül 2026)**, canlı Render backend'i + iki tarayıcı sekmesiyle tam senaryo. Akış baştan sona çalıştı (tx [`b5466573…`](https://stellar.expert/explorer/testnet/tx/b5466573a0233c4d2c8df82f783e11d3a844bf1c24ea1a2c708abd7ea39983d9), esnafa `2.4900000` dTL = %99,6). **Prova üç gerçek hata ortaya çıkardı, üçü de düzeltildi:** (a) client SDK 12.3.0 bugünkü testnet'in Soroban yanıtını ayrıştıramıyordu → SDK 16.2.0'a yükseltildi (§8.1), (b) SDK 16'nın `bignumber.js` bağımlılığı Metro'da boş çözülüp uygulamayı beyaz ekranla öldürüyordu → `client/metro.config.js` (§8.1), (c) SSE hiç mesaj almadığı için GİB belgesi üretilmiyordu → mutabakat job'ı (§6.4.1).
+3. **Uçtan uca gerçek prova** — ✅ **YAPILDI (12–13 Eylül 2026;** ödeme tx'i zincire 12 Eylül 01:49 TSİ'de yazıldı, düzeltmeler 14 Eylül 01:01'de commit'lendi — tarih zincir zaman damgasından doğrulandı, 15 Eylül 2026**)**, canlı Render backend'i + iki tarayıcı sekmesiyle tam senaryo. Akış baştan sona çalıştı (tx [`b5466573…`](https://stellar.expert/explorer/testnet/tx/b5466573a0233c4d2c8df82f783e11d3a844bf1c24ea1a2c708abd7ea39983d9), esnafa `2.4900000` dTL = %99,6). **Prova üç gerçek hata ortaya çıkardı, üçü de düzeltildi:** (a) client SDK 12.3.0 bugünkü testnet'in Soroban yanıtını ayrıştıramıyordu → SDK 16.2.0'a yükseltildi (§8.1), (b) SDK 16'nın `bignumber.js` bağımlılığı Metro'da boş çözülüp uygulamayı beyaz ekranla öldürüyordu → `client/metro.config.js` (§8.1), (c) SSE hiç mesaj almadığı için GİB belgesi üretilmiyordu → mutabakat job'ı (§6.4.1).
+3a. **Canlı işlem akışı paneli (`/flow`)** — 🟡 **KOD TAMAM (15 Eylül 2026), CANLIDA DOĞRULANMADI.** Render'a deploy + `FLOW_PANEL_TOKEN` girilmesi + gerçek bir ödemeyle prova gerekiyor (§9.8). Mutabakat 10 sn'ye indirildiği için aşağıdaki "GİB fişi ~1 dakika gecikebilir" notu deploy sonrası ~8–20 sn olmalı — provada ölçülmeli.
 4. **Sunum senaryosu hazırlığı** — 🔴 **SIRADAKİ İŞ, HENÜZ BAŞLANMADI.** TEKNOFEST canlı sunumu için adım adım demo akışı, `DEMO_MODE` (§5.2) ve faucet tutarlarının sunuma uygunluğu gözden geçirilmeli. **Provadan çıkan ve bu senaryoya mutlaka girmesi gereken üç pratik nokta:**
    - **İlk istek ~50 saniye sürebilir** — ücretsiz planda servis uykuya geçiyor. Sunumdan hemen önce `/api/v1/health`'e bir istek atıp servisi ısıtmak gerekir.
    - **GİB fişi ~1 dakika gecikebilir** — SSE çalışmazsa mutabakat turu devreye girer (§6.4.1). Sunumda "fiş birazdan gelecek" diyebilmek için bu süre bilinmeli.
@@ -548,7 +549,7 @@ Event log (newest first):
 
 ### Bilinen açık nokta — QR okuma gerçek telefon kamerasıyla TEST EDİLMEDİ
 
-Uçtan uca provada (13 Eylül 2026) QR okuma adımı **sentetik bir kamera akışıyla** yapıldı: `navigator.mediaDevices.getUserMedia` geçici olarak, esnaf ekranından alınan gerçek QR'ın çizildiği bir `canvas.captureStream()` akışıyla değiştirildi.
+Uçtan uca provada (12 Eylül 2026) QR okuma adımı **sentetik bir kamera akışıyla** yapıldı: `navigator.mediaDevices.getUserMedia` geçici olarak, esnaf ekranından alınan gerçek QR'ın çizildiği bir `canvas.captureStream()` akışıyla değiştirildi.
 
 **Bu yaklaşımın test ETTİĞİ şey:** `jsQR` çözümleme yolu gerçekten çalıştı — QR görüntüden okundu, `parseQrPayload()` doğruladı, esnaf adı ve tutar ekranda doğru göründü, ödeme o veriyle imzalandı. Yani `WebQrScanner` → `parseQrPayload` → ödeme zinciri **gerçek koddur ve doğrulanmıştır**.
 
@@ -593,4 +594,87 @@ SDK 16, `bignumber.js` v11'e bağımlıdır. Bu paketin `exports` haritası üç
 - **§6.6 CORS** — ✅ TAMAMLANDI, geçerliliğini koruyor.
 - **§6.7 Faucet** — ✅ TAMAMLANDI; §6.2 kapsamında bekleyen rate-limit boşluğu da 6 Eylül 2026'da kapatıldı (adres başına 5/saat, IP başına 15/saat — §6.2.1).
 - **İşlem Geçmişi (esnaf) sayfalama/detay eksikleri** ve **tek cihaz/oturum sınırlaması** — kullanıcı talimatıyla bu iş paketinde kapsam DIŞI bırakıldı, hâlâ eksik, demo için gerekli görülmedi.
+
+---
+
+## 9. Canlı İşlem Akışı Paneli (`/flow`) — 15 Eylül 2026
+
+Sunumda tek bir havuz dağılımını değil, bir ödemenin **baştan sona yolculuğunu** gerçek zamanlı bir zaman çizelgesi olarak göstermek için eklendi. Panel ayrı bir sayfadır (`https://<backend>/flow?token=<FLOW_PANEL_TOKEN>`); projektöre veya ikinci bir cihaza açılır, müşteri telefonu ve esnaf ekranıyla aynı anda izlenir.
+
+### 9.1. Temel kural: sahte animasyon yok
+
+Hiçbir adım zamanlayıcıyla, tahminle veya "şimdiye kadar olmuştur" varsayımıyla işaretlenmez. Her adım, gerçekleştiği kod noktasında yazılan bir olaya (`Transaction.flowEvents[]`) bağlıdır. Olay gelmediyse adım "bekleniyor" kalır; bir adım başarısızsa kırmızıya döner ve sonrakiler "önceki adım başarısız" olarak işaretlenir.
+
+| # | Adım | Olayın yazıldığı yer | Gösterilen gerçek veri |
+|---|---|---|---|
+| 1 | Müşteri imzaladı | `submitAuthMiddleware` — Ed25519 imzasının kaynak hesaba ait olduğu doğrulandığı an | İmzalayan adres, iç zarf hash'i |
+| 2 | Backend'e ulaştı | `idempotencyMiddleware` — kilit alındığı an | Idempotency-Key, kimlik yolu |
+| 3 | Fee-Bump sarmalandı | `wrapAndSubmitFeeBump` `onProgress` — dış zarf Havuz 2 ile imzalandığında | Havuz 2 adresi, ücret tavanı, ön-simülasyon sonucu |
+| 4 | Zincire iletildi | Horizon gönderim cevabı | Tx hash (explorer bağlantısı), ledger, gönderim→cevap süresi |
+| 5 | Soroban kontratı çalıştı | Soroban RPC `getTransaction` (arka planda, cevabı bekletmez) | `SUCCESS`, ledger kapanışı (zincir saati), kesilen ağ ücreti |
+| 6 | Atomik dağılım | Aynı RPC cevabındaki `pay_merchant` + 3 `transfer` kontrat olayı | Üç dal, zincirdeki adres ve tutarlarla + iki çapraz kontrol |
+| 7 | Onay yakalandı | `handleTransaction(record, { source })` | Kaynak: SSE dinleyicisi mi, mutabakat job'ı mı |
+| 8 | GİB belgesi üretildi | `generateGibDocument` sonrası | Belge ID, tür, durum + "GİB gönderimi simülasyon" etiketi |
+| 9 | Esnaf ekranında göründü | `POST /transactions/:txHash/merchant-ack` — esnaf ekranı ödemeyi gösterdiği anda | İşletme adı, tespit edilen ledger |
+
+**4, 5 ve 6. adımlar zincirde aynı işlemin, aynı ledger'ın içindedir** — atomik olarak birlikte gerçekleşirler. Panel bunları yapay aralıklarla ayırmaz; aynı ledger numarasını gösterir. Adımların yanındaki süreler **backend'in olayı gözlemlediği anı** gösterir (5–6. adımda RPC'den okunduğu an); zincir saati ayrıca "Ledger kapanışı" olarak yazılır.
+
+### 9.2. "Havuz 1" terimi — `pool1Address` ile KARIŞTIRILMAMALI
+
+Panel ve dokümantasyon dilinde:
+
+- **Havuz 1 (Esnaf Kasası)** — %99,6, `pay_merchant` ile doğrudan **esnafın kendi adresine** gider. "Kendi paranı kendin tutarsın, biz banka gibi saklamayız" ilkesinin karşılığıdır. Panelde kutunun içinde işletme adı ve zincirdeki esnaf adresi gösterilir.
+- **Havuz 3 (Sosyal Fon)** — %0,1
+- **Havuz 4 (Operasyonel)** — %0,3
+
+Koddaki `config.pools.pool1Address` / `POOL1_ADDRESS`, v1 `distribute()` fonksiyonundan kalma, **bu akışta kullanılmayan ayrı** bir adrestir (§7). Ona dokunulmamıştır; panelde hiç gösterilmez. Dağılım dallarının adresleri config'ten değil, zincirdeki `transfer` olaylarının alıcısından okunur (`contract-events.service.test.js` bunu ayrıca doğrular). Yüzdeler panelde sabit yazılmaz, zincirdeki tutarlardan hesaplanır.
+
+### 9.3. Neden Soroban RPC — deneme sonuçları (15 Eylül 2026)
+
+Uygulamadan önce gerçek ödeme `b5466573…` üzerinde salt-okunur bir deneme yapıldı:
+
+| Kontrol | Sonuç |
+|---|---|
+| Horizon işlem kaydında kontrat olayları | **Yok** — `result_meta_xdr` alanı kaldırılmış |
+| RPC `getTransaction(dış fee-bump hash)` | `SUCCESS`, 316 ms, `events.contractEventsXdr` içinde 4 olay |
+| RPC `getTransaction(iç hash)` | O da `SUCCESS` |
+| `pay_merchant` başlık kodlaması | **ScString** — ScSymbol filtresi 0 olay döndü (`merchant-chain.service.js`'teki `transfer` tuzağının aynısı) |
+| RPC saklama penceresi | 120.960 ledger (~7 gün) |
+| Horizon–RPC ledger farkı | 6 ölçümde 0 |
+
+Sonuçlar:
+- Olaylar gönderimden hemen sonra okunup Mongo'ya yazılır; ~7 günden eski bir işlem için 5–6. adım "RPC'de bulunamadı" olarak dürüstçe gösterilir.
+- RPC işlemi henüz indekslemediyse 10 sn'ye kadar 1 sn arayla yeniden denenir. **Gerçek gecikme henüz canlıda ölçülmedi.**
+- Testler uydurma olaylarla değil, bu işlemin kaydedilmiş ham XDR'ıyla (`orchestrator/test/fixtures/pay-merchant-b5466573.json`) yazıldı. Dağılım tutarları `Transaction.pool1Amount/pool3Amount/pool4Amount` alanlarına da artık yazılıyor (önceden hiç doldurulmuyordu).
+
+### 9.4. Taşıma ve erişim
+
+- **`GET /api/v1/flow/stream`** — Server-Sent Events. Açılışta `snapshot`, her yeni olayda `flow` (işlemin güncel tam görüntüsü). 20 sn'de bir kalp atışı. Panel her zaman en yeni işlemi takip eder.
+- **`GET /api/v1/flow/latest`** — anlık görüntü (JSON).
+- **`FLOW_PANEL_TOKEN`** — `?token=` ile gelir (EventSource başlık gönderemez), sabit zamanlı karşılaştırılır. Boşsa uçlar **503** döner, panel kapalıdır. Gösterilen veriler zaten zincirde açık (hash, adres, tutar) + işletme adı; token rastgele tarayıcıları dışarıda tutan bir bariyerdir, gizli bir finansal yetki değildir.
+- IP bazlı rate limit (`RATE_LIMIT_FLOW_READ_*`, 60/dk) ve eşzamanlı yayın sınırı (`FLOW_PANEL_MAX_STREAMS`, 20).
+- Yayın süreç içi `EventEmitter` iledir — **tek instance varsayımı**. Olaylar Mongo'da kalıcı olduğu için panel yenilense veya servis uyuyup uyansa zaman çizelgesi kaybolmaz.
+- Sunucu kapanışında açık yayınlar kapatılır (aksi halde `server.close()` onları sonsuza dek beklerdi).
+
+### 9.5. Ödeme yolunu bozmama garantileri
+
+- `recordFlowEvent()` hata fırlatmaz ve ödeme yolu onu **beklemez**; olaylar işlem başına bir söz zinciriyle sırayla yazılır.
+- Akış yazmaları `timestamps: false` ile yapılır — `updatedAt` işin durumunu yansıtmaya devam eder; aksi halde her olay mutabakatın "yeterince eski mi" kontrolünü sıfırlayıp onayı geciktirirdi.
+- İşlem zincire kabul edildikten sonra oluşan bir DB/idempotency hatası 4. adımı "başarısız" gösteremez.
+- Aynı işlem hem SSE hem mutabakat tarafından yakalanırsa 7–8. adım akışa ikinci kez yazılmaz.
+
+### 9.6. Mutabakat 10 saniyeye indirildi
+
+Canlı Render'da SSE hiç mesaj almadığı için (§6.4.1) onayı fiilen mutabakat yakalıyor. 7. adımın demoda makul sürede işaretlenmesi için `render.yaml`'da `RECONCILIATION_CRON="*/10 * * * * *"` ve `RECONCILIATION_MIN_AGE_MS=8000` yapıldı. Beklenen gecikme ödemeden sonra kabaca **8–20 sn**'dir (canlıda henüz ölçülmedi). Tur sürerken gelen tetik atlanır — 10 sn aralıkta çakışan iki tur aynı işlem için iki GİB belgesi üretebilirdi.
+
+### 9.7. Doğrulama durumu
+
+- **Doğrulanan:** 190/190 orchestrator testi (23 yeni: gerçek RPC XDR'ıyla olay çözümleme, sıra garantisi, uçtan uca submit akışı 1–6. adım, ön-simülasyon hatasında 3. adım, mutabakat kaynağı, ack ucu yetki/idempotentlik, SSE yayını). Panel; bellek-içi Mongo + gerçek uçlar + gerçek işlem verisiyle Chrome'da 1080p (tam akış tek ekrana sığıyor), "bekleniyor", hata ve 400 px genişlik durumlarında görsel olarak kontrol edildi.
+- **DOĞRULANMADI:** Canlı Render'da gerçek bir ödemeyle uçtan uca çalışma, RPC indeksleme gecikmesi, SSE yayınının Render/Cloudflare üzerinden tamponlanmadan geçmesi ve esnaf istemcisinin ack çağrısı (client'ta test altyapısı yok; değişen dosyalar yalnızca sözdizimi olarak kontrol edildi).
+
+### 9.8. Canlıya alma adımları
+
+1. Render → Environment: `FLOW_PANEL_TOKEN` gir (uzun rastgele değer). Servis Blueprint ile değil elle kurulduysa `RECONCILIATION_CRON=*/10 * * * * *` ve `RECONCILIATION_MIN_AGE_MS=8000` değerlerini de elle güncelle.
+2. Deploy sonrası `https://kalem-5i08.onrender.com/flow?token=…` aç — "Canlı" rozeti yeşil olmalı.
+3. Bir ödeme yap; 9 adımın sırayla işaretlendiğini, 7. adımın kaynağını ve gecikmeleri not al.
 

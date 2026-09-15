@@ -10,6 +10,38 @@
 
 import mongoose from 'mongoose';
 
+/**
+ * Canlı İşlem Akışı (`/flow` paneli) adımları — sıra, panelde gösterim sırasıdır.
+ *
+ * Her adım GERÇEK bir backend olayına bağlıdır; hiçbiri zamanlayıcıyla veya
+ * tahminle işaretlenmez (bkz. services/flow-events.service.js, docs §9).
+ */
+export const FLOW_STEPS = Object.freeze([
+  'signed', //        1. Ed25519 imzası backend'de doğrulandı
+  'received', //      2. Backend'e ulaştı, idempotency kilidi alındı
+  'fee_bump', //      3. Fee-Bump dış zarfı Havuz 2 ile imzalandı
+  'submitted', //     4. Horizon'a iletildi ve ledger'a yazıldı
+  'contract', //      5. Soroban kontratı (pay_merchant) çalıştı — RPC'den okunur
+  'distribution', //  6. Atomik dağılım — tutarlar zincirdeki olaylardan okunur
+  'caught', //        7. SSE dinleyicisi ya da mutabakat job'ı yakaladı
+  'gib', //           8. GİB belgesi üretildi
+  'merchant_seen', // 9. Esnaf ekranı ödemeyi gördü (esnaf istemcisinin ack çağrısı)
+]);
+
+/**
+ * Tek bir akış olayı. `at`, backend'in olayı GÖZLEMLEDİĞİ andır; zincir saati
+ * (ledger kapanışı) gerekiyorsa `data.ledgerClosedAt` içinde ayrıca taşınır.
+ */
+const flowEventSchema = new mongoose.Schema(
+  {
+    step: { type: String, enum: FLOW_STEPS, required: true },
+    status: { type: String, enum: ['done', 'failed'], required: true },
+    at: { type: Date, required: true },
+    data: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { _id: false }
+);
+
 const transactionSchema = new mongoose.Schema(
   {
     // --- Tanımlayıcılar ---
@@ -21,6 +53,12 @@ const transactionSchema = new mongoose.Schema(
       sparse: true,
       index: true,
     },
+
+    /**
+     * İç zarfın (müşterinin imzaladığı işlemin) hash'i. `txHash` Fee-Bump DIŞ
+     * zarfının hash'idir ve ondan farklıdır (CAP-0015).
+     */
+    innerTxHash: { type: String, index: true },
 
     /** İşlemi başlatan idempotency key (UUID). */
     idempotencyKey: {
@@ -53,13 +91,20 @@ const transactionSchema = new mongoose.Schema(
       required: true,
     },
 
-    /** Havuz 1'e aktarılan tutar (Likidite). */
+    // Dağılım tutarları `pay_merchant` kontrat olayından (zincirden) yazılır,
+    // backend'de hesaplanmaz (bkz. services/contract-events.service.js).
+
+    /**
+     * Havuz 1 (Esnaf Kasası) — %99,6, esnafın KENDİ adresine giden pay.
+     * DİKKAT: `config.pools.pool1Address` (v1 `distribute()`'tan kalma adres)
+     * ile İLGİSİ YOKTUR; o adres `pay_merchant` akışında hiç kullanılmaz.
+     */
     pool1Amount: { type: String },
 
-    /** Havuz 3'e aktarılan tutar (Sosyal). */
+    /** Havuz 3 (Sosyal Fon) — %0,1. */
     pool3Amount: { type: String },
 
-    /** Havuz 4'e aktarılan tutar (Operasyonel). */
+    /** Havuz 4 (Operasyonel) — %0,3. */
     pool4Amount: { type: String },
 
     // --- Durum ---
@@ -84,6 +129,11 @@ const transactionSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'GibDocument',
     },
+
+    // --- Canlı İşlem Akışı ---
+
+    /** Ödemenin baştan sona zaman çizelgesi (bkz. FLOW_STEPS). */
+    flowEvents: { type: [flowEventSchema], default: [] },
   },
   {
     timestamps: true, // createdAt, updatedAt

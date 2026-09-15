@@ -47,6 +47,60 @@
 
 ---
 
+### POST `/api/v1/transactions/:txHash/merchant-ack`
+
+Esnaf ekranı ödemeyi zincirde gördüğünde çağrılır — canlı işlem akışının 9. adımı (bkz. `ARCHITECTURE_DECISIONS.md` §9).
+
+**Headers:** `Authorization: Bearer <apiKey>` (zorunlu — yalnızca kendi işlemi)
+
+**Request Body (opsiyonel):** `{ "detectedLedger": 4628674 }`
+
+**Response (200):** `{ "acknowledged": true, "duplicate": false }` — ikinci çağrıda `duplicate: true`, yeni olay yazılmaz.
+**Hatalar:** `401` anahtar yok/geçersiz · `403` başka esnafın işlemi · `404` hash bilinmiyor (istemci kısa aralıkla yeniden dener)
+
+---
+
+### GET `/api/v1/flow/latest?token=<FLOW_PANEL_TOKEN>`
+
+Akış olayı olan en yeni işlemin anlık görüntüsü. `FLOW_PANEL_TOKEN` tanımlı değilse `503 FLOW_PANEL_DISABLED`, token yanlışsa `401`.
+
+**Response (200):**
+```json
+{
+  "flow": {
+    "transactionId": "...",
+    "txHash": "b5466573…",
+    "innerTxHash": "00bbc792…",
+    "status": "confirmed",
+    "totalAmount": "25000000",
+    "senderAddress": "G...",
+    "ledgerNumber": 4628674,
+    "createdAt": "2026-09-15T14:00:00.000Z",
+    "merchant": { "businessName": "…", "stellarAddress": "G..." },
+    "steps": ["signed", "received", "fee_bump", "submitted", "contract", "distribution", "caught", "gib", "merchant_seen"],
+    "events": [
+      { "step": "signed", "status": "done", "at": "…", "data": { "signer": "G...", "innerTxHash": "…" } },
+      { "step": "distribution", "status": "done", "at": "…", "data": {
+          "total": "25000000",
+          "branches": [
+            { "pool": 1, "label": "Havuz 1 (Esnaf Kasası)", "address": "G...(esnaf)", "amount": "24900000" },
+            { "pool": 3, "label": "Havuz 3 (Sosyal Fon)", "address": "G...", "amount": "25000" },
+            { "pool": 4, "label": "Havuz 4 (Operasyonel)", "address": "G...", "amount": "75000" }
+          ],
+          "sumMatchesTotal": true, "transfersMatch": true
+      } }
+    ]
+  }
+}
+```
+Hiç akış yoksa `{ "flow": null }`.
+
+### GET `/api/v1/flow/stream?token=<FLOW_PANEL_TOKEN>`
+
+`text/event-stream`. Bağlanınca `event: snapshot` (`/latest` ile aynı gövde), ardından her yeni akış olayında `event: flow` (işlemin güncel tam görüntüsü). 20 sn'de bir `: ping` yorum satırı. Eşzamanlı yayın sınırı aşılırsa `429 TOO_MANY_STREAMS`.
+
+---
+
 ## 2. Orkestrasyon → Soroban Kontratları (Cross-Contract)
 
 ### `dtl-token.transfer(from, to, amount)`

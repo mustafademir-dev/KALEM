@@ -82,6 +82,7 @@ Aşağıdakilerin hiçbiri mock, stub veya sahte veri değildir. Hepsi gerçek k
 | **Idempotency** | Mükerrer çekim koruması gerçek testnet işlemiyle kanıtlandı (commit `93e1c2c`); aynı `Idempotency-Key` ile ikinci bir tx **gönderilmez**. |
 | **SSE onay yakalama** | Horizon stream'inden gerçek onay yakalandı (tx `74d5e7c8...`, ~2 saniyede) ve GİB belge üretimi zincirleme tetiklendi (commit `ba5ec82`). |
 | **Kalıcı veritabanı** | MongoDB Atlas — gerçek, kalıcı bir cluster (§6.1). Bellek-içi test veritabanı değildir. |
+| **Canlı işlem akışı paneli (`/flow`)** | Her adım gerçek bir backend olayına bağlıdır; zamanlayıcıyla ilerleyen animasyon yoktur. Atomik dağılımın tutar ve adresleri backend'de hesaplanmaz, işlemin zincirde yaydığı `pay_merchant`/`transfer` olaylarından Soroban RPC ile okunur (`ARCHITECTURE_DECISIONS.md` §9). **İstisna:** 8. adım (GİB belgesi) üretimi gerçektir ama belge GİB'e gönderilmez — panelde "GİB gönderimi simülasyon" etiketiyle gösterilir (§3.3). Panel 15 Eylül 2026 itibarıyla canlıda henüz gerçek bir ödemeyle doğrulanmadı. |
 
 ---
 
@@ -157,6 +158,8 @@ Aşağıdaki ifadeler teknik olarak yanlış olur; sağ sütundaki karşılıkla
 | "GİB'e fiş kesiyoruz" | "GİB'in UBL-TR formatına uygun belge üretiyoruz; canlı API entegrasyonu PoC kapsamı dışında" |
 | "Esnafları KYC'den geçiriyoruz" | "Esnafın cüzdan adresi sahipliğini kriptografik olarak doğruluyoruz; kurumsal KYC/KYB süreci kapsam dışı" |
 | "Sistem canlıda çalışıyor" | "Sistem uçtan uca çalışıyor ve testnet'te doğrulandı; bulut dağıtımı sıradaki adım" |
+| "Havuz 1'deki parayı biz saklıyoruz" / Havuz 1'i ortak bir kurum hesabı gibi anlatmak | "Havuz 1 esnafın kendi kasasıdır: %99,6 doğrudan esnafın adresine gider; %0,1 Sosyal Fon'a, %0,3 Operasyonel havuza — tek işlemde, atomik" |
+| "Panel ödemeyi canlandırıyor" | "Panel her adımı gerçek bir sistem olayı geldiğinde işaretliyor; 4-5-6. adımlar zincirde aynı ledger'da, aynı anda gerçekleşiyor" |
 | "Havuz döngüsü kendi kendine dönüyor" | "Burn otomatik; XLM enjeksiyonu bilinçli olarak manuel onaya bırakıldı (`DEMO_MODE=false`)" |
 
 ---

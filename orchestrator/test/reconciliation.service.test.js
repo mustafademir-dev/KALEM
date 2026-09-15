@@ -1,7 +1,7 @@
 /**
  * Mutabakat (Reconciliation) Servisi Testleri
  *
- * Bu servis, 13 Eylül 2026'da canlı Render dağıtımında yaşanan GERÇEK bir
+ * Bu servis, 12 Eylül 2026'da canlı Render dağıtımında yaşanan GERÇEK bir
  * arızaya karşı yazıldı: ödeme zincire yazıldı, SSE dinleyicisi `started: true`
  * görünmesine rağmen hiç mesaj almadı (`messageCount: 0`, hata da yok) ve GİB
  * belgesi hiç üretilmedi. Aynı kod yerelde sorunsuz çalıştı — yani SSE tek
@@ -23,6 +23,8 @@ import stellarConfig from '../src/config/stellar.js';
 import Transaction from '../src/models/Transaction.model.js';
 import GibDocument from '../src/models/GibDocument.model.js';
 import { reconcilePendingTransactions } from '../src/services/reconciliation.service.js';
+import { handleTransaction } from '../src/services/sse-listener.service.js';
+import { flushFlowEvents } from '../src/services/flow-events.service.js';
 
 /** Horizon'un tekil işlem sorgusunu taklit eden zincir kurucu. */
 function mockHorizon(responder) {
@@ -186,6 +188,30 @@ describe('Mutabakat Servisi — SSE yedeği', () => {
     const stats = await reconcilePendingTransactions();
     assert.equal(stats.checked, 0);
     assert.equal(called, false);
+  });
+
+  it('canlı işlem akışı: onayı mutabakat yakalarsa 7. adım kaynağı "reconciliation" olmalı, 8. adım GİB belgesini göstermeli', async () => {
+    const txHash = 'c'.repeat(64);
+    const doc = await createSubmittedTx(txHash);
+    stellarConfig.horizonServer = mockHorizon(() => ({ successful: true, ledger_attr: 4628674 }));
+
+    await reconcilePendingTransactions();
+    await flushFlowEvents();
+
+    const updated = await Transaction.findById(doc._id).lean();
+    const caught = updated.flowEvents.find((e) => e.step === 'caught');
+    const gib = updated.flowEvents.find((e) => e.step === 'gib');
+    assert.equal(caught.data.source, 'reconciliation');
+    assert.equal(caught.data.ledger, 4628674);
+    assert.equal(gib.status, 'done');
+    assert.equal(gib.data.gibDocumentId, updated.gibDocumentId.toString());
+    assert.equal(gib.data.simulated, true);
+
+    // İkinci kez yakalanırsa (SSE + mutabakat yarışı) akışa tekrar yazılmamalı.
+    await handleTransaction({ hash: txHash, ledger: 4628674 }, { source: 'sse' });
+    await flushFlowEvents();
+    const again = await Transaction.findById(doc._id).lean();
+    assert.equal(again.flowEvents.filter((e) => e.step === 'caught').length, 1);
   });
 
   it('Horizon yapılandırılmamışsa çökmemeli, boş istatistik dönmeli', async () => {

@@ -275,11 +275,24 @@ export function extractHorizonResultCodes(error) {
  *
  * @param {string} signedInnerXdr - İstemcinin Ed25519 ile imzaladığı
  *                                   iç zarf (Base64/XDR formatında).
+ * @param {object} [opts]
+ * @param {(stage: 'fee_bump'|'sending', data: object) => void} [opts.onProgress] -
+ *   Canlı işlem akışı (`/flow`) için gözlem kancası. `fee_bump`: dış zarf Havuz 2
+ *   ile imzalandı; `sending`: Horizon'a gönderilmek üzere. Kancadaki bir hata
+ *   ödeme yolunu ASLA etkilemez.
  * @returns {Promise<object>} Horizon API'sinden dönen işlem sonucu.
  *
  * @throws {Error} İç zarf geçersizse veya Horizon iletimi başarısızsa.
  */
-export async function wrapAndSubmitFeeBump(signedInnerXdr) {
+export async function wrapAndSubmitFeeBump(signedInnerXdr, { onProgress } = {}) {
+  const progress = (stage, data) => {
+    try {
+      onProgress?.(stage, data);
+    } catch (hookErr) {
+      logger.error(`[FeeBump] onProgress kancası hatası (${stage}): ${hookErr.message}`);
+    }
+  };
+
   try {
     if (!signedInnerXdr || typeof signedInnerXdr !== 'string') {
       throw new Error('Geçersiz iç zarf: signedInnerXdr boş veya string değil.');
@@ -327,7 +340,17 @@ export async function wrapAndSubmitFeeBump(signedInnerXdr) {
         `toplam ücret: ${feeBumpTx.fee} stroops, iç kaynak: ${innerTx.source})`
     );
 
+    progress('fee_bump', {
+      feeSource: feeBumpTx.feeSource,
+      maxFee: feeBumpTx.fee,
+      baseFee,
+      innerTxHash: innerTx.hash().toString('hex'),
+      feeBumpHash: feeBumpTx.hash().toString('hex'),
+      preSimulation: 'SUCCESS',
+    });
+
     // 8. Ağa ilet
+    progress('sending', { sentAt: new Date() });
     const response = await submitTransaction(feeBumpTx);
 
     logger.info(`[FeeBump] İşlem ağa iletildi (feeBumpHash: ${response.hash}, ledger: ${response.ledger})`);

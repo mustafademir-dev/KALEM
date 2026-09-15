@@ -7,7 +7,7 @@ import GibReceiptCard from '../components/GibReceiptCard.js';
 import { colors, radii, spacing, type, cardShadow } from '../theme/index.js';
 import { useNavigation } from '../navigation/Navigator.js';
 import { getCurrentLedger, findNewPayment } from '../services/merchant-chain.service.js';
-import { getGibDocument, ApiError } from '../services/api.service.js';
+import { getGibDocument, acknowledgePaymentSeen, ApiError } from '../services/api.service.js';
 import { formatDtl, shortenMiddle, stellarExpertTxUrl } from '../utils/format.js';
 
 const POLL_INTERVAL_MS = 3000;
@@ -42,6 +42,12 @@ export default function EsnafQrScreen({ params }) {
         });
         if (found) {
           setPayment(found);
+          // Canlı işlem akışı 9. adımı: "esnaf ekranında göründü" — ekran bunu
+          // gerçekten gösterdiği anda bildirilir. Sonucu beklenmez; başarısızlık
+          // esnafın ekranını etkilemez.
+          if (found.txHash && session?.apiKey) {
+            acknowledgePaymentSeen(found.txHash, { apiKey: session.apiKey, detectedLedger: found.ledger });
+          }
           return; // bulununca polling'i durdur
         }
       } catch {

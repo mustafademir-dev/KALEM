@@ -18,6 +18,7 @@ import config from '../config/index.js';
 import Transaction from '../models/Transaction.model.js';
 import { generateGibDocument } from './gib-simulator.service.js';
 import { notifyClient } from './notification.service.js';
+import { recordFlowEvent } from './flow-events.service.js';
 
 /**
  * SSE dinleyicisinin canlılık durumu — `/health` ucu tarafından okunur.
@@ -52,9 +53,12 @@ export function getSSEStatus() {
  * Gelen SSE işlem kaydını işler ve MongoDB durumunu günceller.
  *
  * @param {object} record - Stellar Horizon transaction kaydı (hash, memo, ledger, vb.).
+ * @param {object} [opts]
+ * @param {'sse'|'reconciliation'} [opts.source='sse'] - Onayı kimin yakaladığı —
+ *   canlı işlem akışının 7. adımında gösterilir (SSE mi, onun yedeği mutabakat mı).
  * @returns {Promise<object | null>} Güncellenen Transaction kaydı veya null.
  */
-export async function handleTransaction(record) {
+export async function handleTransaction(record, { source = 'sse' } = {}) {
   try {
     if (!record || !record.hash) {
       logger.warn('[SSE] Geçersiz işlem kaydı alındı.');
@@ -80,13 +84,20 @@ export async function handleTransaction(record) {
       return null;
     }
 
+    // Aynı işlem ikinci kez yakalanırsa (SSE + mutabakat yarışı) akışa tekrar yazılmaz.
+    const firstCatch = transaction.status !== 'confirmed';
+
     // İşlem durumunu güncelleyelim
     transaction.status = 'confirmed';
     transaction.txHash = txHash;
     transaction.ledgerNumber = ledgerNumber;
     await transaction.save();
 
-    logger.info(`[SSE] İşlem onaylandı (ID: ${transaction._id}, TxHash: ${txHash})`);
+    logger.info(`[SSE] İşlem onaylandı (ID: ${transaction._id}, TxHash: ${txHash}, kaynak: ${source})`);
+
+    if (firstCatch) {
+      recordFlowEvent(transaction._id, 'caught', { data: { source, txHash, ledger: ledgerNumber } });
+    }
 
     // GİB Belge Taslağını Tetikle (5.5.3)
     try {
@@ -101,9 +112,23 @@ export async function handleTransaction(record) {
       if (gibDoc) {
         transaction.gibDocumentId = gibDoc._id;
         await transaction.save();
+        if (firstCatch) {
+          recordFlowEvent(transaction._id, 'gib', {
+            data: {
+              gibDocumentId: gibDoc._id?.toString() ?? null,
+              documentType: gibDoc.documentType ?? null,
+              status: gibDoc.status ?? null,
+              // GİB'e gerçek gönderim yok — belge UBL-TR taslağı olarak üretilir (§GERCEK_VS_SIMULASYON).
+              simulated: true,
+            },
+          });
+        }
       }
     } catch (gibErr) {
       logger.error(`[SSE] GİB belge üretimi tetikleme hatası: ${gibErr.message}`);
+      if (firstCatch) {
+        recordFlowEvent(transaction._id, 'gib', { status: 'failed', data: { error: gibErr.message } });
+      }
     }
 
     // İstemciye bildirim gönder
@@ -168,7 +193,7 @@ export function startSSEListener() {
         onmessage: (record) => {
           sseState.lastMessageAt = new Date().toISOString();
           sseState.messageCount += 1;
-          handleTransaction(record).catch((err) => {
+          handleTransaction(record, { source: 'sse' }).catch((err) => {
             logger.error(`[SSE] Asenkron işlem işleme hatası: ${err.message}`);
           });
         },

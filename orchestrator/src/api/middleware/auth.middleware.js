@@ -97,6 +97,8 @@ export async function submitAuthMiddleware(req, res, next) {
     }
 
     req.senderAddress = innerTx.source;
+    // Canlı işlem akışı 1. adımının GERÇEK anı (bkz. transaction.routes.js).
+    req.signatureVerifiedAt = new Date();
     next();
   } catch (error) {
     logger.error(`[Auth] submitAuthMiddleware hatası: ${error.message}`);

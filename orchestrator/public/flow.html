@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KALEM · Canlı İşlem Akışı</title>
+<!--
+  Canlı İşlem Akışı paneli — projektöre / ikinci cihaza açılır.
+
+  KURAL: Bu sayfa hiçbir adımı kendiliğinden işaretlemez. Bir adım yalnızca
+  backend'den (`/api/v1/flow/stream`) o adıma ait GERÇEK bir olay geldiğinde
+  "tamamlandı" görünür. Zamanlayıcıyla ilerleyen animasyon yoktur; "bekleniyor"
+  durumundaki nabız yalnızca "henüz olay gelmedi" anlamındadır.
+
+  Kullanım: https://<backend>/flow?token=<FLOW_PANEL_TOKEN>
+  Harici kaynak yüklenmez (font/CDN yok) — sunum ağında internet kısıtlıysa da çalışır.
+-->
+<style>
+  :root {
+    --bg: #F7F8FA;
+    --card: #FFFFFF;
+    --card-alt: #F1F3F6;
+    --border: #E3E6EB;
+    --border-strong: #C7CCD6;
+    --accent: #D97706;
+    --accent-strong: #B45309;
+    --accent-muted: #FBEBD3;
+    --text: #1A2B4C;
+    --text-2: #4B5768;
+    --muted: #8993A4;
+    --success: #1E8E5A;
+    --success-bg: #E6F4EC;
+    --danger: #D14343;
+    --danger-bg: #FBEAEA;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font-family: "Segoe UI", Inter, system-ui, -apple-system, Roboto, sans-serif;
+    font-size: clamp(14px, 1.05vw, 18px);
+    line-height: 1.4;
+    padding: clamp(16px, 2vw, 36px);
+    min-height: 100vh;
+  }
+  a { color: var(--accent-strong); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .mono { font-family: var(--mono); font-size: .92em; }
+
+  /* ---------- Üst bant ---------- */
+  header {
+    display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+    gap: 12px 32px; padding-bottom: clamp(12px, 1.4vw, 22px); border-bottom: 2px solid var(--border);
+  }
+  .brand { display: flex; align-items: baseline; gap: 14px; }
+  .brand b { font-size: 1.9em; letter-spacing: .06em; font-weight: 800; }
+  .brand span { font-size: 1.15em; color: var(--text-2); font-weight: 600; }
+  .conn { display: inline-flex; align-items: center; gap: 8px; font-size: .9em; color: var(--text-2); }
+  .conn i { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .conn[data-state="live"] i { background: var(--success); }
+  .conn[data-state="retry"] i { background: var(--accent); }
+  .conn[data-state="error"] i { background: var(--danger); }
+
+  .summary {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px 28px; margin: clamp(14px, 1.6vw, 26px) 0;
+  }
+  .summary .k { font-size: .75em; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .summary .v { font-size: 1.15em; font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
+  .summary .amount { color: var(--accent-strong); font-size: 1.7em; font-weight: 800; }
+
+  /* ---------- Zaman çizelgesi ---------- */
+  ol.timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+  ol.timeline::before {
+    content: ""; position: absolute; left: calc(1.3em - 1px); top: 1.3em; bottom: 1.3em;
+    width: 2px; background: var(--border);
+  }
+  .step {
+    position: relative; display: grid; grid-template-columns: 2.6em 1fr auto;
+    gap: 0 18px; padding: clamp(8px, .8vw, 14px) 0; align-items: start;
+  }
+  .dot {
+    position: relative; z-index: 1; width: 2.6em; height: 2.6em; border-radius: 50%;
+    display: grid; place-items: center; font-weight: 800; font-size: 1em;
+    background: var(--card); border: 2px solid var(--border-strong); color: var(--muted);
+  }
+  .step[data-status="done"] .dot { background: var(--success); border-color: var(--success); color: #fff; }
+  .step[data-status="failed"] .dot { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .step[data-status="waiting"] .dot { border-color: var(--accent); color: var(--accent-strong); }
+  .step[data-status="waiting"] .dot::after {
+    content: ""; position: absolute; inset: -6px; border-radius: 50%;
+    border: 2px solid var(--accent); opacity: .55; animation: pulse 1.6s ease-out infinite;
+  }
+  @keyframes pulse { from { transform: scale(.85); opacity: .6; } to { transform: scale(1.25); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .step[data-status="waiting"] .dot::after { animation: none; } }
+
+  .body { min-width: 0; }
+  .title { font-size: 1.2em; font-weight: 700; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+  .step[data-status="pending"] .title, .step[data-status="skipped"] .title { color: var(--muted); font-weight: 600; }
+  .sub { color: var(--text-2); font-size: .88em; }
+  .detail { margin-top: 6px; color: var(--text-2); display: flex; flex-wrap: wrap; gap: 4px 20px; }
+  .detail .kv { white-space: nowrap; }
+  .detail .kv b { color: var(--text); font-weight: 600; }
+  .error { margin-top: 6px; color: var(--danger); background: var(--danger-bg); padding: 6px 10px; border-radius: 6px; font-size: .92em; overflow-wrap: anywhere; }
+  .time { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; padding-top: .3em; }
+  .time b { color: var(--text); font-size: 1.1em; }
+  .time small { display: block; color: var(--muted); font-size: .8em; }
+  .tag { display: inline-block; font-size: .72em; font-weight: 700; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; background: var(--card-alt); color: var(--text-2); }
+  .tag.warn { background: var(--accent-muted); color: var(--accent-strong); }
+
+  /* ---------- Atomik dağılım ---------- */
+  .atomic { margin-top: 10px; border: 1px solid var(--border); background: var(--card); border-radius: 10px; padding: 12px 14px; }
+  .atomic-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font-size: .88em; color: var(--text-2); margin-bottom: 10px; }
+  .branches { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .branch { border-radius: 8px; padding: 10px 12px; background: var(--card-alt); border-left: 5px solid var(--border-strong); min-width: 0; }
+  .branch.p1 { background: var(--accent-muted); border-left-color: var(--accent); }
+  .branch .name { font-weight: 700; }
+  .branch .who { font-size: .85em; color: var(--text-2); margin-top: 2px; overflow-wrap: anywhere; }
+  .branch .amt { font-size: 1.35em; font-weight: 800; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .branch .pct { color: var(--text-2); font-weight: 600; font-size: .75em; margin-left: 6px; }
+  .checks { margin-top: 10px; font-size: .85em; color: var(--text-2); display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  .ok { color: var(--success); font-weight: 700; }
+  .bad { color: var(--danger); font-weight: 700; }
+
+  .empty { margin-top: 12vh; text-align: center; color: var(--text-2); }
+  .empty h2 { color: var(--text); margin: 0 0 8px; }
+  footer { margin-top: 18px; color: var(--muted); font-size: .8em; }
+
+  /* 1080p projektör: 9 adım + dağılım kutusu tek ekrana yaklaşsın */
+  @media (min-width: 1200px) and (max-height: 1200px) {
+    body { font-size: clamp(13px, .8vw, 16px); padding-block: 18px; }
+    .summary { margin: 12px 0; }
+    .step { padding: 5px 0; }
+    .detail { margin-top: 3px; }
+    .atomic { margin-top: 6px; padding: 8px 12px; }
+    .atomic-head { margin-bottom: 6px; }
+    .branch { padding: 7px 10px; }
+    .branch .amt { margin-top: 3px; }
+    .checks { margin-top: 6px; }
+    footer { margin-top: 10px; }
+  }
+
+  @media (max-width: 640px) {
+    .step { grid-template-columns: 2.6em 1fr; }
+    .time { grid-column: 2; text-align: left; padding-top: 4px; }
+    .time small { display: inline; margin-left: 6px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>KALEM</b><span>Canlı İşlem Akışı</span></div>
+  <div class="conn" id="conn" data-state="connecting"><i></i><span>Bağlanıyor…</span></div>
+</header>
+
+<main id="app"></main>
+
+<footer>
+  Her adım yalnızca backend'den gelen gerçek bir olayla işaretlenir · Zincir verisi: Stellar testnet (Horizon + Soroban RPC)
+</footer>
+
+<script>
+(() => {
+  'use strict';
+
+  const token = new URLSearchParams(location.search).get('token') || '';
+  const app = document.getElementById('app');
+  const conn = document.getElementById('conn');
+  const EXPLORER = 'https://stellar.expert/explorer/testnet';
+
+  /** Adım tanımları — sıra backend'deki FLOW_STEPS ile aynıdır. */
+  const STEPS = {
+    signed:        { title: 'Müşteri imzaladı',              sub: 'Ed25519 imzası backend\'de doğrulandı' },
+    received:      { title: 'Backend\'e ulaştı',              sub: 'Idempotency kontrolünden geçti' },
+    fee_bump:      { title: 'Fee-Bump sarmalandı',           sub: 'Ağ ücretini Havuz 2 üstlendi' },
+    submitted:     { title: 'Zincire iletildi',              sub: 'Horizon kabul etti, ledger\'a yazıldı' },
+    contract:      { title: 'Soroban kontratı çalıştı',      sub: 'pool-manager · pay_merchant' },
+    distribution:  { title: 'Atomik dağılım',                sub: 'Tutarlar zincirdeki kontrat olaylarından okundu' },
+    caught:        { title: 'Onay yakalandı',                sub: 'SSE dinleyicisi / Mutabakat' },
+    gib:           { title: 'GİB belgesi üretildi',          sub: 'UBL-TR taslağı' },
+    merchant_seen: { title: 'Esnaf ekranında göründü',       sub: 'Esnaf uygulaması ödemeyi zincirde tespit edip bildirdi' },
+  };
+
+  let current = null;
+
+  // ---------- yardımcılar ----------
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const short = (v, h = 6, t = 6) => (!v ? '' : v.length <= h + t + 1 ? v : `${v.slice(0, h)}…${v.slice(-t)}`);
+  const kv = (k, v) => `<span class="kv">${esc(k)}: <b>${v}</b></span>`;
+  const txLink = (hash) => hash ? `<a class="mono" href="${EXPLORER}/tx/${esc(hash)}" target="_blank" rel="noopener">${esc(short(hash, 8, 8))} ↗</a>` : '—';
+  const accLink = (addr) => addr ? `<a class="mono" href="${EXPLORER}/account/${esc(addr)}" target="_blank" rel="noopener">${esc(short(addr))}</a>` : '—';
+
+  /** stroop (string) → "2,4900000 dTL" */
+  function dtl(stroops) {
+    if (stroops == null) return '—';
+    const n = BigInt(stroops);
+    const neg = n < 0n; const a = neg ? -n : n;
+    const whole = (a / 10000000n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    const frac = (a % 10000000n).toString().padStart(7, '0');
+    return `${neg ? '-' : ''}${whole},${frac} dTL`;
+  }
+  /** stroop → "0,6976855 XLM" (ücretler XLM'dir) */
+  function xlm(stroops) {
+    if (stroops == null) return '—';
+    const n = BigInt(stroops);
+    return `${(n / 10000000n).toString()},${(n % 10000000n).toString().padStart(7, '0')} XLM`;
+  }
+  /** Tutarın toplama oranı — gerçek tutarlardan hesaplanır, sabit yüzde yazılmaz. */
+  function pct(part, total) {
+    const p = BigInt(part), t = BigInt(total);
+    if (t === 0n) return '';
+    const bp = (p * 100000n) / t; // 1/1000 yüzde hassasiyeti
+    return `%${(bp / 1000n).toString()},${(bp % 1000n).toString().padStart(3, '0').replace(/0+$/, '') || '0'}`;
+  }
+  const clock = (iso) => iso ? new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+  function delta(fromIso, toIso) {
+    const ms = new Date(toIso) - new Date(fromIso);
+    if (!Number.isFinite(ms)) return '';
+    return ms < 1000 ? `+${Math.max(ms, 0)} ms` : `+${(ms / 1000).toFixed(2).replace('.', ',')} sn`;
+  }
+
+  // ---------- adım detayları (yalnızca olayda GELEN veriyle) ----------
+  function renderDetail(step, e, flow) {
+    const d = e.data || {};
+    if (e.status === 'failed') {
+      const reason = d.error || d.message || d.reason || 'Bilinmeyen hata';
+      const codes = d.resultCodes && (d.resultCodes.transaction || d.resultCodes.innerTransaction)
+        ? ` · Horizon: ${esc(d.resultCodes.transaction || '')} ${esc(d.resultCodes.innerTransaction || '')} ${esc((d.resultCodes.operations || []).join(','))}` : '';
+      return `<div class="error">${esc(reason)}${codes}</div>`;
+    }
+    switch (step) {
+      case 'signed':
+        return `<div class="detail">${kv('İmzalayan', accLink(d.signer))}${kv('İç zarf hash', `<span class="mono">${esc(short(d.innerTxHash, 8, 8))}</span>`)}</div>`;
+      case 'received':
+        return `<div class="detail">${kv('Idempotency-Key', `<span class="mono">${esc(short(d.idempotencyKey, 8, 4))}</span>`)}${kv('Kilit', d.lock === 'acquired' ? 'alındı (yeni istek)' : esc(d.lock))}${kv('Kimlik', d.authPath === 'customer_signature' ? 'müşteri imzası' : 'esnaf API anahtarı')}</div>`;
+      case 'fee_bump':
+        return `<div class="detail">${kv('Ücret sponsoru (Havuz 2)', accLink(d.feeSource))}${kv('Ücret tavanı', xlm(d.maxFee))}${kv('Ön-simülasyon', d.preSimulation === 'SUCCESS' ? 'başarılı' : esc(d.preSimulation))}</div>`;
+      case 'submitted':
+        return `<div class="detail">${kv('Tx hash', txLink(d.txHash))}${d.ledger != null ? kv('Ledger', `#${esc(d.ledger)}`) : ''}${d.sentAt ? kv('Gönderim → Horizon cevabı', esc(delta(d.sentAt, e.at))) : ''}</div>`;
+      case 'contract':
+        return `<div class="detail">${kv('Sonuç', d.rpcStatus === 'SUCCESS' ? '<span class="ok">SUCCESS</span>' : esc(d.rpcStatus))}${kv('Ledger', `#${esc(d.ledger)}`)}${d.ledgerClosedAt ? kv('Ledger kapanışı (zincir saati)', esc(clock(d.ledgerClosedAt))) : ''}${kv('Kesilen ağ ücreti', xlm(d.feeCharged))}${d.eventCount != null ? kv('Kontrat olayı', esc(d.eventCount)) : ''}</div>`;
+      case 'distribution': return renderDistribution(d, flow);
+      case 'caught':
+        return `<div class="detail">${kv('Yakalayan', d.source === 'sse' ? 'Horizon SSE dinleyicisi' : d.source === 'reconciliation' ? 'Mutabakat job\'ı (SSE yedeği)' : esc(d.source))}${d.ledger ? kv('Ledger', `#${esc(d.ledger)}`) : ''}</div>`;
+      case 'gib':
+        return `<div class="detail">${kv('Belge', `<span class="mono">${esc(short(d.gibDocumentId, 6, 6))}</span>`)}${kv('Tür', d.documentType === 'okc_fis' ? 'ÖKC fişi' : esc(d.documentType))}${kv('Durum', esc(d.status))}${d.simulated ? ' <span class="tag warn">GİB gönderimi simülasyon</span>' : ''}</div>`;
+      case 'merchant_seen':
+        return `<div class="detail">${kv('Esnaf', esc(d.businessName || '—'))}${d.detectedLedger ? kv('Tespit edilen ledger', `#${esc(d.detectedLedger)}`) : ''}</div>`;
+      default: return '';
+    }
+  }
+
+  function renderDistribution(d, flow) {
+    const businessName = flow.merchant && flow.merchant.businessName;
+    const branches = (d.branches || []).map((b) => {
+      const who = b.pool === 1
+        ? `${businessName ? `<b>${esc(businessName)}</b> · ` : ''}${accLink(b.address)}`
+        : accLink(b.address);
+      return `<div class="branch p${esc(b.pool)}">
+        <div class="name">${esc(b.label)}</div>
+        <div class="who">${who}</div>
+        <div class="amt">${dtl(b.amount)}<span class="pct">${pct(b.amount, d.total)}</span></div>
+      </div>`;
+    }).join('');
+    return `<div class="atomic">
+      <div class="atomic-head">
+        <span>Toplam <b>${dtl(d.total)}</b> · tek işlem, tek ledger (#${esc(d.ledger)}) — ya hep ya hiç</span>
+        <span>Kaynak: pay_merchant + ${esc(d.transferCount)} transfer olayı</span>
+      </div>
+      <div class="branches">${branches}</div>
+      <div class="checks">
+        <span>Dallar toplamı = toplam: <span class="${d.sumMatchesTotal ? 'ok' : 'bad'}">${d.sumMatchesTotal ? '✓' : '✗'}</span></span>
+        <span>Transfer olayları dallarla birebir: <span class="${d.transfersMatch ? 'ok' : 'bad'}">${d.transfersMatch ? '✓' : '✗'}</span></span>
+      </div>
+    </div>`;
+  }
+
+  // ---------- ana çizim ----------
+  function render(flow) {
+    if (!flow) {
+      app.innerHTML = `<div class="empty"><h2>Henüz işlem yok</h2><p>İlk ödeme yapıldığında zaman çizelgesi burada canlı olarak oluşacak.</p></div>`;
+      return;
+    }
+
+    // Adım başına SON olay geçerlidir (ör. başarısız → sonra düzeldi).
+    const byStep = {};
+    for (const e of flow.events) byStep[e.step] = e;
+    const start = byStep.signed ? byStep.signed.at : (flow.events[0] && flow.events[0].at);
+    const failedIndex = flow.steps.findIndex((s) => byStep[s] && byStep[s].status === 'failed');
+    // "Bekleniyor" = olayı henüz gelmemiş, sıradaki ilk adım (tahmin değil; yalnızca boşluk).
+    const firstMissing = flow.steps.findIndex((s) => !byStep[s]);
+
+    const items = flow.steps.map((step, i) => {
+      const def = STEPS[step] || { title: step, sub: '' };
+      const e = byStep[step];
+      let status = 'pending';
+      if (e) status = e.status;
+      else if (failedIndex !== -1 && i > failedIndex) status = 'skipped';
+      else if (i === firstMissing) status = 'waiting';
+
+      let sub = def.sub;
+      if (step === 'caught' && e && e.status === 'done') {
+        sub = e.data.source === 'reconciliation' ? 'Mutabakat job\'ı yakaladı (SSE yedeği)' : 'Horizon SSE dinleyicisi yakaladı';
+      }
+      const label = status === 'waiting' ? '<span class="tag warn">bekleniyor</span>'
+        : status === 'skipped' ? '<span class="tag">önceki adım başarısız</span>' : '';
+
+      const time = e
+        ? `<b>${esc(i === 0 ? 'başlangıç' : delta(start, e.at))}</b><small>${esc(clock(e.at))}</small>`
+        : '';
+
+      return `<li class="step" data-status="${status}">
+        <div class="dot">${status === 'done' ? '✓' : status === 'failed' ? '✗' : i + 1}</div>
+        <div class="body">
+          <div class="title">${esc(def.title)} ${label}</div>
+          <div class="sub">${esc(sub)}</div>
+          ${e ? renderDetail(step, e, flow) : ''}
+        </div>
+        <div class="time">${time}</div>
+      </li>`;
+    }).join('');
+
+    const m = flow.merchant || {};
+    app.innerHTML = `
+      <section class="summary">
+        <div><div class="k">Tutar</div><div class="v amount">${dtl(flow.totalAmount)}</div></div>
+        <div><div class="k">Esnaf · Havuz 1 (Esnaf Kasası)</div><div class="v">${esc(m.businessName || '—')}<div class="sub">${accLink(m.stellarAddress)}</div></div></div>
+        <div><div class="k">Müşteri</div><div class="v">${accLink(flow.senderAddress)}</div></div>
+        <div><div class="k">İşlem</div><div class="v">${txLink(flow.txHash)}</div></div>
+      </section>
+      <ol class="timeline">${items}</ol>`;
+  }
+
+  function accept(flow) {
+    // Panel her zaman EN YENİ işlemi takip eder; eski bir işlemin gecikmiş olayı ekranı geri almaz.
+    if (flow && current && flow.transactionId !== current.transactionId
+        && new Date(flow.createdAt) < new Date(current.createdAt)) return;
+    const isNewTx = !current || !flow || flow.transactionId !== current.transactionId;
+    current = flow;
+    render(current);
+    // Yeni olayda sıradaki (bekleyen) ya da başarısız adımı görünür alana getir — projektörde kaydırmadan takip.
+    const focus = app.querySelector('.step[data-status="failed"], .step[data-status="waiting"]')
+      || (isNewTx ? null : app.querySelector('.step:last-child'));
+    if (focus && document.documentElement.scrollHeight > innerHeight) {
+      focus.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    }
+  }
+
+  function setConn(state, text) {
+    conn.dataset.state = state;
+    conn.querySelector('span').textContent = text;
+  }
+
+  // ---------- bağlantı ----------
+  if (!token) {
+    setConn('error', 'Token yok');
+    app.innerHTML = `<div class="empty"><h2>Panel token'ı eksik</h2><p>Adres şu biçimde olmalı: <span class="mono">/flow?token=…</span></p></div>`;
+    return;
+  }
+
+  const qs = `token=${encodeURIComponent(token)}`;
+  const es = new EventSource(`/api/v1/flow/stream?${qs}`);
+
+  es.addEventListener('open', () => setConn('live', 'Canlı'));
+  es.addEventListener('snapshot', (m) => accept(JSON.parse(m.data).flow));
+  es.addEventListener('flow', (m) => accept(JSON.parse(m.data).flow));
+  es.addEventListener('error', async () => {
+    if (es.readyState === EventSource.CLOSED) {
+      // Tarayıcı yeniden denemeyi bıraktı (ör. 401/503) — nedenini göster.
+      try {
+        const res = await fetch(`/api/v1/flow/latest?${qs}`);
+        const body = await res.json().catch(() => ({}));
+        setConn('error', res.ok ? 'Bağlantı kapandı' : (body.message || `Hata ${res.status}`));
+      } catch {
+        setConn('error', 'Sunucuya ulaşılamıyor');
+      }
+    } else {
+      // Tarayıcı kendisi yeniden bağlanıyor; açılınca 'snapshot' ile kaçan olaylar gelir.
+      setConn('retry', 'Yeniden bağlanıyor…');
+    }
+  });
+
+  app.innerHTML = `<div class="empty"><p>Akış yükleniyor…</p></div>`;
+})();
+</script>
+</body>
+</html>

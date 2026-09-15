@@ -47,6 +47,9 @@ export async function idempotencyMiddleware(req, res, next) {
     }
 
     req.idempotencyKey = key;
+    // Canlı işlem akışı 2. adımının GERÇEK anı — işlem kaydı henüz yok,
+    // olay handler'da Transaction oluşturulunca bu zamanla yazılır.
+    req.idempotencyLockedAt = new Date();
     next();
   } catch (error) {
     logger.error(`[Idempotency] idempotencyMiddleware hatası: ${error.message}`);

@@ -3,14 +3,21 @@
  *
  * POST /api/v1/transactions/submit — İmzalı XDR paketini kabul eder
  * GET  /api/v1/transactions/:txHash — İşlem durumu sorgulama
+ * POST /api/v1/transactions/:txHash/merchant-ack — Esnaf ekranı ödemeyi gördü (akış 9. adım)
  */
 
 import { Router } from 'express';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import stellarConfig from '../../config/stellar.js';
 import Transaction from '../../models/Transaction.model.js';
-import { wrapAndSubmitFeeBump } from '../../services/fee-bump.service.js';
+import {
+  wrapAndSubmitFeeBump,
+  verifySignedBySource,
+  extractHorizonResultCodes,
+} from '../../services/fee-bump.service.js';
 import { finalizeIdempotencyKey } from '../../services/idempotency.service.js';
+import { recordFlowEvent } from '../../services/flow-events.service.js';
+import { recordChainOutcome } from '../../services/contract-events.service.js';
 import { authMiddleware, submitAuthMiddleware } from '../middleware/auth.middleware.js';
 import { validateTransactionSubmit } from '../middleware/validation.middleware.js';
 import { idempotencyMiddleware } from '../middleware/idempotency.middleware.js';
@@ -67,9 +74,23 @@ export async function submitTransactionHandler(req, res) {
   }
 
   let senderAddress;
+  let innerTxHash = null;
+  let signatureCheck = null;
   try {
     const innerTx = StellarSdk.TransactionBuilder.fromXDR(signedXdr, stellarConfig.networkPassphrase);
     senderAddress = innerTx.source;
+    // Akışın 1. adımı: imzanın gerçekten kaynak hesaba ait olduğunun yerel
+    // doğrulaması. Müşteri yolunda bu doğrulama submitAuthMiddleware'de,
+    // idempotency kilidinden ÖNCE yapılmıştır — zaman oradan alınır. Esnaf
+    // (Bearer) yolunda orada imza kontrolü yoktur; an burasıdır. (Fee-bump
+    // servisi aynı kontrolü ücret harcamadan önce bir kez daha yapar.)
+    if (!(innerTx instanceof StellarSdk.FeeBumpTransaction)) {
+      innerTxHash = innerTx.hash().toString('hex');
+      signatureCheck = {
+        valid: verifySignedBySource(innerTx),
+        at: req.signatureVerifiedAt ?? new Date(),
+      };
+    }
   } catch {
     await finalizeIdempotencyKey(idempotencyKey, 'failed', { error: 'VALIDATION_ERROR' }).catch((err) => {
       logger.error(`[Transaction] finalize (parse) hatası: ${err.message}`);
@@ -78,16 +99,58 @@ export async function submitTransactionHandler(req, res) {
   }
 
   let transaction;
+  // Fee-Bump servisinin hangi aşamaya kadar ilerlediği — hata hangi adımda
+  // oluştuysa zaman çizelgesinde O adım kırmızıya döner.
+  let feeBumpDone = false;
+  let sentAt = null;
+  let chainAccepted = false;
   try {
     transaction = await Transaction.create({
       idempotencyKey,
       senderAddress,
+      innerTxHash,
       merchantId,
       totalAmount,
       status: 'pending',
     });
 
-    const response = await wrapAndSubmitFeeBump(signedXdr);
+    // Akış olayları beklenmez (await yok): kayıt, ödemeyi yavaşlatmamalı.
+    // Sıra, flow-events servisindeki işlem başı zincirle korunur.
+    if (signatureCheck) {
+      recordFlowEvent(transaction._id, 'signed', {
+        status: signatureCheck.valid ? 'done' : 'failed',
+        at: signatureCheck.at,
+        data: { signer: senderAddress, innerTxHash, algorithm: 'Ed25519' },
+      });
+    }
+    recordFlowEvent(transaction._id, 'received', {
+      at: req.idempotencyLockedAt ?? new Date(),
+      data: {
+        idempotencyKey,
+        lock: 'acquired',
+        authPath: req.merchantId ? 'merchant_api_key' : 'customer_signature',
+      },
+    });
+
+    const response = await wrapAndSubmitFeeBump(signedXdr, {
+      onProgress: (stage, data) => {
+        if (stage === 'fee_bump') {
+          feeBumpDone = true;
+          recordFlowEvent(transaction._id, 'fee_bump', { data });
+        } else if (stage === 'sending') {
+          sentAt = data.sentAt;
+        }
+      },
+    });
+
+    // Buradan sonra işlem zincirdedir: sonraki bir DB/idempotency hatası
+    // 4. adımı "başarısız" gösteremez.
+    chainAccepted = true;
+    recordFlowEvent(transaction._id, 'submitted', {
+      data: { txHash: response.hash, ledger: response.ledger ?? null, sentAt, network: 'horizon' },
+    });
+    // 5. ve 6. adımlar: kontrat olayları RPC'den okunur — cevabı bekletmeden arka planda.
+    recordChainOutcome(transaction._id, response.hash);
 
     transaction.status = 'submitted';
     transaction.txHash = response.hash;
@@ -112,6 +175,21 @@ export async function submitTransactionHandler(req, res) {
       await transaction.save().catch((saveErr) => {
         logger.error(`[Transaction] Hata durumu kaydedilemedi: ${saveErr.message}`);
       });
+
+      // Hata, Fee-Bump imzalanmadan önceyse (doğrulama/ön-simülasyon) 3. adımda,
+      // sonraysa (Horizon reddi) 4. adımda gösterilir.
+      if (!chainAccepted) {
+        let resultCodes = null;
+        try {
+          resultCodes = extractHorizonResultCodes(error);
+        } catch {
+          resultCodes = null;
+        }
+        recordFlowEvent(transaction._id, feeBumpDone ? 'submitted' : 'fee_bump', {
+          status: 'failed',
+          data: { error: error.message, resultCodes, sentAt },
+        });
+      }
     }
 
     await finalizeIdempotencyKey(idempotencyKey, 'failed', { error: error.message }).catch((finalizeErr) => {
@@ -155,6 +233,56 @@ export async function getTransactionStatus(req, res) {
   }
 }
 
+/**
+ * POST /:txHash/merchant-ack
+ *
+ * Canlı işlem akışının 9. adımı: esnaf ekranı (`EsnafQrScreen`) ödemeyi zincirde
+ * gördüğünde bu ucu çağırır. Backend bu anı başka hiçbir yoldan bilemez — esnaf
+ * istemcisi ödemeyi Soroban RPC'den KENDİSİ tespit eder, backend'e uğramaz.
+ *
+ * Esnaf Bearer API anahtarı zorunludur; yalnızca KENDİ işlemi için çağrılabilir.
+ * İdempotenttir: ikinci çağrı yeni olay yazmaz, 200 döner.
+ *
+ * Request Body (opsiyonel): { "detectedLedger": 4628674 }
+ */
+export async function merchantAckHandler(req, res) {
+  try {
+    const { txHash } = req.params;
+    const transaction = await Transaction.findOne({ txHash });
+
+    if (!transaction) {
+      // Esnaf ödemeyi, handler txHash'i kaydetmeden birkaç ms önce görmüş olabilir —
+      // istemci kısa aralıkla yeniden dener.
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'İşlem bulunamadı.' });
+    }
+    if (transaction.merchantId.toString() !== req.merchantId) {
+      return res
+        .status(403)
+        .json({ error: 'FORBIDDEN', message: 'Yalnızca kendi işleminiz için bildirim gönderebilirsiniz.' });
+    }
+
+    const alreadySeen = (transaction.flowEvents ?? []).some(
+      (e) => e.step === 'merchant_seen' && e.status === 'done'
+    );
+    if (!alreadySeen) {
+      const detectedLedger = Number.isInteger(req.body?.detectedLedger) ? req.body.detectedLedger : null;
+      await recordFlowEvent(transaction._id, 'merchant_seen', {
+        data: {
+          businessName: req.merchant?.businessName ?? null,
+          merchantAddress: req.merchant?.stellarAddress ?? null,
+          detectedLedger,
+          detectedVia: 'soroban_rpc_getEvents',
+        },
+      });
+    }
+
+    res.status(200).json({ acknowledged: true, duplicate: alreadySeen });
+  } catch (error) {
+    logger.error(`[Transaction] merchantAckHandler hatası: ${error.message}`);
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: 'Bildirim kaydedilemedi.' });
+  }
+}
+
 // Zincir sırası KRİTİK (bkz. rate-limit.middleware.js dosya başı):
 // IP limiti pozisyon 0'da (parse/DB yok) → kimlik limiti ilk DB yazmasından ÖNCE.
 router.post(
@@ -167,5 +295,6 @@ router.post(
   submitTransactionHandler
 );
 router.get('/:txHash', authMiddleware, getTransactionStatus);
+router.post('/:txHash/merchant-ack', authMiddleware, merchantAckHandler);
 
 export default router;

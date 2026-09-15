@@ -6,7 +6,7 @@
  * zincire yazılan onay **kalıcı olarak** kaybolur, işlem sonsuza kadar
  * `submitted` durumunda takılı kalır ve GİB belgesi HİÇ üretilmez.
  *
- * ## Neden gerekli olduğu gerçek bir arızayla kanıtlandı (13 Eylül 2026)
+ * ## Neden gerekli olduğu gerçek bir arızayla kanıtlandı (12 Eylül 2026)
  *
  * Render'daki canlı dağıtımda uçtan uca prova sırasında: ödeme gerçekten
  * zincire yazıldı (tx `b5466573…`, Havuz 2 ücreti ödedi, esnaf 2.49 dTL aldı),
@@ -44,8 +44,13 @@ import config from '../config/index.js';
 import logger from '../utils/logger.js';
 import { handleTransaction } from './sse-listener.service.js';
 
-/** Bu yaştan genç işlemler atlanır — önce SSE'ye şans ver. */
-const MIN_AGE_MS = 20 * 1000;
+/**
+ * Bu yaştan genç işlemler atlanır — önce SSE'ye şans ver.
+ * Env: `RECONCILIATION_MIN_AGE_MS` (varsayılan 20 sn). Canlı Render'da SSE hiç
+ * mesaj almadığı için onayı fiilen mutabakat yakalıyor; demo için 8 sn'ye
+ * indirildi (render.yaml, `/flow` panelinin 7. adımı).
+ */
+const MIN_AGE_MS = config.reconciliation.minAgeMs;
 
 /** Tek turda en fazla kaç işlem sorgulanır. */
 const MAX_BATCH = 20;
@@ -120,7 +125,10 @@ export async function reconcilePendingTransactions() {
       }
 
       // Onay/GİB/bildirim mantığı SSE yolundakiyle AYNI fonksiyondan geçer.
-      await handleTransaction({ hash: transaction.txHash, ledger: result.ledger });
+      await handleTransaction(
+        { hash: transaction.txHash, ledger: result.ledger },
+        { source: 'reconciliation' }
+      );
       stats.confirmed += 1;
       logger.info(
         `[Reconcile] SSE'nin kaçırdığı onay yakalandı ve işlendi: ${transaction.txHash}`
@@ -152,10 +160,20 @@ export function startReconciliationCron() {
     return null;
   }
 
+  // 10 sn'lik aralıkta yavaş bir Horizon turu bir sonrakiyle çakışabilir; çakışan
+  // iki tur aynı işlemi iki kez işleyip İKİ GİB belgesi üretirdi. Tur sürerken
+  // gelen tetik atlanır.
+  let running = false;
   const task = cron.schedule(expression, () => {
-    reconcilePendingTransactions().catch((err) => {
-      logger.error(`[Reconcile] Tur hatası: ${err.message}`);
-    });
+    if (running) return;
+    running = true;
+    reconcilePendingTransactions()
+      .catch((err) => {
+        logger.error(`[Reconcile] Tur hatası: ${err.message}`);
+      })
+      .finally(() => {
+        running = false;
+      });
   });
 
   logger.info(`[Reconcile] Mutabakat job'ı başlatıldı (${expression}).`);

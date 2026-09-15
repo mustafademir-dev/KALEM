@@ -131,8 +131,22 @@ services:
       # kaçan onaylar kalıcı olarak kaybolur. Bu job onları Horizon'dan yakalar.
       - key: RECONCILIATION_ENABLED
         value: true
+      # 10 saniyede bir (6 alanlı, saniyeli ifade). Canlıda onayı fiilen bu job
+      # yakalıyor; `/flow` panelinin 7. adımının demoda makul sürede işaretlenmesi
+      # için dakikalıktan 10 sn'ye indirildi. Horizon'a tur başına en fazla 20
+      # tekil sorgu atar ve yalnızca 'submitted' işlem varsa sorgu yapar.
       - key: RECONCILIATION_CRON
-        value: "* * * * *"
+        value: "*/10 * * * * *"
+      # Bu yaştan genç işlem atlanır (önce SSE'ye şans). Varsayılan 20000.
+      - key: RECONCILIATION_MIN_AGE_MS
+        value: 8000
+
+      # --- Canlı İşlem Akışı Paneli (/flow) — docs §9 ---
+      # Panelde gösterilen veriler zincirde zaten açık (hash, adres, tutar) +
+      # işletme adı; token rastgele tarayıcıları dışarıda tutan bir bariyerdir.
+      # Boşsa panel KAPALIDIR. Uzun rastgele bir değer girin.
+      - key: FLOW_PANEL_TOKEN
+        sync: false
 
       # --- Rate limiting (§6.2.1) ---
       # Sunum öncesi kod değiştirmeden gevşetilebilsin diye hepsi env.
