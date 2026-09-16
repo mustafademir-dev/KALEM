@@ -12,6 +12,14 @@
   "tamamlandı" görünür. Zamanlayıcıyla ilerleyen animasyon yoktur; "bekleniyor"
   durumundaki nabız yalnızca "henüz olay gelmedi" anlamındadır.
 
+  GÖRSEL AKIŞ (nehir/boru çizimi): dokuz adımı birbirine bağlayan dikey hat,
+  6. adımda (Atomik Dağılım) gerçek DOM konumlarından (getBoundingClientRect)
+  ölçülerek 3 dala ayrılır ve 7. adımdan önce tekrar birleşir. Çatal yalnızca
+  dağılım olayı GERÇEKTEN geldiğinde ve gerçek dal kutuları DOM'da VARKEN
+  çizilir — önceden tahmini bir çatal gösterilmez. Bir adım sayfa AÇILIRKEN
+  zaten tamamlanmışsa (yeniden bağlanma/geç katılım) o adım anında dolu
+  gösterilir, "çiziliyor" animasyonu yalnızca YENİ gelen bir olay için çalışır.
+
   Kullanım: https://<backend>/flow?token=<FLOW_PANEL_TOKEN>
   Harici kaynak yüklenmez (font/CDN yok) — sunum ağında internet kısıtlıysa da çalışır.
 -->
@@ -32,6 +40,10 @@
     --success-bg: #E6F4EC;
     --danger: #D14343;
     --danger-bg: #FBEAEA;
+    /* Havuz 3 / Havuz 4 nehir/kart rengi — başarı(yeşil)/hata(kırmızı)/aktif(amber) ile
+       karışmaması için ayrı, ölçülü bir mavi/mor çifti (bkz. Havuz 1 = accent/amber). */
+    --flow-p3: #3D6EA8;
+    --flow-p4: #7A6FA6;
     --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
   }
   * { box-sizing: border-box; }
@@ -42,6 +54,13 @@
     line-height: 1.4;
     padding: clamp(16px, 2vw, 36px);
     min-height: 100vh;
+    /* KASITLI: "tek ekrana sığsın" kısıtı kaldırıldı — sayfa doğal uzunluğunda
+       akar, kaydırılabilir. Genişlik sınırlı + ortalı: hem satırlar okunaklı
+       kalır hem de 6. adımdaki çatalın 3 dalı (yan yana) arasındaki yatay
+       mesafe makul kalır — aksi halde 1920px'te dallar neredeyse yatay bir
+       çizgi gibi görünürdü (denendi, kötü göründü). */
+    max-width: 980px;
+    margin-inline: auto;
   }
   a { color: var(--accent-strong); text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -61,6 +80,19 @@
   .conn[data-state="retry"] i { background: var(--accent); }
   .conn[data-state="error"] i { background: var(--danger); }
 
+  /* ---------- Nehir çizim yüzeyi ---------- */
+  /* #app: SVG'nin position:absolute; inset:0 ile hizalanacağı konumlandırma
+     bağlamı. Metin/kart içeriği z-index:1 ile nehrin ÜSTÜNDE, düğüm daireleri
+     (.dot, opak arka plan) hattı görsel olarak "yutuyor" — ayrıca kırpma/hizalama
+     hesabı gerekmiyor. */
+  #app { position: relative; }
+  #river { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: visible; }
+  .summary, .timeline { position: relative; z-index: 1; }
+
+  .river-active { animation: river-dash 1s linear infinite; }
+  @keyframes river-dash { to { stroke-dashoffset: -24; } }
+  @media (prefers-reduced-motion: reduce) { .river-active { animation: none !important; } }
+
   .summary {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 10px 28px; margin: clamp(14px, 1.6vw, 26px) 0;
@@ -70,11 +102,7 @@
   .summary .amount { color: var(--accent-strong); font-size: 1.7em; font-weight: 800; }
 
   /* ---------- Zaman çizelgesi ---------- */
-  ol.timeline { list-style: none; margin: 0; padding: 0; position: relative; }
-  ol.timeline::before {
-    content: ""; position: absolute; left: calc(1.3em - 1px); top: 1.3em; bottom: 1.3em;
-    width: 2px; background: var(--border);
-  }
+  ol.timeline { list-style: none; margin: 0; padding: 0; }
   .step {
     position: relative; display: grid; grid-template-columns: 2.6em 1fr auto;
     gap: 0 18px; padding: clamp(8px, .8vw, 14px) 0; align-items: start;
@@ -83,9 +111,10 @@
     position: relative; z-index: 1; width: 2.6em; height: 2.6em; border-radius: 50%;
     display: grid; place-items: center; font-weight: 800; font-size: 1em;
     background: var(--card); border: 2px solid var(--border-strong); color: var(--muted);
+    transition: box-shadow .3s ease;
   }
-  .step[data-status="done"] .dot { background: var(--success); border-color: var(--success); color: #fff; }
-  .step[data-status="failed"] .dot { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .step[data-status="done"] .dot { background: var(--success); border-color: var(--success); color: #fff; box-shadow: 0 0 0 4px var(--success-bg); }
+  .step[data-status="failed"] .dot { background: var(--danger); border-color: var(--danger); color: #fff; box-shadow: 0 0 0 4px var(--danger-bg); }
   .step[data-status="waiting"] .dot { border-color: var(--accent); color: var(--accent-strong); }
   .step[data-status="waiting"] .dot::after {
     content: ""; position: absolute; inset: -6px; border-radius: 50%;
@@ -109,16 +138,30 @@
   .tag.warn { background: var(--accent-muted); color: var(--accent-strong); }
 
   /* ---------- Atomik dağılım ---------- */
-  .atomic { margin-top: 10px; border: 1px solid var(--border); background: var(--card); border-radius: 10px; padding: 12px 14px; }
-  .atomic-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font-size: .88em; color: var(--text-2); margin-bottom: 10px; }
+  /* DİKKAT: arka plan BİLEREK YOK. `.timeline` (z-index:1) #river'ın (z-index:0)
+     üstünde boyandığı için `.atomic`'e opak bir dolgu vermek, içindeki BOŞ
+     alanları da opak yapıp nehrin çatal eğrilerini tamamen gizlerdi — eğri
+     yalnızca GERÇEKTEN boş (şeffaf) alanlarda arkadan görünebilir. Dal
+     kartları (.branch) kendi opak arka planlarını KORUYOR; eğri onlara
+     girerken (kasıtlı olarak) kayboluyor — tıpkı ana hattın .dot dairelerinin
+     arkasında kaybolması gibi. */
+  .atomic { margin-top: 14px; border: 1px solid var(--border); background: transparent; border-radius: 10px; padding: 12px 14px; }
+  /* margin-bottom geniş: sayfa artık "tek ekrana sığsın" kısıtına bağlı
+     değil — nehir çiziminin (drawRiver) çatal eğrilerine gerçek bir dikey
+     boşluk (140px) bırakır, 3 dal metnin üzerinden geçmeden BELİRGİN bir
+     açıyla ayrılır. Bkz. #river yorumu. */
+  .atomic-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font-size: .88em; color: var(--text-2); margin-bottom: 140px; }
   .branches { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
   .branch { border-radius: 8px; padding: 10px 12px; background: var(--card-alt); border-left: 5px solid var(--border-strong); min-width: 0; }
   .branch.p1 { background: var(--accent-muted); border-left-color: var(--accent); }
+  .branch.p3 { border-left-color: var(--flow-p3); }
+  .branch.p4 { border-left-color: var(--flow-p4); }
   .branch .name { font-weight: 700; }
   .branch .who { font-size: .85em; color: var(--text-2); margin-top: 2px; overflow-wrap: anywhere; }
   .branch .amt { font-size: 1.35em; font-weight: 800; margin-top: 6px; font-variant-numeric: tabular-nums; }
   .branch .pct { color: var(--text-2); font-weight: 600; font-size: .75em; margin-left: 6px; }
-  .checks { margin-top: 10px; font-size: .85em; color: var(--text-2); display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  /* margin-top geniş: nehir çiziminin geri birleşen (reconverge) eğrileri için — yukarıdaki not. */
+  .checks { margin-top: 140px; font-size: .85em; color: var(--text-2); display: flex; flex-wrap: wrap; gap: 4px 18px; }
   .ok { color: var(--success); font-weight: 700; }
   .bad { color: var(--danger); font-weight: 700; }
 
@@ -126,24 +169,15 @@
   .empty h2 { color: var(--text); margin: 0 0 8px; }
   footer { margin-top: 18px; color: var(--muted); font-size: .8em; }
 
-  /* 1080p projektör: 9 adım + dağılım kutusu tek ekrana yaklaşsın */
-  @media (min-width: 1200px) and (max-height: 1200px) {
-    body { font-size: clamp(13px, .8vw, 16px); padding-block: 18px; }
-    .summary { margin: 12px 0; }
-    .step { padding: 5px 0; }
-    .detail { margin-top: 3px; }
-    .atomic { margin-top: 6px; padding: 8px 12px; }
-    .atomic-head { margin-bottom: 6px; }
-    .branch { padding: 7px 10px; }
-    .branch .amt { margin-top: 3px; }
-    .checks { margin-top: 6px; }
-    footer { margin-top: 10px; }
-  }
-
   @media (max-width: 640px) {
     .step { grid-template-columns: 2.6em 1fr; }
     .time { grid-column: 2; text-align: left; padding-top: 4px; }
     .time small { display: inline; margin-left: 6px; }
+    /* Mobilde dallar zaten alt alta dizilip belirgin bir çatal görünümü
+       veriyor (dikey istifleme) — masaüstündeki gibi geniş bir boşluğa
+       ihtiyaç yok, tam tersi gereksiz kaydırma yaratırdı. */
+    .atomic-head { margin-bottom: 40px; }
+    .checks { margin-top: 40px; }
   }
 </style>
 </head>
@@ -167,6 +201,7 @@
   const app = document.getElementById('app');
   const conn = document.getElementById('conn');
   const EXPLORER = 'https://stellar.expert/explorer/testnet';
+  const NS = 'http://www.w3.org/2000/svg';
 
   /** Adım tanımları — sıra backend'deki FLOW_STEPS ile aynıdır. */
   const STEPS = {
@@ -182,6 +217,12 @@
   };
 
   let current = null;
+  // Bir işlemin daha önce hangi adımları "bilindiği" (DOM'da göründüğü) —
+  // yalnızca YENİ görünen adımlar için çizim/sayaç animasyonu tetiklenir.
+  // Sayfa yeniden bağlanınca ya da işlem yarı yolda izlenmeye başlanınca
+  // (snapshot birden çok adımla gelir) geçmiş adımlar SIÇRAMADAN anında dolu görünür.
+  let knownStepsForTx = null; // { txId, steps: Set<string> }
+  let lastStatuses = null; // resize'da yeniden çizim için
 
   // ---------- yardımcılar ----------
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -190,10 +231,10 @@
   const txLink = (hash) => hash ? `<a class="mono" href="${EXPLORER}/tx/${esc(hash)}" target="_blank" rel="noopener">${esc(short(hash, 8, 8))} ↗</a>` : '—';
   const accLink = (addr) => addr ? `<a class="mono" href="${EXPLORER}/account/${esc(addr)}" target="_blank" rel="noopener">${esc(short(addr))}</a>` : '—';
 
-  /** stroop (string) → "2,4900000 dTL" */
+  /** stroop (string|number) → "2,4900000 dTL" */
   function dtl(stroops) {
     if (stroops == null) return '—';
-    const n = BigInt(stroops);
+    const n = typeof stroops === 'bigint' ? stroops : BigInt(Math.round(Number(stroops)) || 0);
     const neg = n < 0n; const a = neg ? -n : n;
     const whole = (a / 10000000n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     const frac = (a % 10000000n).toString().padStart(7, '0');
@@ -250,19 +291,24 @@
     }
   }
 
+  /**
+   * `data-pool`/`data-amount`/`.atomic[data-total]` — bunlar metin için değil,
+   * nehir çiziminin (drawRiver) dal genişliğini ve rengini GERÇEK tutardan
+   * hesaplaması için var. `.num[data-stroops]` ise sayaç animasyonunun hedefi.
+   */
   function renderDistribution(d, flow) {
     const businessName = flow.merchant && flow.merchant.businessName;
     const branches = (d.branches || []).map((b) => {
       const who = b.pool === 1
         ? `${businessName ? `<b>${esc(businessName)}</b> · ` : ''}${accLink(b.address)}`
         : accLink(b.address);
-      return `<div class="branch p${esc(b.pool)}">
+      return `<div class="branch p${esc(b.pool)}" data-pool="${esc(b.pool)}" data-amount="${esc(b.amount)}">
         <div class="name">${esc(b.label)}</div>
         <div class="who">${who}</div>
-        <div class="amt">${dtl(b.amount)}<span class="pct">${pct(b.amount, d.total)}</span></div>
+        <div class="amt"><span class="num" data-stroops="${esc(b.amount)}">${dtl(b.amount)}</span><span class="pct">${pct(b.amount, d.total)}</span></div>
       </div>`;
     }).join('');
-    return `<div class="atomic">
+    return `<div class="atomic" data-total="${esc(d.total)}">
       <div class="atomic-head">
         <span>Toplam <b>${dtl(d.total)}</b> · tek işlem, tek ledger (#${esc(d.ledger)}) — ya hep ya hiç</span>
         <span>Kaynak: pay_merchant + ${esc(d.transferCount)} transfer olayı</span>
@@ -275,10 +321,205 @@
     </div>`;
   }
 
+  // ---------- nehir çizimi (SVG, gerçek DOM konumlarından) ----------
+
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  /** Bir elemanın #app'e göre bağıl merkez/kenar koordinatları. */
+  function measure(el, containerRect) {
+    const r = el.getBoundingClientRect();
+    return {
+      cx: r.left + r.width / 2 - containerRect.left,
+      cy: r.top + r.height / 2 - containerRect.top,
+      top: r.top - containerRect.top,
+      bottom: r.bottom - containerRect.top,
+    };
+  }
+
+  /**
+   * 9 adımı birbirine bağlayan dikey hattı ve 6. adımdaki (Atomik Dağılım)
+   * gerçek 3'e ayrılan/birleşen çatalı çizer.
+   *
+   * KURAL: Çatal yalnızca `.branches .branch` DOM'da VARKEN (yani dağılım
+   * olayı gerçekten geldiğinde) çizilir — önceden tahmini bir çatal yok.
+   * `newlySettled` bu render'da İLK KEZ görünen adımları taşır; yalnızca
+   * onlar için "çiziliyor" (stroke-dashoffset) animasyonu tetiklenir, daha
+   * önce zaten bilinen adımlar anında dolu çizilir (geç katılan/yeniden
+   * bağlanan bir panel her şeyin baştan animasyonla oynatıldığını görmesin).
+   */
+  function drawRiver(flow, statuses, newlySettled) {
+    const svg = document.getElementById('river');
+    if (!svg) return;
+    const dots = [...app.querySelectorAll('.timeline .dot')];
+    if (dots.length !== flow.steps.length) return; // DOM henüz senkron değil
+
+    const containerRect = app.getBoundingClientRect();
+    svg.setAttribute('width', String(app.scrollWidth));
+    svg.setAttribute('height', String(app.scrollHeight));
+    svg.textContent = '';
+
+    const colDone = cssVar('--success');
+    const colFail = cssVar('--danger');
+    const colWait = cssVar('--accent');
+    const colPending = cssVar('--border');
+    const branchColor = { 1: cssVar('--accent'), 3: cssVar('--flow-p3'), 4: cssVar('--flow-p4') };
+
+    const nodes = dots.map((el) => measure(el, containerRect));
+    const frag = document.createDocumentFragment();
+
+    function makePath(d, { color, width = 7, dashed = false, glow = false, reveal = false }) {
+      const p = document.createElementNS(NS, 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', color);
+      p.setAttribute('stroke-width', String(width));
+      p.setAttribute('stroke-linecap', 'round');
+      if (glow) p.style.filter = `drop-shadow(0 0 4px ${color}88)`;
+      if (dashed) {
+        p.setAttribute('stroke-dasharray', '3 9');
+        p.classList.add('river-active');
+      }
+      frag.appendChild(p);
+      if (reveal) {
+        // "Sıvı akıyor" hissi: gerçek yol uzunluğu kadar dash yapıp 0'a indir.
+        requestAnimationFrame(() => {
+          let len;
+          try { len = p.getTotalLength(); } catch { return; }
+          p.style.transition = 'none';
+          p.setAttribute('stroke-dasharray', `${len}`);
+          p.setAttribute('stroke-dashoffset', `${len}`);
+          void p.getBoundingClientRect(); // reflow zorla — transition'ın yeni değerden başlamasını sağlar
+          p.style.transition = 'stroke-dashoffset .6s cubic-bezier(.2,.7,.3,1)';
+          p.setAttribute('stroke-dashoffset', '0');
+        });
+      }
+      return p;
+    }
+
+    const branchEls = [...document.querySelectorAll('.branches .branch')];
+    const atomicEl = document.querySelector('.atomic');
+    const total = atomicEl ? BigInt(atomicEl.dataset.total || '0') : 0n;
+    const hasFork = statuses[5] === 'done' && branchEls.length > 0;
+
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const from = nodes[i];
+      const to = nodes[i + 1];
+      const destStatus = statuses[i + 1];
+      const destStep = flow.steps[i + 1];
+
+      // distribution(5) -> caught(6): dağılım tamamlandıysa düz çizgi yerine
+      // gerçek dal kutularına giden/onlardan dönen çatal çizilir.
+      //
+      // GEOMETRİ: düğümden KISA bir gövde iner (yalnızca dot sütunundan
+      // çıkacak kadar — metinle hiç kesişmez), ardından eğik hat mevcut
+      // boşluğun BÜYÜK KISMINI kullanarak dala açılır. "Tek ekrana sığsın"
+      // kısıtı kaldırıldığı için bu boşluk artık genellikle geniştir
+      // (.atomic-head/.checks — bkz. o kurallardaki not) ve dallar BELİRGİN
+      // bir açıyla ayrılır; sabit bir ofset kullanılsaydı (ilk denemede
+      // olduğu gibi) büyüyen CSS boşluğunun tamamı boşa giderdi.
+      if (i === 5 && hasFork) {
+        const isNewFork = newlySettled.has('distribution');
+        const branchesEl = document.querySelector('.branches');
+        const bx = measure(branchesEl, containerRect);
+        const stubOut = Math.min(24, Math.max(8, (bx.top - from.cy) * 0.15));
+        const stubIn = Math.min(24, Math.max(8, (to.cy - bx.bottom) * 0.15));
+        const hubOutY = from.cy + stubOut;
+        const hubInY = to.cy - stubIn;
+
+        // Kısa gövde — dağılım tamamlanana kadar zaten yeşil aktığı hattın devamı.
+        makePath(`M ${from.cx} ${from.cy} L ${from.cx} ${hubOutY}`, { color: colDone, width: 7, glow: true, reveal: isNewFork });
+        makePath(`M ${to.cx} ${hubInY} L ${to.cx} ${to.cy}`, { color: colDone, width: 7, glow: true, reveal: isNewFork });
+
+        const branchMeasures = branchEls.map((bEl) => measure(bEl, containerRect));
+        // Düzen algılama: kutular YAN YANA (masaüstü, hepsi aynı `top`) mı,
+        // ALT ALTA (mobil, farklı `top`) mı dizili? İkisi çok farklı geometri
+        // gerektiriyor — biri diğerinde kötü görünüyor (aşağıdaki notlara bkz.).
+        const stacked = branchMeasures.length > 1
+          && Math.abs(branchMeasures[branchMeasures.length - 1].top - branchMeasures[0].top) > 20;
+
+        branchEls.forEach((bEl, idx) => {
+          const pool = Number(bEl.dataset.pool || 0);
+          const amount = BigInt(bEl.dataset.amount || '0');
+          const ratio = total > 0n ? Number((amount * 1000n) / total) / 1000 : 0;
+          const w = Math.max(3, Math.min(14, 3 + Math.sqrt(ratio) * 11));
+          const color = branchColor[pool] || colDone;
+          const br = branchMeasures[idx];
+          const winW = Math.max(2, w * 0.6);
+
+          if (stacked) {
+            // TARAK (comb) DÜZENİ: kutular alt alta dizildiğinde, uzak bir
+            // kutuya giden çizgi YAKIN kutuların hizasından GEÇMEK ZORUNDA —
+            // küçük bir X kayması bunu önlemiyor, gerçek cihazda hâlâ
+            // birbirinin üzerinden geçiyorlardı (X şeklinde kesişme, bulundu).
+            // Çözüm: her dal kendi SABİT, PARALEL dikey "şeridinde" akar
+            // (asla X değiştirmez) ve yalnızca kendi kutusunun hizasında KISA
+            // bir yatay sıçrayışla kutuya girer/çıkar — paralel şeritler asla
+            // kesişmez, aksi halde birbirinin üzerinden geçmiş olurlardı.
+            const outLane = from.cx - 26 + idx * 13; // 3 şerit: -26,-13,0
+            const inLane = from.cx + 13 + idx * 13; // 3 şerit: +13,+26,+39 (giden şeritlerle çakışmasın)
+            makePath(`M ${from.cx} ${hubOutY} L ${outLane} ${hubOutY}`, { color, width: w, glow: true, reveal: isNewFork });
+            makePath(`M ${outLane} ${hubOutY} L ${outLane} ${br.top}`, { color, width: w, glow: true, reveal: isNewFork });
+            makePath(`M ${outLane} ${br.top} L ${br.left} ${br.top}`, { color, width: w, glow: true, reveal: isNewFork });
+
+            makePath(`M ${br.left} ${br.bottom} L ${inLane} ${br.bottom}`, { color, width: winW, glow: true, reveal: isNewFork });
+            makePath(`M ${inLane} ${br.bottom} L ${inLane} ${hubInY}`, { color, width: winW, glow: true, reveal: isNewFork });
+            makePath(`M ${inLane} ${hubInY} L ${to.cx} ${hubInY}`, { color, width: winW, glow: true, reveal: isNewFork });
+          } else {
+            // YELPAZE (fan) DÜZENİ: kutular yan yana dizildiğinde (masaüstü),
+            // düz açılı hatlar kaynaktan doğrudan hedefe gider — bir noktadan
+            // üç yöne gerçekten "çatallanıyor" hissi verir (tarak düzeni burada
+            // ANLAMSIZ olurdu: kutular aynı Y'de olduğundan şeritler gereksiz
+            // yere uzun bir yatay sıçrayışa dönüşür, ilk denemede olan "düz
+            // plato" görünümüne geri döner).
+            makePath(`M ${from.cx} ${hubOutY} L ${br.cx} ${br.top}`, { color, width: w, glow: true, reveal: isNewFork });
+            makePath(`M ${br.cx} ${br.bottom} L ${to.cx} ${hubInY}`, { color, width: winW, glow: true, reveal: isNewFork });
+          }
+        });
+        continue;
+      }
+
+      const d = `M ${from.cx} ${from.cy} L ${to.cx} ${to.cy}`;
+      if (destStatus === 'done') {
+        makePath(d, { color: colDone, width: 7, glow: true, reveal: newlySettled.has(destStep) });
+      } else if (destStatus === 'failed') {
+        makePath(d, { color: colFail, width: 7, glow: true, reveal: newlySettled.has(destStep) });
+      } else if (destStatus === 'waiting') {
+        makePath(d, { color: colWait, width: 6, dashed: true });
+      } else {
+        makePath(d, { color: colPending, width: 4 });
+      }
+    }
+
+    svg.appendChild(frag);
+  }
+
+  /** Dağılım tutarları 0'dan gerçek değere sayılarak çıkar — yalnızca YENİ geldiğinde. */
+  function animateCounts(shouldAnimate) {
+    if (!shouldAnimate) return; // zaten dtl() ile doğru son değer basılı durumda
+    const nums = [...document.querySelectorAll('.branch .num[data-stroops]')];
+    if (nums.length === 0) return;
+    const DURATION = 700;
+    const start = performance.now();
+    function tick(now) {
+      const t = Math.min(1, (now - start) / DURATION);
+      const eased = 1 - Math.pow(1 - t, 3);
+      nums.forEach((el) => {
+        const target = Number(el.dataset.stroops || '0');
+        el.textContent = dtl(target * eased);
+      });
+      if (t < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
   // ---------- ana çizim ----------
   function render(flow) {
     if (!flow) {
       app.innerHTML = `<div class="empty"><h2>Henüz işlem yok</h2><p>İlk ödeme yapıldığında zaman çizelgesi burada canlı olarak oluşacak.</p></div>`;
+      knownStepsForTx = null;
+      lastStatuses = null;
       return;
     }
 
@@ -290,13 +531,26 @@
     // "Bekleniyor" = olayı henüz gelmemiş, sıradaki ilk adım (tahmin değil; yalnızca boşluk).
     const firstMissing = flow.steps.findIndex((s) => !byStep[s]);
 
+    const statuses = flow.steps.map((step, i) => {
+      const e = byStep[step];
+      if (e) return e.status;
+      if (failedIndex !== -1 && i > failedIndex) return 'skipped';
+      if (i === firstMissing) return 'waiting';
+      return 'pending';
+    });
+
+    // Bu render'da İLK KEZ görünen adımlar — yalnızca bunlar için çizim/sayaç animasyonu.
+    const isNewTx = !knownStepsForTx || knownStepsForTx.txId !== flow.transactionId;
+    const prevKnown = isNewTx ? new Set() : knownStepsForTx.steps;
+    const nowKnown = new Set(Object.keys(byStep));
+    const newlySettled = isNewTx ? new Set() : new Set([...nowKnown].filter((s) => !prevKnown.has(s)));
+    knownStepsForTx = { txId: flow.transactionId, steps: nowKnown };
+    lastStatuses = statuses;
+
     const items = flow.steps.map((step, i) => {
       const def = STEPS[step] || { title: step, sub: '' };
       const e = byStep[step];
-      let status = 'pending';
-      if (e) status = e.status;
-      else if (failedIndex !== -1 && i > failedIndex) status = 'skipped';
-      else if (i === firstMissing) status = 'waiting';
+      const status = statuses[i];
 
       let sub = def.sub;
       if (step === 'caught' && e && e.status === 'done') {
@@ -322,6 +576,7 @@
 
     const m = flow.merchant || {};
     app.innerHTML = `
+      <svg id="river"></svg>
       <section class="summary">
         <div><div class="k">Tutar</div><div class="v amount">${dtl(flow.totalAmount)}</div></div>
         <div><div class="k">Esnaf · Havuz 1 (Esnaf Kasası)</div><div class="v">${esc(m.businessName || '—')}<div class="sub">${accLink(m.stellarAddress)}</div></div></div>
@@ -329,8 +584,19 @@
         <div><div class="k">İşlem</div><div class="v">${txLink(flow.txHash)}</div></div>
       </section>
       <ol class="timeline">${items}</ol>`;
+
+    requestAnimationFrame(() => {
+      drawRiver(flow, statuses, newlySettled);
+      animateCounts(newlySettled.has('distribution'));
+    });
   }
 
+  /**
+   * Sayfa artık uzun ve kaydırılabilir (KASITLI olarak "tek ekrana sığsın"
+   * kısıtı kaldırıldı — bkz. body{max-width} yorumu). Bu yüzden takip
+   * tamamen otomatiktir: kullanıcı hiç scroll yapmadan, her GERÇEK olayda
+   * sayfa kendiliğinden bir sonraki adıma doğru yumuşak kayar.
+   */
   function accept(flow) {
     // Panel her zaman EN YENİ işlemi takip eder; eski bir işlemin gecikmiş olayı ekranı geri almaz.
     if (flow && current && flow.transactionId !== current.transactionId
@@ -338,18 +604,35 @@
     const isNewTx = !current || !flow || flow.transactionId !== current.transactionId;
     current = flow;
     render(current);
-    // Yeni olayda sıradaki (bekleyen) ya da başarısız adımı görünür alana getir — projektörde kaydırmadan takip.
-    const focus = app.querySelector('.step[data-status="failed"], .step[data-status="waiting"]')
-      || (isNewTx ? null : app.querySelector('.step:last-child'));
-    if (focus && document.documentElement.scrollHeight > innerHeight) {
-      focus.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (isNewTx) {
+      // Yeni bir işlem başladı (ya da panel yeni açıldı/yeniden bağlandı) —
+      // izleyici baştan takip etsin.
+      window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+      return;
     }
+    // Akışın o anki "aktif ucu" — bekleyen ya da başarısız adım; hiçbiri
+    // yoksa (her şey tamamlandı) son adım. Her yeni olayda buraya kayar.
+    const focus = app.querySelector('.step[data-status="waiting"], .step[data-status="failed"]')
+      || app.querySelector('.step:last-child');
+    focus?.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
   }
 
   function setConn(state, text) {
     conn.dataset.state = state;
     conn.querySelector('span').textContent = text;
   }
+
+  // Pencere yeniden boyutlanınca (mobil döndürme dahil) nehri konumlara göre yeniden çiz —
+  // animasyonsuz (boş newlySettled), yalnızca geometri güncellenir.
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (current && lastStatuses) drawRiver(current, lastStatuses, new Set());
+    }, 150);
+  });
 
   // ---------- bağlantı ----------
   if (!token) {
