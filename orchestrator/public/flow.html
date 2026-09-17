@@ -3,667 +3,387 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KALEM · Canlı İşlem Akışı</title>
+<title>KALEM Akış</title>
 <!--
-  Canlı İşlem Akışı paneli — projektöre / ikinci cihaza açılır.
+  Canlı İşlem Akışı paneli — MİNİMAL sürüm (15 Eylül tasarımı tamamen
+  atıldı, kullanıcı isteğiyle sıfırdan yazıldı).
 
-  KURAL: Bu sayfa hiçbir adımı kendiliğinden işaretlemez. Bir adım yalnızca
-  backend'den (`/api/v1/flow/stream`) o adıma ait GERÇEK bir olay geldiğinde
-  "tamamlandı" görünür. Zamanlayıcıyla ilerleyen animasyon yoktur; "bekleniyor"
-  durumundaki nabız yalnızca "henüz olay gelmedi" anlamındadır.
+  KURAL: Sayfada düğüm adları DIŞINDA hiçbir metin yok — tutar, yüzde,
+  hash, adres, zaman damgası YAZILMAZ. Yalnızca 7 düğüm (Müşteri, Kontrat,
+  3 havuz, Onaylandı, Esnaf) ve onları birbirine bağlayan borular vardır.
 
-  GÖRSEL AKIŞ (nehir/boru çizimi): dokuz adımı birbirine bağlayan dikey hat,
-  6. adımda (Atomik Dağılım) gerçek DOM konumlarından (getBoundingClientRect)
-  ölçülerek 3 dala ayrılır ve 7. adımdan önce tekrar birleşir. Çatal yalnızca
-  dağılım olayı GERÇEKTEN geldiğinde ve gerçek dal kutuları DOM'da VARKEN
-  çizilir — önceden tahmini bir çatal gösterilmez. Bir adım sayfa AÇILIRKEN
-  zaten tamamlanmışsa (yeniden bağlanma/geç katılım) o adım anında dolu
-  gösterilir, "çiziliyor" animasyonu yalnızca YENİ gelen bir olay için çalışır.
+  Bir boru, hedef düğümün GERÇEK backend olayı "done" olduğunda yeşile
+  dolar (bkz. computeStatuses). Havuz 1/3/4 aynı 'distribution' olayına
+  bağlı olduğu için üçü HER ZAMAN aynı anda dolar — bu tahmin değil,
+  gerçekten atomik olduğu için böyle.
 
   Kullanım: https://<backend>/flow?token=<FLOW_PANEL_TOKEN>
-  Harici kaynak yüklenmez (font/CDN yok) — sunum ağında internet kısıtlıysa da çalışır.
+  Harici kaynak yok (font/CDN) — sunum ağı kısıtlıysa da çalışır.
 -->
 <style>
   :root {
-    --bg: #F7F8FA;
-    --card: #FFFFFF;
-    --card-alt: #F1F3F6;
-    --border: #E3E6EB;
-    --border-strong: #C7CCD6;
-    --accent: #D97706;
-    --accent-strong: #B45309;
-    --accent-muted: #FBEBD3;
-    --text: #1A2B4C;
-    --text-2: #4B5768;
-    --muted: #8993A4;
-    --success: #1E8E5A;
-    --success-bg: #E6F4EC;
-    --danger: #D14343;
-    --danger-bg: #FBEAEA;
-    /* Havuz 3 / Havuz 4 nehir/kart rengi — başarı(yeşil)/hata(kırmızı)/aktif(amber) ile
-       karışmaması için ayrı, ölçülü bir mavi/mor çifti (bkz. Havuz 1 = accent/amber). */
-    --flow-p3: #3D6EA8;
-    --flow-p4: #7A6FA6;
-    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+    /* Sıcak ten rengi ↔ beyaz arası, yumuşak krem — koyu lacivert TAMAMEN kaldırıldı. */
+    --bg: #F7ECE0;
+    --pipe-empty: #E0C9AF;
+    --pipe-fill: #34A853;
+    --pipe-glow: rgba(52, 168, 83, .38);
+    --pipe-fail: #E2493D;
+    --node-bg: #FFFBF5;
+    --node-stroke: #D8BE9E;
+    --node-active: #E2984A;
+    --text: #3E2E20;
+    --text-dim: #B49A7C;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); overflow: hidden;
+  }
   body {
+    display: flex; align-items: center; justify-content: center;
     font-family: "Segoe UI", Inter, system-ui, -apple-system, Roboto, sans-serif;
-    font-size: clamp(14px, 1.05vw, 18px);
-    line-height: 1.4;
-    padding: clamp(16px, 2vw, 36px);
-    min-height: 100vh;
-    /* KASITLI: "tek ekrana sığsın" kısıtı kaldırıldı — sayfa doğal uzunluğunda
-       akar, kaydırılabilir. Genişlik sınırlı + ortalı: hem satırlar okunaklı
-       kalır hem de 6. adımdaki çatalın 3 dalı (yan yana) arasındaki yatay
-       mesafe makul kalır — aksi halde 1920px'te dallar neredeyse yatay bir
-       çizgi gibi görünürdü (denendi, kötü göründü). */
-    max-width: 980px;
-    margin-inline: auto;
   }
-  a { color: var(--accent-strong); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .mono { font-family: var(--mono); font-size: .92em; }
-
-  /* ---------- Üst bant ---------- */
-  header {
-    display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
-    gap: 12px 32px; padding-bottom: clamp(12px, 1.4vw, 22px); border-bottom: 2px solid var(--border);
+  svg#diagram {
+    /* Görüş alanına SIĞDIR (letterbox), oranı KORU — hem geniş projektör
+       ekranında hem dik mobil ekranda aynı diyagram bozulmadan görünür.
+       Oran viewBox'ınkiyle (700×1060) BİREBİR eşleşmeli, aksi halde
+       preserveAspectRatio farkı taşırıp alt/üst kırpılırdı. */
+    width: min(94vw, calc(94vh * 700 / 1060));
+    height: min(94vh, calc(94vw * 1060 / 700));
+    display: block;
   }
-  .brand { display: flex; align-items: baseline; gap: 14px; }
-  .brand b { font-size: 1.9em; letter-spacing: .06em; font-weight: 800; }
-  .brand span { font-size: 1.15em; color: var(--text-2); font-weight: 600; }
-  .conn { display: inline-flex; align-items: center; gap: 8px; font-size: .9em; color: var(--text-2); }
-  .conn i { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); display: inline-block; }
-  .conn[data-state="live"] i { background: var(--success); }
-  .conn[data-state="retry"] i { background: var(--accent); }
-  .conn[data-state="error"] i { background: var(--danger); }
-
-  /* ---------- Nehir çizim yüzeyi ---------- */
-  /* #app: SVG'nin position:absolute; inset:0 ile hizalanacağı konumlandırma
-     bağlamı. Metin/kart içeriği z-index:1 ile nehrin ÜSTÜNDE, düğüm daireleri
-     (.dot, opak arka plan) hattı görsel olarak "yutuyor" — ayrıca kırpma/hizalama
-     hesabı gerekmiyor. */
-  #app { position: relative; }
-  #river { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: visible; }
-  .summary, .timeline { position: relative; z-index: 1; }
-
-  .river-active { animation: river-dash 1s linear infinite; }
-  @keyframes river-dash { to { stroke-dashoffset: -24; } }
-  @media (prefers-reduced-motion: reduce) { .river-active { animation: none !important; } }
-
-  .summary {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 10px 28px; margin: clamp(14px, 1.6vw, 26px) 0;
+  .pipe { fill: none; stroke-linecap: round; }
+  .pipe-empty { stroke: var(--pipe-empty); }
+  /* ÇOK YUMUŞAK dolum: uzun, yavaş başlayıp yavaş biten bir eğri (klasik
+     "ease-in-out" değil — daha kadifemsi bir "ease" için özel bezier) +
+     hafif yeşil parlama (drop-shadow), sert bir çizgi değil, ışıklı bir
+     sıvı hissi versin diye. */
+  .pipe-fill {
+    stroke: var(--pipe-fill);
+    transition: stroke-dashoffset 1.6s cubic-bezier(.33, .0, .18, 1);
+    filter: drop-shadow(0 0 7px var(--pipe-glow));
   }
-  .summary .k { font-size: .75em; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
-  .summary .v { font-size: 1.15em; font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
-  .summary .amount { color: var(--accent-strong); font-size: 1.7em; font-weight: 800; }
+  .pipe-fill.fail { stroke: var(--pipe-fail); filter: drop-shadow(0 0 7px rgba(226, 73, 61, .35)); }
 
-  /* ---------- Zaman çizelgesi ---------- */
-  ol.timeline { list-style: none; margin: 0; padding: 0; }
-  .step {
-    position: relative; display: grid; grid-template-columns: 2.6em 1fr auto;
-    gap: 0 18px; padding: clamp(8px, .8vw, 14px) 0; align-items: start;
+  /* Borunun içinde akan, yumuşak bulanık bir ışık noktası — CSS motion-path
+     ile aynı borunun "d"sini izler. Yalnızca YENİ dolan bir boruda bir kez
+     belirir, akışın bitiminde kendini kaldırır (bkz. spawnFlowDot). */
+  .flow-dot {
+    fill: #EFFBEF; opacity: 0; filter: blur(3px) drop-shadow(0 0 10px var(--pipe-fill));
   }
-  .dot {
-    position: relative; z-index: 1; width: 2.6em; height: 2.6em; border-radius: 50%;
-    display: grid; place-items: center; font-weight: 800; font-size: 1em;
-    background: var(--card); border: 2px solid var(--border-strong); color: var(--muted);
-    transition: box-shadow .3s ease;
+  .flow-dot.run {
+    animation: flowdot var(--dur, 1.6s) cubic-bezier(.33, .0, .18, 1) forwards;
   }
-  .step[data-status="done"] .dot { background: var(--success); border-color: var(--success); color: #fff; box-shadow: 0 0 0 4px var(--success-bg); }
-  .step[data-status="failed"] .dot { background: var(--danger); border-color: var(--danger); color: #fff; box-shadow: 0 0 0 4px var(--danger-bg); }
-  .step[data-status="waiting"] .dot { border-color: var(--accent); color: var(--accent-strong); }
-  .step[data-status="waiting"] .dot::after {
-    content: ""; position: absolute; inset: -6px; border-radius: 50%;
-    border: 2px solid var(--accent); opacity: .55; animation: pulse 1.6s ease-out infinite;
+  @keyframes flowdot {
+    0%   { offset-distance: 0%;   opacity: 0; }
+    8%   { opacity: .95; }
+    88%  { opacity: .95; }
+    100% { offset-distance: 100%; opacity: 0; }
   }
-  @keyframes pulse { from { transform: scale(.85); opacity: .6; } to { transform: scale(1.25); opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .step[data-status="waiting"] .dot::after { animation: none; } }
 
-  .body { min-width: 0; }
-  .title { font-size: 1.2em; font-weight: 700; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
-  .step[data-status="pending"] .title, .step[data-status="skipped"] .title { color: var(--muted); font-weight: 600; }
-  .sub { color: var(--text-2); font-size: .88em; }
-  .detail { margin-top: 6px; color: var(--text-2); display: flex; flex-wrap: wrap; gap: 4px 20px; }
-  .detail .kv { white-space: nowrap; }
-  .detail .kv b { color: var(--text); font-weight: 600; }
-  .error { margin-top: 6px; color: var(--danger); background: var(--danger-bg); padding: 6px 10px; border-radius: 6px; font-size: .92em; overflow-wrap: anywhere; }
-  .time { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; padding-top: .3em; }
-  .time b { color: var(--text); font-size: 1.1em; }
-  .time small { display: block; color: var(--muted); font-size: .8em; }
-  .tag { display: inline-block; font-size: .72em; font-weight: 700; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; background: var(--card-alt); color: var(--text-2); }
-  .tag.warn { background: var(--accent-muted); color: var(--accent-strong); }
+  .node circle { stroke-width: 6; transition: fill .5s ease, stroke .5s ease; }
+  .node.pending circle { fill: var(--node-bg); stroke: var(--node-stroke); }
+  .node.active circle { fill: var(--node-bg); stroke: var(--node-active); }
+  .node.done circle { fill: var(--pipe-fill); stroke: var(--pipe-fill); }
+  .node.failed circle { fill: var(--pipe-fail); stroke: var(--pipe-fail); }
 
-  /* ---------- Atomik dağılım ---------- */
-  /* DİKKAT: arka plan BİLEREK YOK. `.timeline` (z-index:1) #river'ın (z-index:0)
-     üstünde boyandığı için `.atomic`'e opak bir dolgu vermek, içindeki BOŞ
-     alanları da opak yapıp nehrin çatal eğrilerini tamamen gizlerdi — eğri
-     yalnızca GERÇEKTEN boş (şeffaf) alanlarda arkadan görünebilir. Dal
-     kartları (.branch) kendi opak arka planlarını KORUYOR; eğri onlara
-     girerken (kasıtlı olarak) kayboluyor — tıpkı ana hattın .dot dairelerinin
-     arkasında kaybolması gibi. */
-  .atomic { margin-top: 14px; border: 1px solid var(--border); background: transparent; border-radius: 10px; padding: 12px 14px; }
-  /* margin-bottom geniş: sayfa artık "tek ekrana sığsın" kısıtına bağlı
-     değil — nehir çiziminin (drawRiver) çatal eğrilerine gerçek bir dikey
-     boşluk (140px) bırakır, 3 dal metnin üzerinden geçmeden BELİRGİN bir
-     açıyla ayrılır. Bkz. #river yorumu. */
-  .atomic-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font-size: .88em; color: var(--text-2); margin-bottom: 140px; }
-  .branches { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
-  .branch { border-radius: 8px; padding: 10px 12px; background: var(--card-alt); border-left: 5px solid var(--border-strong); min-width: 0; }
-  .branch.p1 { background: var(--accent-muted); border-left-color: var(--accent); }
-  .branch.p3 { border-left-color: var(--flow-p3); }
-  .branch.p4 { border-left-color: var(--flow-p4); }
-  .branch .name { font-weight: 700; }
-  .branch .who { font-size: .85em; color: var(--text-2); margin-top: 2px; overflow-wrap: anywhere; }
-  .branch .amt { font-size: 1.35em; font-weight: 800; margin-top: 6px; font-variant-numeric: tabular-nums; }
-  .branch .pct { color: var(--text-2); font-weight: 600; font-size: .75em; margin-left: 6px; }
-  /* margin-top geniş: nehir çiziminin geri birleşen (reconverge) eğrileri için — yukarıdaki not. */
-  .checks { margin-top: 140px; font-size: .85em; color: var(--text-2); display: flex; flex-wrap: wrap; gap: 4px 18px; }
-  .ok { color: var(--success); font-weight: 700; }
-  .bad { color: var(--danger); font-weight: 700; }
-
-  .empty { margin-top: 12vh; text-align: center; color: var(--text-2); }
-  .empty h2 { color: var(--text); margin: 0 0 8px; }
-  footer { margin-top: 18px; color: var(--muted); font-size: .8em; }
-
-  @media (max-width: 640px) {
-    .step { grid-template-columns: 2.6em 1fr; }
-    .time { grid-column: 2; text-align: left; padding-top: 4px; }
-    .time small { display: inline; margin-left: 6px; }
-    /* Mobilde dallar zaten alt alta dizilip belirgin bir çatal görünümü
-       veriyor (dikey istifleme) — masaüstündeki gibi geniş bir boşluğa
-       ihtiyaç yok, tam tersi gereksiz kaydırma yaratırdı. */
-    .atomic-head { margin-bottom: 40px; }
-    .checks { margin-top: 40px; }
+  /* Boru tam dolup düğüme ulaştığında YUMUŞAK bir "nefes alma" — sert bir
+     zıplama değil, hafifçe büyüyüp yerine oturan bir geçiş. */
+  .node { transform-box: fill-box; transform-origin: center; }
+  .node.settle { animation: settle 1s cubic-bezier(.22, .7, .3, 1); }
+  @keyframes settle {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(1.14); }
+    100% { transform: scale(1); }
   }
+
+  .node.active .ring {
+    fill: none; stroke: var(--node-active); stroke-width: 4; opacity: .55;
+    animation: pulse 1.8s ease-out infinite;
+  }
+  @keyframes pulse {
+    from { r: var(--r0); opacity: .6; }
+    to   { r: var(--r1); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .node.active .ring { animation: none; }
+    .node.settle { animation: none; }
+    .flow-dot.run { animation: none; }
+  }
+
+  .label {
+    font-size: 27px; font-weight: 700; text-anchor: middle;
+    fill: var(--text-dim); transition: fill .5s ease;
+  }
+  .node.active .label, .node.done .label, .node.failed .label { fill: var(--text); }
+
+  #conn {
+    position: fixed; top: 18px; right: 18px; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--text-dim);
+  }
+  #conn[data-state="live"] { background: var(--pipe-fill); }
+  #conn[data-state="retry"] { background: var(--node-active); }
+  #conn[data-state="error"] { background: var(--pipe-fail); }
 </style>
 </head>
 <body>
-<header>
-  <div class="brand"><b>KALEM</b><span>Canlı İşlem Akışı</span></div>
-  <div class="conn" id="conn" data-state="connecting"><i></i><span>Bağlanıyor…</span></div>
-</header>
-
-<main id="app"></main>
-
-<footer>
-  Her adım yalnızca backend'den gelen gerçek bir olayla işaretlenir · Zincir verisi: Stellar testnet (Horizon + Soroban RPC)
-</footer>
+<div id="conn" data-state="connecting"></div>
+<svg id="diagram" viewBox="0 0 700 1060" preserveAspectRatio="xMidYMid meet" aria-hidden="true"></svg>
 
 <script>
 (() => {
   'use strict';
 
   const token = new URLSearchParams(location.search).get('token') || '';
-  const app = document.getElementById('app');
+  const svg = document.getElementById('diagram');
   const conn = document.getElementById('conn');
-  const EXPLORER = 'https://stellar.expert/explorer/testnet';
   const NS = 'http://www.w3.org/2000/svg';
-
-  /** Adım tanımları — sıra backend'deki FLOW_STEPS ile aynıdır. */
-  const STEPS = {
-    signed:        { title: 'Müşteri imzaladı',              sub: 'Ed25519 imzası backend\'de doğrulandı' },
-    received:      { title: 'Backend\'e ulaştı',              sub: 'Idempotency kontrolünden geçti' },
-    fee_bump:      { title: 'Fee-Bump sarmalandı',           sub: 'Ağ ücretini Havuz 2 üstlendi' },
-    submitted:     { title: 'Zincire iletildi',              sub: 'Horizon kabul etti, ledger\'a yazıldı' },
-    contract:      { title: 'Soroban kontratı çalıştı',      sub: 'pool-manager · pay_merchant' },
-    distribution:  { title: 'Atomik dağılım',                sub: 'Tutarlar zincirdeki kontrat olaylarından okundu' },
-    caught:        { title: 'Onay yakalandı',                sub: 'SSE dinleyicisi / Mutabakat' },
-    gib:           { title: 'GİB belgesi üretildi',          sub: 'UBL-TR taslağı' },
-    merchant_seen: { title: 'Esnaf ekranında göründü',       sub: 'Esnaf uygulaması ödemeyi zincirde tespit edip bildirdi' },
-  };
-
-  let current = null;
-  // Bir işlemin daha önce hangi adımları "bilindiği" (DOM'da göründüğü) —
-  // yalnızca YENİ görünen adımlar için çizim/sayaç animasyonu tetiklenir.
-  // Sayfa yeniden bağlanınca ya da işlem yarı yolda izlenmeye başlanınca
-  // (snapshot birden çok adımla gelir) geçmiş adımlar SIÇRAMADAN anında dolu görünür.
-  let knownStepsForTx = null; // { txId, steps: Set<string> }
-  let lastStatuses = null; // resize'da yeniden çizim için
-
-  // ---------- yardımcılar ----------
-  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const short = (v, h = 6, t = 6) => (!v ? '' : v.length <= h + t + 1 ? v : `${v.slice(0, h)}…${v.slice(-t)}`);
-  const kv = (k, v) => `<span class="kv">${esc(k)}: <b>${v}</b></span>`;
-  const txLink = (hash) => hash ? `<a class="mono" href="${EXPLORER}/tx/${esc(hash)}" target="_blank" rel="noopener">${esc(short(hash, 8, 8))} ↗</a>` : '—';
-  const accLink = (addr) => addr ? `<a class="mono" href="${EXPLORER}/account/${esc(addr)}" target="_blank" rel="noopener">${esc(short(addr))}</a>` : '—';
-
-  /** stroop (string|number) → "2,4900000 dTL" */
-  function dtl(stroops) {
-    if (stroops == null) return '—';
-    const n = typeof stroops === 'bigint' ? stroops : BigInt(Math.round(Number(stroops)) || 0);
-    const neg = n < 0n; const a = neg ? -n : n;
-    const whole = (a / 10000000n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    const frac = (a % 10000000n).toString().padStart(7, '0');
-    return `${neg ? '-' : ''}${whole},${frac} dTL`;
-  }
-  /** stroop → "0,6976855 XLM" (ücretler XLM'dir) */
-  function xlm(stroops) {
-    if (stroops == null) return '—';
-    const n = BigInt(stroops);
-    return `${(n / 10000000n).toString()},${(n % 10000000n).toString().padStart(7, '0')} XLM`;
-  }
-  /** Tutarın toplama oranı — gerçek tutarlardan hesaplanır, sabit yüzde yazılmaz. */
-  function pct(part, total) {
-    const p = BigInt(part), t = BigInt(total);
-    if (t === 0n) return '';
-    const bp = (p * 100000n) / t; // 1/1000 yüzde hassasiyeti
-    return `%${(bp / 1000n).toString()},${(bp % 1000n).toString().padStart(3, '0').replace(/0+$/, '') || '0'}`;
-  }
-  const clock = (iso) => iso ? new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-  function delta(fromIso, toIso) {
-    const ms = new Date(toIso) - new Date(fromIso);
-    if (!Number.isFinite(ms)) return '';
-    return ms < 1000 ? `+${Math.max(ms, 0)} ms` : `+${(ms / 1000).toFixed(2).replace('.', ',')} sn`;
-  }
-
-  // ---------- adım detayları (yalnızca olayda GELEN veriyle) ----------
-  function renderDetail(step, e, flow) {
-    const d = e.data || {};
-    if (e.status === 'failed') {
-      const reason = d.error || d.message || d.reason || 'Bilinmeyen hata';
-      const codes = d.resultCodes && (d.resultCodes.transaction || d.resultCodes.innerTransaction)
-        ? ` · Horizon: ${esc(d.resultCodes.transaction || '')} ${esc(d.resultCodes.innerTransaction || '')} ${esc((d.resultCodes.operations || []).join(','))}` : '';
-      return `<div class="error">${esc(reason)}${codes}</div>`;
-    }
-    switch (step) {
-      case 'signed':
-        return `<div class="detail">${kv('İmzalayan', accLink(d.signer))}${kv('İç zarf hash', `<span class="mono">${esc(short(d.innerTxHash, 8, 8))}</span>`)}</div>`;
-      case 'received':
-        return `<div class="detail">${kv('Idempotency-Key', `<span class="mono">${esc(short(d.idempotencyKey, 8, 4))}</span>`)}${kv('Kilit', d.lock === 'acquired' ? 'alındı (yeni istek)' : esc(d.lock))}${kv('Kimlik', d.authPath === 'customer_signature' ? 'müşteri imzası' : 'esnaf API anahtarı')}</div>`;
-      case 'fee_bump':
-        return `<div class="detail">${kv('Ücret sponsoru (Havuz 2)', accLink(d.feeSource))}${kv('Ücret tavanı', xlm(d.maxFee))}${kv('Ön-simülasyon', d.preSimulation === 'SUCCESS' ? 'başarılı' : esc(d.preSimulation))}</div>`;
-      case 'submitted':
-        return `<div class="detail">${kv('Tx hash', txLink(d.txHash))}${d.ledger != null ? kv('Ledger', `#${esc(d.ledger)}`) : ''}${d.sentAt ? kv('Gönderim → Horizon cevabı', esc(delta(d.sentAt, e.at))) : ''}</div>`;
-      case 'contract':
-        return `<div class="detail">${kv('Sonuç', d.rpcStatus === 'SUCCESS' ? '<span class="ok">SUCCESS</span>' : esc(d.rpcStatus))}${kv('Ledger', `#${esc(d.ledger)}`)}${d.ledgerClosedAt ? kv('Ledger kapanışı (zincir saati)', esc(clock(d.ledgerClosedAt))) : ''}${kv('Kesilen ağ ücreti', xlm(d.feeCharged))}${d.eventCount != null ? kv('Kontrat olayı', esc(d.eventCount)) : ''}</div>`;
-      case 'distribution': return renderDistribution(d, flow);
-      case 'caught':
-        return `<div class="detail">${kv('Yakalayan', d.source === 'sse' ? 'Horizon SSE dinleyicisi' : d.source === 'reconciliation' ? 'Mutabakat job\'ı (SSE yedeği)' : esc(d.source))}${d.ledger ? kv('Ledger', `#${esc(d.ledger)}`) : ''}</div>`;
-      case 'gib':
-        return `<div class="detail">${kv('Belge', `<span class="mono">${esc(short(d.gibDocumentId, 6, 6))}</span>`)}${kv('Tür', d.documentType === 'okc_fis' ? 'ÖKC fişi' : esc(d.documentType))}${kv('Durum', esc(d.status))}${d.simulated ? ' <span class="tag warn">GİB gönderimi simülasyon</span>' : ''}</div>`;
-      case 'merchant_seen':
-        return `<div class="detail">${kv('Esnaf', esc(d.businessName || '—'))}${d.detectedLedger ? kv('Tespit edilen ledger', `#${esc(d.detectedLedger)}`) : ''}</div>`;
-      default: return '';
-    }
-  }
+  const R = 55; // düğüm yarıçapı
 
   /**
-   * `data-pool`/`data-amount`/`.atomic[data-total]` — bunlar metin için değil,
-   * nehir çiziminin (drawRiver) dal genişliğini ve rengini GERÇEK tutardan
-   * hesaplaması için var. `.num[data-stroops]` ise sayaç animasyonunun hedefi.
+   * 7 düğüm — sabit koordinatlar (viewBox 700×1000). DOM ölçümü YOK; bu
+   * minimal tasarımda konumlar sabit olduğu için gerekmiyor, önceki
+   * sürümdeki karmaşıklığın çoğu bu sayede ortadan kalkıyor.
    */
-  function renderDistribution(d, flow) {
-    const businessName = flow.merchant && flow.merchant.businessName;
-    const branches = (d.branches || []).map((b) => {
-      const who = b.pool === 1
-        ? `${businessName ? `<b>${esc(businessName)}</b> · ` : ''}${accLink(b.address)}`
-        : accLink(b.address);
-      return `<div class="branch p${esc(b.pool)}" data-pool="${esc(b.pool)}" data-amount="${esc(b.amount)}">
-        <div class="name">${esc(b.label)}</div>
-        <div class="who">${who}</div>
-        <div class="amt"><span class="num" data-stroops="${esc(b.amount)}">${dtl(b.amount)}</span><span class="pct">${pct(b.amount, d.total)}</span></div>
-      </div>`;
-    }).join('');
-    return `<div class="atomic" data-total="${esc(d.total)}">
-      <div class="atomic-head">
-        <span>Toplam <b>${dtl(d.total)}</b> · tek işlem, tek ledger (#${esc(d.ledger)}) — ya hep ya hiç</span>
-        <span>Kaynak: pay_merchant + ${esc(d.transferCount)} transfer olayı</span>
-      </div>
-      <div class="branches">${branches}</div>
-      <div class="checks">
-        <span>Dallar toplamı = toplam: <span class="${d.sumMatchesTotal ? 'ok' : 'bad'}">${d.sumMatchesTotal ? '✓' : '✗'}</span></span>
-        <span>Transfer olayları dallarla birebir: <span class="${d.transfersMatch ? 'ok' : 'bad'}">${d.transfersMatch ? '✓' : '✗'}</span></span>
-      </div>
-    </div>`;
-  }
+  const NODES = {
+    customer:  { x: 350, y: 75,  label: ['Müşteri'] },
+    contract:  { x: 350, y: 280, label: ['Kontrat'] },
+    pool1:     { x: 140, y: 500, label: ['Havuz 1', '(Esnaf Kasası)'] },
+    pool3:     { x: 350, y: 500, label: ['Havuz 3', '(Sosyal)'] },
+    pool4:     { x: 560, y: 500, label: ['Havuz 4', '(Operasyonel)'] },
+    confirmed: { x: 350, y: 720, label: ['Onaylandı'] },
+    merchant:  { x: 350, y: 925, label: ['Esnaf'] },
+  };
 
-  // ---------- nehir çizimi (SVG, gerçek DOM konumlarından) ----------
+  /** Her boru: kaynak/hedef düğüm + durumu belirleyen backend adımları. */
+  const EDGES = [
+    { from: 'customer', to: 'contract' },
+    { from: 'contract', to: 'pool1' },
+    { from: 'contract', to: 'pool3' },
+    { from: 'contract', to: 'pool4' },
+    { from: 'pool1', to: 'confirmed' },
+    { from: 'pool3', to: 'confirmed' },
+    { from: 'pool4', to: 'confirmed' },
+    { from: 'confirmed', to: 'merchant' },
+  ];
 
-  function cssVar(name) {
-    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  }
+  let current = null;
 
-  /** Bir elemanın #app'e göre bağıl merkez/kenar koordinatları. */
-  function measure(el, containerRect) {
-    const r = el.getBoundingClientRect();
+  /**
+   * Backend'in 9 gerçek adımını (FLOW_STEPS) 7 görsel düğüme indirger.
+   *
+   * KURAL: hiçbir düğüm/boru "olması gerekir" diye doldurulmaz — yalnızca
+   * ilgili backend olayı GERÇEKTEN geldiğinde durum değişir. GİB adımı
+   * (backend'de var) bu minimal görselde KASITLI olarak YOK — kullanıcı
+   * yalnızca bu 7 düğümü istedi; Onaylandı → Esnaf borusu doğrudan
+   * `merchant_seen` olayına bağlıdır, `gib` arka planda olur ama çizilmez.
+   *
+   * @param {object} flow - `/api/v1/flow/*` cevabındaki flow nesnesi.
+   * @returns {Record<string, 'pending'|'active'|'done'|'failed'>}
+   */
+  function computeStatuses(flow) {
+    const byStep = {};
+    for (const e of flow.events) byStep[e.step] = e.status; // olaylar sırayla geldiği için son durum kazanır
+
+    function group(steps) {
+      if (steps.some((s) => byStep[s] === 'failed')) return 'failed';
+      if (steps.every((s) => byStep[s] === 'done')) return 'done';
+      return steps.some((s) => byStep[s] != null) ? 'active' : 'pending';
+    }
+    // ÖNEMLİ: önceki adım 'failed' olsa bile bu adım 'pending' döner, 'failed'
+    // DEĞİL — çünkü bu adım GERÇEKTEN hiç başlamadı (olayı hiç gelmedi).
+    // İlk denemede burada bug vardı: bir başarısızlık sonrasındaki HER ŞEY
+    // kırmızıya boyanıyordu; oysa kırmızı yalnızca GERÇEKTEN başarısız olan
+    // tek noktada olmalı, sonrası "hiç denenmedi" (gri) kalmalı.
+    function next(prevStatus, steps) {
+      if (prevStatus !== 'done') return 'pending';
+      return group(steps);
+    }
+
+    const customer = group(['signed']);
+    const contract = next(customer, ['received', 'fee_bump', 'submitted', 'contract']);
+    // Havuz 1/3/4 AYNI 'distribution' olayına bağlı — üçü de HER ZAMAN
+    // birebir aynı durumda: gerçekte atomik olduğu için, tahmini eşitleme değil.
+    const poolStatus = next(contract, ['distribution']);
+    const confirmed = next(poolStatus, ['caught']);
+    const merchant = next(confirmed, ['merchant_seen']);
+
     return {
-      cx: r.left + r.width / 2 - containerRect.left,
-      cy: r.top + r.height / 2 - containerRect.top,
-      top: r.top - containerRect.top,
-      bottom: r.bottom - containerRect.top,
+      customer, contract,
+      pool1: poolStatus, pool3: poolStatus, pool4: poolStatus,
+      confirmed, merchant,
     };
   }
 
-  /**
-   * 9 adımı birbirine bağlayan dikey hattı ve 6. adımdaki (Atomik Dağılım)
-   * gerçek 3'e ayrılan/birleşen çatalı çizer.
-   *
-   * KURAL: Çatal yalnızca `.branches .branch` DOM'da VARKEN (yani dağılım
-   * olayı gerçekten geldiğinde) çizilir — önceden tahmini bir çatal yok.
-   * `newlySettled` bu render'da İLK KEZ görünen adımları taşır; yalnızca
-   * onlar için "çiziliyor" (stroke-dashoffset) animasyonu tetiklenir, daha
-   * önce zaten bilinen adımlar anında dolu çizilir (geç katılan/yeniden
-   * bağlanan bir panel her şeyin baştan animasyonla oynatıldığını görmesin).
-   */
-  function drawRiver(flow, statuses, newlySettled) {
-    const svg = document.getElementById('river');
-    if (!svg) return;
-    const dots = [...app.querySelectorAll('.timeline .dot')];
-    if (dots.length !== flow.steps.length) return; // DOM henüz senkron değil
+  function edgeStatus(statuses, edge) {
+    return statuses[edge.to]; // boru, HEDEF düğümün durumunu yansıtır
+  }
 
-    const containerRect = app.getBoundingClientRect();
-    svg.setAttribute('width', String(app.scrollWidth));
-    svg.setAttribute('height', String(app.scrollHeight));
+  function pathFor(edge) {
+    const a = NODES[edge.from], b = NODES[edge.to];
+    // Kenar düğümün TAM merkezinden değil, dairenin kenarından başlar/biter —
+    // aksi halde kalın boru dairenin arkasından taşıp "kirli" görünürdü.
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const x1 = a.x + ux * R, y1 = a.y + uy * R;
+    const x2 = b.x - ux * R, y2 = b.y - uy * R;
+    return `M ${x1} ${y1} L ${x2} ${y2}`;
+  }
+
+  function el(tag, attrs) {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  }
+
+  /** Statik diyagramı (borular boş, düğümler "pending") bir kez çizer. */
+  function buildStaticDiagram() {
     svg.textContent = '';
-
-    const colDone = cssVar('--success');
-    const colFail = cssVar('--danger');
-    const colWait = cssVar('--accent');
-    const colPending = cssVar('--border');
-    const branchColor = { 1: cssVar('--accent'), 3: cssVar('--flow-p3'), 4: cssVar('--flow-p4') };
-
-    const nodes = dots.map((el) => measure(el, containerRect));
     const frag = document.createDocumentFragment();
 
-    function makePath(d, { color, width = 7, dashed = false, glow = false, reveal = false }) {
-      const p = document.createElementNS(NS, 'path');
-      p.setAttribute('d', d);
-      p.setAttribute('fill', 'none');
-      p.setAttribute('stroke', color);
-      p.setAttribute('stroke-width', String(width));
-      p.setAttribute('stroke-linecap', 'round');
-      if (glow) p.style.filter = `drop-shadow(0 0 4px ${color}88)`;
-      if (dashed) {
-        p.setAttribute('stroke-dasharray', '3 9');
-        p.classList.add('river-active');
-      }
+    for (const edge of EDGES) {
+      frag.appendChild(el('path', { class: 'pipe pipe-empty', d: pathFor(edge), 'stroke-width': 26 }));
+    }
+    for (const edge of EDGES) {
+      // Dolum katmanı — başlangıçta gizli (dash trick ilk render'da uygulanır).
+      const p = el('path', { class: 'pipe pipe-fill', d: pathFor(edge), 'stroke-width': 26, 'data-edge': `${edge.from}>${edge.to}` });
       frag.appendChild(p);
-      if (reveal) {
-        // "Sıvı akıyor" hissi: gerçek yol uzunluğu kadar dash yapıp 0'a indir.
-        requestAnimationFrame(() => {
-          let len;
-          try { len = p.getTotalLength(); } catch { return; }
-          p.style.transition = 'none';
-          p.setAttribute('stroke-dasharray', `${len}`);
-          p.setAttribute('stroke-dashoffset', `${len}`);
-          void p.getBoundingClientRect(); // reflow zorla — transition'ın yeni değerden başlamasını sağlar
-          p.style.transition = 'stroke-dashoffset .6s cubic-bezier(.2,.7,.3,1)';
-          p.setAttribute('stroke-dashoffset', '0');
-        });
-      }
-      return p;
     }
-
-    const branchEls = [...document.querySelectorAll('.branches .branch')];
-    const atomicEl = document.querySelector('.atomic');
-    const total = atomicEl ? BigInt(atomicEl.dataset.total || '0') : 0n;
-    const hasFork = statuses[5] === 'done' && branchEls.length > 0;
-
-    for (let i = 0; i < nodes.length - 1; i++) {
-      const from = nodes[i];
-      const to = nodes[i + 1];
-      const destStatus = statuses[i + 1];
-      const destStep = flow.steps[i + 1];
-
-      // distribution(5) -> caught(6): dağılım tamamlandıysa düz çizgi yerine
-      // gerçek dal kutularına giden/onlardan dönen çatal çizilir.
-      //
-      // GEOMETRİ: düğümden KISA bir gövde iner (yalnızca dot sütunundan
-      // çıkacak kadar — metinle hiç kesişmez), ardından eğik hat mevcut
-      // boşluğun BÜYÜK KISMINI kullanarak dala açılır. "Tek ekrana sığsın"
-      // kısıtı kaldırıldığı için bu boşluk artık genellikle geniştir
-      // (.atomic-head/.checks — bkz. o kurallardaki not) ve dallar BELİRGİN
-      // bir açıyla ayrılır; sabit bir ofset kullanılsaydı (ilk denemede
-      // olduğu gibi) büyüyen CSS boşluğunun tamamı boşa giderdi.
-      if (i === 5 && hasFork) {
-        const isNewFork = newlySettled.has('distribution');
-        const branchesEl = document.querySelector('.branches');
-        const bx = measure(branchesEl, containerRect);
-        const stubOut = Math.min(24, Math.max(8, (bx.top - from.cy) * 0.15));
-        const stubIn = Math.min(24, Math.max(8, (to.cy - bx.bottom) * 0.15));
-        const hubOutY = from.cy + stubOut;
-        const hubInY = to.cy - stubIn;
-
-        // Kısa gövde — dağılım tamamlanana kadar zaten yeşil aktığı hattın devamı.
-        makePath(`M ${from.cx} ${from.cy} L ${from.cx} ${hubOutY}`, { color: colDone, width: 7, glow: true, reveal: isNewFork });
-        makePath(`M ${to.cx} ${hubInY} L ${to.cx} ${to.cy}`, { color: colDone, width: 7, glow: true, reveal: isNewFork });
-
-        const branchMeasures = branchEls.map((bEl) => measure(bEl, containerRect));
-        // Düzen algılama: kutular YAN YANA (masaüstü, hepsi aynı `top`) mı,
-        // ALT ALTA (mobil, farklı `top`) mı dizili? İkisi çok farklı geometri
-        // gerektiriyor — biri diğerinde kötü görünüyor (aşağıdaki notlara bkz.).
-        const stacked = branchMeasures.length > 1
-          && Math.abs(branchMeasures[branchMeasures.length - 1].top - branchMeasures[0].top) > 20;
-
-        branchEls.forEach((bEl, idx) => {
-          const pool = Number(bEl.dataset.pool || 0);
-          const amount = BigInt(bEl.dataset.amount || '0');
-          const ratio = total > 0n ? Number((amount * 1000n) / total) / 1000 : 0;
-          const w = Math.max(3, Math.min(14, 3 + Math.sqrt(ratio) * 11));
-          const color = branchColor[pool] || colDone;
-          const br = branchMeasures[idx];
-          const winW = Math.max(2, w * 0.6);
-
-          if (stacked) {
-            // TARAK (comb) DÜZENİ: kutular alt alta dizildiğinde, uzak bir
-            // kutuya giden çizgi YAKIN kutuların hizasından GEÇMEK ZORUNDA —
-            // küçük bir X kayması bunu önlemiyor, gerçek cihazda hâlâ
-            // birbirinin üzerinden geçiyorlardı (X şeklinde kesişme, bulundu).
-            // Çözüm: her dal kendi SABİT, PARALEL dikey "şeridinde" akar
-            // (asla X değiştirmez) ve yalnızca kendi kutusunun hizasında KISA
-            // bir yatay sıçrayışla kutuya girer/çıkar — paralel şeritler asla
-            // kesişmez, aksi halde birbirinin üzerinden geçmiş olurlardı.
-            const outLane = from.cx - 26 + idx * 13; // 3 şerit: -26,-13,0
-            const inLane = from.cx + 13 + idx * 13; // 3 şerit: +13,+26,+39 (giden şeritlerle çakışmasın)
-            makePath(`M ${from.cx} ${hubOutY} L ${outLane} ${hubOutY}`, { color, width: w, glow: true, reveal: isNewFork });
-            makePath(`M ${outLane} ${hubOutY} L ${outLane} ${br.top}`, { color, width: w, glow: true, reveal: isNewFork });
-            makePath(`M ${outLane} ${br.top} L ${br.left} ${br.top}`, { color, width: w, glow: true, reveal: isNewFork });
-
-            makePath(`M ${br.left} ${br.bottom} L ${inLane} ${br.bottom}`, { color, width: winW, glow: true, reveal: isNewFork });
-            makePath(`M ${inLane} ${br.bottom} L ${inLane} ${hubInY}`, { color, width: winW, glow: true, reveal: isNewFork });
-            makePath(`M ${inLane} ${hubInY} L ${to.cx} ${hubInY}`, { color, width: winW, glow: true, reveal: isNewFork });
-          } else {
-            // YELPAZE (fan) DÜZENİ: kutular yan yana dizildiğinde (masaüstü),
-            // düz açılı hatlar kaynaktan doğrudan hedefe gider — bir noktadan
-            // üç yöne gerçekten "çatallanıyor" hissi verir (tarak düzeni burada
-            // ANLAMSIZ olurdu: kutular aynı Y'de olduğundan şeritler gereksiz
-            // yere uzun bir yatay sıçrayışa dönüşür, ilk denemede olan "düz
-            // plato" görünümüne geri döner).
-            makePath(`M ${from.cx} ${hubOutY} L ${br.cx} ${br.top}`, { color, width: w, glow: true, reveal: isNewFork });
-            makePath(`M ${br.cx} ${br.bottom} L ${to.cx} ${hubInY}`, { color, width: winW, glow: true, reveal: isNewFork });
-          }
-        });
-        continue;
-      }
-
-      const d = `M ${from.cx} ${from.cy} L ${to.cx} ${to.cy}`;
-      if (destStatus === 'done') {
-        makePath(d, { color: colDone, width: 7, glow: true, reveal: newlySettled.has(destStep) });
-      } else if (destStatus === 'failed') {
-        makePath(d, { color: colFail, width: 7, glow: true, reveal: newlySettled.has(destStep) });
-      } else if (destStatus === 'waiting') {
-        makePath(d, { color: colWait, width: 6, dashed: true });
-      } else {
-        makePath(d, { color: colPending, width: 4 });
-      }
+    for (const [key, n] of Object.entries(NODES)) {
+      const g = el('g', { class: 'node pending', 'data-node': key });
+      g.appendChild(el('circle', { class: 'ring', cx: n.x, cy: n.y, r: R + 10, style: `--r0:${R + 6}px; --r1:${R + 26}px` }));
+      g.appendChild(el('circle', { cx: n.x, cy: n.y, r: R }));
+      n.label.forEach((line, i) => {
+        const dy = n.label.length === 1 ? R + 38 : R + 34 + i * 32;
+        g.appendChild(el('text', { class: 'label', x: n.x, y: n.y + dy })).textContent = line;
+      });
+      frag.appendChild(g);
     }
-
     svg.appendChild(frag);
   }
 
-  /** Dağılım tutarları 0'dan gerçek değere sayılarak çıkar — yalnızca YENİ geldiğinde. */
-  function animateCounts(shouldAnimate) {
-    if (!shouldAnimate) return; // zaten dtl() ile doğru son değer basılı durumda
-    const nums = [...document.querySelectorAll('.branch .num[data-stroops]')];
-    if (nums.length === 0) return;
-    const DURATION = 700;
-    const start = performance.now();
-    function tick(now) {
-      const t = Math.min(1, (now - start) / DURATION);
-      const eased = 1 - Math.pow(1 - t, 3);
-      nums.forEach((el) => {
-        const target = Number(el.dataset.stroops || '0');
-        el.textContent = dtl(target * eased);
-      });
-      if (t < 1) requestAnimationFrame(tick);
-    }
-    requestAnimationFrame(tick);
-  }
+  const FLOW_DURATION_MS = 1600; // .pipe-fill / .flow-dot.run CSS süresiyle BİREBİR eşleşmeli
+  let supportsMotionPath = false;
+  try { supportsMotionPath = CSS.supports('offset-path', "path('M0 0L1 1')"); } catch { /* eski tarayıcı — nokta efekti atlanır, boru dolumu yine çalışır */ }
 
-  // ---------- ana çizim ----------
-  function render(flow) {
-    if (!flow) {
-      app.innerHTML = `<div class="empty"><h2>Henüz işlem yok</h2><p>İlk ödeme yapıldığında zaman çizelgesi burada canlı olarak oluşacak.</p></div>`;
-      knownStepsForTx = null;
-      lastStatuses = null;
-      return;
-    }
+  /** Önceki render'daki durumlar — yalnızca GERÇEKTEN YENİ dolan kenar/düğümde animasyon oynatmak için. */
+  let prevStatuses = null;
 
-    // Adım başına SON olay geçerlidir (ör. başarısız → sonra düzeldi).
-    const byStep = {};
-    for (const e of flow.events) byStep[e.step] = e;
-    const start = byStep.signed ? byStep.signed.at : (flow.events[0] && flow.events[0].at);
-    const failedIndex = flow.steps.findIndex((s) => byStep[s] && byStep[s].status === 'failed');
-    // "Bekleniyor" = olayı henüz gelmemiş, sıradaki ilk adım (tahmin değil; yalnızca boşluk).
-    const firstMissing = flow.steps.findIndex((s) => !byStep[s]);
-
-    const statuses = flow.steps.map((step, i) => {
-      const e = byStep[step];
-      if (e) return e.status;
-      if (failedIndex !== -1 && i > failedIndex) return 'skipped';
-      if (i === firstMissing) return 'waiting';
-      return 'pending';
-    });
-
-    // Bu render'da İLK KEZ görünen adımlar — yalnızca bunlar için çizim/sayaç animasyonu.
-    const isNewTx = !knownStepsForTx || knownStepsForTx.txId !== flow.transactionId;
-    const prevKnown = isNewTx ? new Set() : knownStepsForTx.steps;
-    const nowKnown = new Set(Object.keys(byStep));
-    const newlySettled = isNewTx ? new Set() : new Set([...nowKnown].filter((s) => !prevKnown.has(s)));
-    knownStepsForTx = { txId: flow.transactionId, steps: nowKnown };
-    lastStatuses = statuses;
-
-    const items = flow.steps.map((step, i) => {
-      const def = STEPS[step] || { title: step, sub: '' };
-      const e = byStep[step];
-      const status = statuses[i];
-
-      let sub = def.sub;
-      if (step === 'caught' && e && e.status === 'done') {
-        sub = e.data.source === 'reconciliation' ? 'Mutabakat job\'ı yakaladı (SSE yedeği)' : 'Horizon SSE dinleyicisi yakaladı';
-      }
-      const label = status === 'waiting' ? '<span class="tag warn">bekleniyor</span>'
-        : status === 'skipped' ? '<span class="tag">önceki adım başarısız</span>' : '';
-
-      const time = e
-        ? `<b>${esc(i === 0 ? 'başlangıç' : delta(start, e.at))}</b><small>${esc(clock(e.at))}</small>`
-        : '';
-
-      return `<li class="step" data-status="${status}">
-        <div class="dot">${status === 'done' ? '✓' : status === 'failed' ? '✗' : i + 1}</div>
-        <div class="body">
-          <div class="title">${esc(def.title)} ${label}</div>
-          <div class="sub">${esc(sub)}</div>
-          ${e ? renderDetail(step, e, flow) : ''}
-        </div>
-        <div class="time">${time}</div>
-      </li>`;
-    }).join('');
-
-    const m = flow.merchant || {};
-    app.innerHTML = `
-      <svg id="river"></svg>
-      <section class="summary">
-        <div><div class="k">Tutar</div><div class="v amount">${dtl(flow.totalAmount)}</div></div>
-        <div><div class="k">Esnaf · Havuz 1 (Esnaf Kasası)</div><div class="v">${esc(m.businessName || '—')}<div class="sub">${accLink(m.stellarAddress)}</div></div></div>
-        <div><div class="k">Müşteri</div><div class="v">${accLink(flow.senderAddress)}</div></div>
-        <div><div class="k">İşlem</div><div class="v">${txLink(flow.txHash)}</div></div>
-      </section>
-      <ol class="timeline">${items}</ol>`;
-
-    requestAnimationFrame(() => {
-      drawRiver(flow, statuses, newlySettled);
-      animateCounts(newlySettled.has('distribution'));
-    });
+  /**
+   * Borunun içinde, kaynaktan hedefe doğru yumuşak bulanık bir ışık noktası
+   * akıtır (CSS `offset-path` ile aynı boru yolunu izler). Salt görsel bir
+   * ek katmandır — asıl "dolu/boş" bilgisini taşıyan katman dashoffset'li
+   * `.pipe-fill`'dir; bu nokta desteklenmeyen bir tarayıcıda sessizce atlanır.
+   */
+  function spawnFlowDot(edge) {
+    if (!supportsMotionPath) return;
+    const dot = el('circle', { class: 'flow-dot', r: 9 });
+    dot.style.offsetPath = `path('${pathFor(edge)}')`;
+    dot.style.setProperty('--dur', `${FLOW_DURATION_MS}ms`);
+    svg.appendChild(dot);
+    requestAnimationFrame(() => dot.classList.add('run'));
+    setTimeout(() => dot.remove(), FLOW_DURATION_MS + 200);
   }
 
   /**
-   * Sayfa artık uzun ve kaydırılabilir (KASITLI olarak "tek ekrana sığsın"
-   * kısıtı kaldırıldı — bkz. body{max-width} yorumu). Bu yüzden takip
-   * tamamen otomatiktir: kullanıcı hiç scroll yapmadan, her GERÇEK olayda
-   * sayfa kendiliğinden bir sonraki adıma doğru yumuşak kayar.
+   * Gerçek duruma göre günceller. `animate=false` ilk anlık görüntüde
+   * (sayfa yeni açıldı/yeniden bağlandı) kullanılır — geçmiş adımlar
+   * SIÇRAMADAN anında dolu görünür, akış/nefes efekti yalnızca YENİ
+   * gelen bir olayda (bu render'da GERÇEKTEN durum değiştiğinde) oynar —
+   * aksi halde her yeni olayda TÜM geçmiş borular baştan "dolarmış" gibi
+   * yeniden animasyon oynardı (ilk denemede bu hataya rastlandı).
    */
+  function applyStatuses(statuses, animate) {
+    for (const [key, status] of Object.entries(statuses)) {
+      const g = svg.querySelector(`[data-node="${key}"]`);
+      if (!g) continue;
+      const prevStatus = prevStatuses && prevStatuses[key];
+      g.setAttribute('class', `node ${status}`);
+      const justSettled = animate && prevStatus !== status && (status === 'done' || status === 'failed');
+      if (justSettled) {
+        g.classList.remove('settle');
+        void g.getBoundingClientRect(); // olası önceki animasyonu sıfırla (reflow zorla)
+        g.classList.add('settle');
+      }
+    }
+    for (const edge of EDGES) {
+      const status = edgeStatus(statuses, edge);
+      const prevStatus = prevStatuses ? edgeStatus(prevStatuses, edge) : null;
+      const p = svg.querySelector(`[data-edge="${edge.from}>${edge.to}"]`);
+      if (!p) continue;
+      const filled = status === 'done' || status === 'failed';
+      const wasFilled = prevStatus === 'done' || prevStatus === 'failed';
+      p.classList.toggle('fail', status === 'failed');
+      const len = p.getTotalLength();
+      if (!filled) {
+        // GİZLE: dasharray=uzunluk + dashoffset=uzunluk → çizgi hiç boyanmaz.
+        p.style.transition = 'none';
+        p.setAttribute('stroke-dasharray', `${len}`);
+        p.setAttribute('stroke-dashoffset', `${len}`);
+        continue;
+      }
+      if (!animate || wasFilled) {
+        // wasFilled: bu boru ÖNCEDEN de doluydu (başka bir dalın olayıyla
+        // yeniden çizildi) — tekrar "akıyor" gösterip aynı animasyonu
+        // baştan oynatma, doğrudan dolu göster.
+        p.style.transition = 'none';
+        p.setAttribute('stroke-dasharray', `${len}`);
+        p.setAttribute('stroke-dashoffset', '0');
+        continue;
+      }
+      // "Sıvı akıyor" efekti: kaynaktan hedefe doğru dolar (SVG path yönü
+      // zaten kaynak→hedef olarak çizildiği için dashoffset tersten sıfıra
+      // iner). Süre/eğri .pipe-fill CSS kuralında tanımlı (çok yumuşak).
+      p.setAttribute('stroke-dasharray', `${len}`);
+      p.setAttribute('stroke-dashoffset', `${len}`);
+      p.style.transition = 'none';
+      void p.getBoundingClientRect();
+      p.style.transition = '';
+      p.setAttribute('stroke-dashoffset', '0');
+      spawnFlowDot(edge);
+    }
+    prevStatuses = statuses;
+  }
+
+  function render(flow, animate) {
+    if (!flow) {
+      applyStatuses(
+        { customer: 'pending', contract: 'pending', pool1: 'pending', pool3: 'pending', pool4: 'pending', confirmed: 'pending', merchant: 'pending' },
+        false
+      );
+      return;
+    }
+    applyStatuses(computeStatuses(flow), animate);
+  }
+
   function accept(flow) {
-    // Panel her zaman EN YENİ işlemi takip eder; eski bir işlemin gecikmiş olayı ekranı geri almaz.
     if (flow && current && flow.transactionId !== current.transactionId
         && new Date(flow.createdAt) < new Date(current.createdAt)) return;
     const isNewTx = !current || !flow || flow.transactionId !== current.transactionId;
     current = flow;
-    render(current);
-
-    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (isNewTx) {
-      // Yeni bir işlem başladı (ya da panel yeni açıldı/yeniden bağlandı) —
-      // izleyici baştan takip etsin.
-      window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
-      return;
-    }
-    // Akışın o anki "aktif ucu" — bekleyen ya da başarısız adım; hiçbiri
-    // yoksa (her şey tamamlandı) son adım. Her yeni olayda buraya kayar.
-    const focus = app.querySelector('.step[data-status="waiting"], .step[data-status="failed"]')
-      || app.querySelector('.step:last-child');
-    focus?.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+    render(flow, !isNewTx);
   }
 
-  function setConn(state, text) {
+  function setConn(state) {
     conn.dataset.state = state;
-    conn.querySelector('span').textContent = text;
   }
 
-  // Pencere yeniden boyutlanınca (mobil döndürme dahil) nehri konumlara göre yeniden çiz —
-  // animasyonsuz (boş newlySettled), yalnızca geometri güncellenir.
-  let resizeTimer = null;
-  window.addEventListener('resize', () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      if (current && lastStatuses) drawRiver(current, lastStatuses, new Set());
-    }, 150);
-  });
+  buildStaticDiagram();
 
-  // ---------- bağlantı ----------
   if (!token) {
-    setConn('error', 'Token yok');
-    app.innerHTML = `<div class="empty"><h2>Panel token'ı eksik</h2><p>Adres şu biçimde olmalı: <span class="mono">/flow?token=…</span></p></div>`;
+    setConn('error');
     return;
   }
 
   const qs = `token=${encodeURIComponent(token)}`;
   const es = new EventSource(`/api/v1/flow/stream?${qs}`);
 
-  es.addEventListener('open', () => setConn('live', 'Canlı'));
+  es.addEventListener('open', () => setConn('live'));
   es.addEventListener('snapshot', (m) => accept(JSON.parse(m.data).flow));
   es.addEventListener('flow', (m) => accept(JSON.parse(m.data).flow));
-  es.addEventListener('error', async () => {
-    if (es.readyState === EventSource.CLOSED) {
-      // Tarayıcı yeniden denemeyi bıraktı (ör. 401/503) — nedenini göster.
-      try {
-        const res = await fetch(`/api/v1/flow/latest?${qs}`);
-        const body = await res.json().catch(() => ({}));
-        setConn('error', res.ok ? 'Bağlantı kapandı' : (body.message || `Hata ${res.status}`));
-      } catch {
-        setConn('error', 'Sunucuya ulaşılamıyor');
-      }
-    } else {
-      // Tarayıcı kendisi yeniden bağlanıyor; açılınca 'snapshot' ile kaçan olaylar gelir.
-      setConn('retry', 'Yeniden bağlanıyor…');
-    }
+  es.addEventListener('error', () => {
+    setConn(es.readyState === EventSource.CLOSED ? 'error' : 'retry');
   });
-
-  app.innerHTML = `<div class="empty"><p>Akış yükleniyor…</p></div>`;
 })();
 </script>
 </body>
