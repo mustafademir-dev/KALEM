@@ -18,6 +18,7 @@ import {
 import { finalizeIdempotencyKey } from '../../services/idempotency.service.js';
 import { recordFlowEvent } from '../../services/flow-events.service.js';
 import { recordChainOutcome } from '../../services/contract-events.service.js';
+import { handleTransaction } from '../../services/sse-listener.service.js';
 import { authMiddleware, submitAuthMiddleware } from '../middleware/auth.middleware.js';
 import { validateTransactionSubmit } from '../middleware/validation.middleware.js';
 import { idempotencyMiddleware } from '../middleware/idempotency.middleware.js';
@@ -149,12 +150,30 @@ export async function submitTransactionHandler(req, res) {
     recordFlowEvent(transaction._id, 'submitted', {
       data: { txHash: response.hash, ledger: response.ledger ?? null, sentAt, network: 'horizon' },
     });
-    // 5. ve 6. adımlar: kontrat olayları RPC'den okunur — cevabı bekletmeden arka planda.
-    recordChainOutcome(transaction._id, response.hash);
 
     transaction.status = 'submitted';
     transaction.txHash = response.hash;
     await transaction.save();
+
+    // 5. ve 6. adımlar: kontrat olayları RPC'den okunur — cevabı bekletmeden arka planda.
+    recordChainOutcome(transaction._id, response.hash);
+
+    // 7. adım (Onaylandı) + GİB: Horizon'un `submitTransaction()` cevabı
+    // ZATEN SENKRON — işlem ledger'a yazılana kadar bekler, hash+ledger'ı
+    // burada döner (bkz. docs §9.9). SSE'yi (Render'da güvenilmez, hiç
+    // mesaj almayabiliyor) ya da mutabakat turunu (30 sn'ye kadar
+    // gecikebilir) beklemeye GEREK YOK — onayı burada, hemen, doğrudan
+    // işleriz. `handleTransaction` üç yoldan (bu çağrı / SSE / mutabakat)
+    // hangisi önce varırsa onu atomik olarak kabul eder (bkz. o fonksiyondaki
+    // `findOneAndUpdate`); geri kalanlar güvenle hiçbir şey yapmaz — çift
+    // GİB belgesi üretilmez. txHash az önce kaydedildiği için (yukarıda)
+    // buradaki arama güvenle eşleşir.
+    handleTransaction(
+      { hash: response.hash, ledger: response.ledger ?? null },
+      { source: 'submit_response' }
+    ).catch((err) => {
+      logger.error(`[Transaction] Doğrudan onay tetikleme hatası: ${err.message}`);
+    });
 
     const result = {
       transactionId: transaction._id.toString(),

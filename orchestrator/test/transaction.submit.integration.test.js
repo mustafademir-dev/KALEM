@@ -164,7 +164,12 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
     assert.ok(txDoc, 'Transaction koleksiyonuna gerçekten yazılmalı');
     assert.equal(txDoc.merchantId.toString(), merchant._id.toString());
     assert.equal(txDoc.senderAddress, senderKp.publicKey());
-    assert.equal(txDoc.status, 'submitted');
+    // 'submitted' DEĞİL 'confirmed' — §9.9: submitTransactionHandler, Horizon'un
+    // senkron cevabından onayı (handleTransaction) mutabakat turunu HİÇ
+    // beklemeden doğrudan tetikliyor; HTTP cevabı döndüğünde (yanıt gövdesinde
+    // hâlâ 'submitted' yazsa da — o SADECE "ağa iletildi" anlamına gelir) arka
+    // plandaki onay ÇOK KISA sürede tamamlanmış olmalı (bkz. speed.test.js).
+    assert.equal(txDoc.status, 'confirmed');
 
     const idemDoc = await IdempotencyKey.findOne({ key: idempotencyKey });
     assert.ok(idemDoc, 'IdempotencyKey koleksiyonuna gerçekten yazılmalı');
@@ -292,7 +297,7 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
     assert.equal(txCount, 1, 'işlem GERÇEKTEN yalnızca BİR KEZ oluşturulmuş olmalı');
   });
 
-  it('canlı işlem akışı: gerçek zincirden geçen ödeme 1-6. adımları sırayla, gerçek veriyle yazmalı', async () => {
+  it('canlı işlem akışı: gerçek zincirden geçen ödeme 1-8. adımları sırayla, gerçek veriyle yazmalı — ve 7. adım (Onaylandı) mutabakat turunu BEKLEMEDEN, HIZLI tamamlanmalı (§9.9)', async () => {
     // 5-6. adımların kaynağı: gerçek testnet ödemesinin kaydedilmiş RPC cevabı.
     const fixture = JSON.parse(
       readFileSync(new URL('./fixtures/pay-merchant-b5466573.json', import.meta.url), 'utf8')
@@ -330,26 +335,40 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
       });
       assert.equal(response.status, 201);
 
-      // 5-6. adımlar cevabı bekletmeden arka planda okunur — tamamlanmasını bekle.
+      // Tüm zincir (1-8. adım) cevabı bekletmeden arka planda tamamlanır —
+      // 'gib'e kadar bekle. §9.9 ÖNCESİ bu, mutabakatın 30 sn'lik turuna kadar
+      // gerçekleşmezdi; artık submitTransactionHandler'ın Horizon'dan aldığı
+      // SENKRON cevaptan doğrudan tetiklendiği için milisaniyeler içinde biter.
       let txDoc;
       for (let i = 0; i < 100; i += 1) {
         await flushFlowEvents();
         txDoc = await Transaction.findOne({ idempotencyKey }).lean();
-        if (txDoc.flowEvents.some((e) => e.step === 'distribution')) break;
+        if (txDoc.flowEvents.some((e) => e.step === 'gib')) break;
         await new Promise((r) => setTimeout(r, 20));
       }
 
+      // 8 adımın da GERÇEKLEŞTİĞİNİ ve 'done' olduğunu doğrula — sırası DEĞİL,
+      // çünkü submitted'dan sonra iki BAĞIMSIZ zincir paralel koşuyor: (a) RPC
+      // okuması (contract→distribution) ve (b) doğrudan onay (caught→gib).
+      // Aralarındaki SIRA garantili değildir (RPC/DB gecikmesine göre değişir
+      // — ağır yükte gerçekten ters sırada bitebiliyor, gerçek testte bulundu);
+      // her ZİNCİRİN KENDİ İÇİNDEKİ sıra ise garantilidir, onu ayrıca kontrol ederiz.
+      const steps = txDoc.flowEvents.map((e) => e.step);
       assert.deepEqual(
-        txDoc.flowEvents.map((e) => [e.step, e.status]),
-        [
-          ['signed', 'done'],
-          ['received', 'done'],
-          ['fee_bump', 'done'],
-          ['submitted', 'done'],
-          ['contract', 'done'],
-          ['distribution', 'done'],
-        ]
+        [...steps].sort(),
+        ['caught', 'contract', 'distribution', 'fee_bump', 'gib', 'received', 'signed', 'submitted'].sort()
       );
+      assert.ok(
+        txDoc.flowEvents.every((e) => e.status === 'done'),
+        'tüm adımlar done olmalı'
+      );
+      const idx = (step) => steps.indexOf(step);
+      assert.ok(idx('signed') < idx('received') && idx('received') < idx('fee_bump') && idx('fee_bump') < idx('submitted'));
+      assert.ok(idx('submitted') < idx('contract'), 'RPC zinciri submitted\'dan SONRA başlar');
+      assert.ok(idx('contract') < idx('distribution'), 'RPC zinciri kendi içinde sıralı');
+      assert.ok(idx('submitted') < idx('caught'), 'doğrudan onay zinciri submitted\'dan SONRA başlar');
+      assert.ok(idx('caught') < idx('gib'), 'doğrudan onay zinciri kendi içinde sıralı');
+      assert.equal(txDoc.status, 'confirmed');
 
       const byStep = Object.fromEntries(txDoc.flowEvents.map((e) => [e.step, e]));
       const innerTx = StellarSdk.TransactionBuilder.fromXDR(signedXdr, stellarConfig.networkPassphrase);
@@ -363,10 +382,24 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
       assert.ok(byStep.submitted.data.sentAt, 'gönderim anı kaydedilmeli');
       assert.equal(byStep.distribution.data.branches[0].label, 'Havuz 1 (Esnaf Kasası)');
       assert.equal(txDoc.pool1Amount, '24900000');
+      // §9.9: 7. adımı (caught) mutabakat DEĞİL, doğrudan submit yanıtı yakalamalı.
+      assert.equal(byStep.caught.data.source, 'submit_response');
+      assert.ok(byStep.gib.data.gibDocumentId, 'GİB belgesi üretilmeli');
 
-      // Zaman sırası gerçek: imza doğrulaması ≤ kilit ≤ fee-bump ≤ Horizon cevabı
-      const times = ['signed', 'received', 'fee_bump', 'submitted'].map((s) => new Date(byStep[s].at).getTime());
+      // Zaman sırası gerçek: imza doğrulaması ≤ kilit ≤ fee-bump ≤ Horizon cevabı ≤ onay
+      const times = ['signed', 'received', 'fee_bump', 'submitted', 'caught'].map(
+        (s) => new Date(byStep[s].at).getTime()
+      );
       assert.deepEqual([...times].sort((a, b) => a - b), times);
+
+      // ASIL HIZ İDDİASI: 'submitted' ile 'caught' arasında (mutabakatın eski
+      // 20-30 sn'lik bekleme penceresi DEĞİL) yalnızca birkaç yüz milisaniye
+      // olmalı — Horizon'un senkron cevabından hemen sonra tetiklendiği için.
+      const submittedToCaughtMs = times[4] - times[3];
+      assert.ok(
+        submittedToCaughtMs < 2000,
+        `'submitted'→'caught' ${submittedToCaughtMs}ms sürdü — mutabakatı bekliyormuş gibi YAVAŞ (beklenen: <2000ms)`
+      );
     } finally {
       config.contracts.poolManagerId = originalContracts.poolManagerId;
       config.contracts.dtlTokenId = originalContracts.dtlTokenId;

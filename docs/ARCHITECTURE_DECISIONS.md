@@ -663,9 +663,9 @@ Sonuçlar:
 - İşlem zincire kabul edildikten sonra oluşan bir DB/idempotency hatası 4. adımı "başarısız" gösteremez.
 - Aynı işlem hem SSE hem mutabakat tarafından yakalanırsa 7–8. adım akışa ikinci kez yazılmaz.
 
-### 9.6. Mutabakat 10 saniyeye indirildi
+### 9.6. Mutabakat 10 saniyeye indirildi — ~~güncel değil~~, bkz. §9.9
 
-Canlı Render'da SSE hiç mesaj almadığı için (§6.4.1) onayı fiilen mutabakat yakalıyor. 7. adımın demoda makul sürede işaretlenmesi için `render.yaml`'da `RECONCILIATION_CRON="*/10 * * * * *"` ve `RECONCILIATION_MIN_AGE_MS=8000` yapıldı. Beklenen gecikme ödemeden sonra kabaca **8–20 sn**'dir (canlıda henüz ölçülmedi). Tur sürerken gelen tetik atlanır — 10 sn aralıkta çakışan iki tur aynı işlem için iki GİB belgesi üretebilirdi.
+Bu bölüm 15 Eylül 2026'daki ilk hâliyle bırakıldı (tarihsel kayıt); **17 Eylül 2026'da §9.9 ile geçersiz kılındı** — mutabakatın 8-20 sn'lik gecikmesi artık normal akışın parçası değil. Aşağıdaki orijinal metin: "Canlı Render'da SSE hiç mesaj almadığı için (§6.4.1) onayı fiilen mutabakat yakalıyor. 7. adımın demoda makul sürede işaretlenmesi için `render.yaml`'da `RECONCILIATION_CRON="*/10 * * * * *"` ve `RECONCILIATION_MIN_AGE_MS=8000` yapıldı."
 
 ### 9.7. Doğrulama durumu
 
@@ -674,7 +674,38 @@ Canlı Render'da SSE hiç mesaj almadığı için (§6.4.1) onayı fiilen mutaba
 
 ### 9.8. Canlıya alma adımları
 
-1. Render → Environment: `FLOW_PANEL_TOKEN` gir (uzun rastgele değer). Servis Blueprint ile değil elle kurulduysa `RECONCILIATION_CRON=*/10 * * * * *` ve `RECONCILIATION_MIN_AGE_MS=8000` değerlerini de elle güncelle.
+1. Render → Environment: `FLOW_PANEL_TOKEN` gir (uzun rastgele değer). Servis Blueprint ile değil elle kurulduysa `RECONCILIATION_CRON=*/30 * * * * *` ve `RECONCILIATION_MIN_AGE_MS=20000` değerlerini de elle güncelle (§9.9 — artık hız-kritik değil).
 2. Deploy sonrası `https://kalem-5i08.onrender.com/flow?token=…` aç — "Canlı" rozeti yeşil olmalı.
-3. Bir ödeme yap; 9 adımın sırayla işaretlendiğini, 7. adımın kaynağını ve gecikmeleri not al.
+3. Bir ödeme yap; adımların sırayla işaretlendiğini, 7. adımın kaynağının `submit_response` olduğunu (mutabakat DEĞİL) ve toplam gecikmenin saniyeler mertebesinde olduğunu doğrula.
+
+---
+
+## 9.9. Onay (7. adım) neden 15-20 saniye sürüyordu — kök neden ve düzeltme (17 Eylül 2026)
+
+### Bulgu
+
+`stellar-tx.service.js`'teki `submitTransaction()`, Horizon'un **klasik** `submitTransaction()` uç noktasını kullanıyor — bu uç nokta **SENKRON'dur**: çağrı, işlem ledger'a yazılana kadar Horizon içeride bekler, sonra `hash` VE `ledger` numarasını doğrudan döndürür. Yani `submitTransactionHandler` içinde, Horizon'dan `response` döndüğü an, işlemin zincirde **gerçekten onaylandığının** kanıtı **zaten elimizdeydi** (4. adım — "Zincire iletildi"). Önceki kod bu bilgiyi kullanmıyor, 7. adımı ("Onaylandı") SSE'ye (Render'da canlıda güvenilmez, bkz. §6.4.1) ya da 10 saniyelik mutabakat turuna bırakıyordu — tamamen gereksiz bir bekleme.
+
+### Düzeltme
+
+`submitTransactionHandler`, Horizon'un senkron cevabı döndüğü anda `sse-listener.service.js`'teki `handleTransaction()`'ı **doğrudan, HTTP cevabını beklemeden (fire-and-forget)** çağırır (`source: 'submit_response'`). Bu fonksiyon zaten SSE ve mutabakatın da çağırdığı AYNI koddur — kod tekrarı yok, yalnızca üçüncü (ve neredeyse her zaman en hızlı) bir çağıran eklendi.
+
+### Ortaya çıkan yarış durumu ve atomik düzeltme
+
+Artık aynı işlem için üç yol (doğrudan çağrı / SSE / mutabakat) neredeyse aynı anda `handleTransaction()`'ı çağırabilir. Önceki kod bunu `firstCatch` adlı bir "en iyi çaba" bayrağıyla önlüyordu — okuma (`findOne`) ile yazma (`save()`) arasındaki pencerede iki çağrı da "ben ilkim" sanıp **iki ayrı GİB belgesi** üretebilirdi (gerçek Mongo'da doğrulanan bir risk, bkz. `test/handle-transaction-race.service.test.js`). Düzeltme: durum güncellemesi artık **atomik** — `Transaction.findOneAndUpdate({..., status: {$ne: 'confirmed'}}, {$set: {...}})`. Üç çağrıdan yalnızca biri eşleşir ve "kazanır"; diğerleri `null` döner ve güvenle hiçbir şey yapmaz (GİB belgesi tekrar üretilmez, akışa 'caught'/'gib' tekrar yazılmaz).
+
+### Mutabakat artık gerçek bir emniyet ağı
+
+`RECONCILIATION_CRON` 10 sn → **30 sn**, `RECONCILIATION_MIN_AGE_MS` 8 sn → **20 sn**'ye gevşetildi (render.yaml, `.env.example`). Bu job artık yalnızca "doğrudan çağrı da SSE de başarısız oldu" (ör. süreç Horizon cevabından hemen sonra çöktü) nadir durumu için devrede kalır.
+
+### Test kapsamı ile doğrulandı
+
+- `test/handle-transaction-race.service.test.js` (yeni): gerçek (bellek-içi) MongoDB'ye karşı üç çağrıyı **GERÇEKTEN eşzamanlı** (`Promise.all`, sıralı `await` DEĞİL) tetikleyip yalnızca birinin kazandığını, GİB belgesinin TAM OLARAK bir kez üretildiğini kanıtlar.
+- `test/transaction.submit.integration.test.js`: gerçek submit akışında 'submitted'→'caught' arasının **2 saniyenin altında** olduğunu doğrudan ölçer (ölçülen: ~100ms, eskiden 15-20 sn).
+- Bulunan ek gerçek: `submitted` sonrası iki BAĞIMSIZ zincir (RPC okuması → contract/distribution; doğrudan onay → caught/gib) paralel koşuyor — aralarındaki SIRA garantili değil (ağır yükte ters sırada bitebildiği tam test paketinde gözlemlendi). Test bunu katı sıra yerine her zincirin kendi içindeki sırayı kontrol edecek şekilde güncellendi.
+- 193/193 orchestrator testi, art arda 3 tam paket çalıştırmasında kararlı (flaky değil) PASS.
+
+### Sonuç
+
+Uçtan uca (imza → onay + GİB) süre, 15-20 saniyeden **saniyenin altına** indi. SSE dinleyicisi değişmedi (hâlâ ikinci bir yol); 1-6. adımların süresi değişmedi (zaten hızlıydı).
 

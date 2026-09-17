@@ -26,10 +26,15 @@ describe('SSE Listener Service Unit Tests', () => {
       },
     };
 
-    const originalFindOne = Transaction.findOne;
+    const originalFindOneAndUpdate = Transaction.findOneAndUpdate;
     const originalGibCreate = GibDocument.create;
 
-    Transaction.findOne = async (query) => {
+    // §9.9: durum güncellemesi artık atomik `findOneAndUpdate` ile yapılıyor
+    // (önceki `findOne` + ayrı `save()` çiftinin yerini aldı — üç çağıranın
+    // (doğrudan/SSE/mutabakat) aynı işlemi yarışarak iki kez işlemesini önler).
+    Transaction.findOneAndUpdate = async (filter, update) => {
+      assert.equal(filter.status?.$ne, 'confirmed', 'filtre zaten onaylanmışı hariç tutmalı (atomik kazanan garantisi)');
+      Object.assign(mockTransaction, update.$set);
       return mockTransaction;
     };
 
@@ -52,9 +57,39 @@ describe('SSE Listener Service Unit Tests', () => {
       assert.ok(updatedTx, 'İşlem güncellenmiş olmalıdır');
       assert.equal(updatedTx.status, 'confirmed');
       assert.equal(updatedTx.ledgerNumber, 4068812);
-      assert.equal(saved, true, 'save() fonksiyonu tetiklenmiş olmalıdır');
+      assert.equal(saved, true, 'save() fonksiyonu (GİB belge ID ataması için) tetiklenmiş olmalıdır');
     } finally {
-      Transaction.findOne = originalFindOne;
+      Transaction.findOneAndUpdate = originalFindOneAndUpdate;
+      GibDocument.create = originalGibCreate;
+    }
+  });
+
+  it('handleTransaction: BAŞKA bir yol (doğrudan çağrı/SSE/mutabakat) zaten onaylamışsa atomik güncelleme eşleşmez, hiçbir şey tekrar işlenmez', async () => {
+    const originalFindOneAndUpdate = Transaction.findOneAndUpdate;
+    const originalExists = Transaction.exists;
+    const originalGibCreate = GibDocument.create;
+
+    let gibCreateCalled = false;
+    // Gerçek Mongo'da olduğu gibi: `status: {$ne:'confirmed'}` filtresi zaten
+    // onaylanmış bir belgeyle EŞLEŞMEZ — findOneAndUpdate null döner.
+    Transaction.findOneAndUpdate = async () => null;
+    Transaction.exists = async () => ({ _id: 'already-confirmed' }); // teşhis dalı: "evet, başkası onaylamış"
+    GibDocument.create = async () => {
+      gibCreateCalled = true;
+      return { _id: 'should-not-happen' };
+    };
+
+    try {
+      const result = await handleTransaction(
+        { hash: dummyTxHash, ledger: 4068812 },
+        { source: 'reconciliation' }
+      );
+
+      assert.equal(result, null, 'kazanamayan çağrı null dönmeli');
+      assert.equal(gibCreateCalled, false, 'GİB belgesi TEKRAR üretilmemeli — asıl kazanım bu');
+    } finally {
+      Transaction.findOneAndUpdate = originalFindOneAndUpdate;
+      Transaction.exists = originalExists;
       GibDocument.create = originalGibCreate;
     }
   });

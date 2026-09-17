@@ -125,21 +125,26 @@ services:
       - key: POOL_FEEDER_MAX_BURN_STROOPS
         value: 1000000000
 
-      # --- Mutabakat (§6.4) — SSE dinleyicisinin yedegi ---
-      # Canlı dağıtımda SSE'nin sessizce hiç mesaj almadığı gözlendi; ayrıca
-      # ücretsiz planda süreç uykuya geçip yeniden başladığı için o pencerede
-      # kaçan onaylar kalıcı olarak kaybolur. Bu job onları Horizon'dan yakalar.
+      # --- Mutabakat (§6.4, §9.9) — GERÇEK EMNİYET AĞI, artık ana yol DEĞİL ---
+      # §9.9 öncesi bu job onayı (7. adım) fiilen YAKALAYAN taraftı, çünkü SSE
+      # canlıda sessizce hiç mesaj almıyordu. Artık submitTransactionHandler,
+      # Horizon'un SENKRON submit cevabından (hash+ledger, zaten elimizde)
+      # onayı DOĞRUDAN ve ANINDA işliyor (bkz. transaction.routes.js →
+      # handleTransaction çağrısı) — SSE ve bu job yalnızca "doğrudan çağrı da
+      # başarısız olursa" diye devrede kalan YEDEK yollardır. Üçü de AYNI
+      # fonksiyonu (handleTransaction) çağırır; hangisi önce varırsa o kazanır
+      # (atomik findOneAndUpdate ile korunur, çift GİB belgesi üretilmez).
       - key: RECONCILIATION_ENABLED
         value: true
-      # 10 saniyede bir (6 alanlı, saniyeli ifade). Canlıda onayı fiilen bu job
-      # yakalıyor; `/flow` panelinin 7. adımının demoda makul sürede işaretlenmesi
-      # için dakikalıktan 10 sn'ye indirildi. Horizon'a tur başına en fazla 20
-      # tekil sorgu atar ve yalnızca 'submitted' işlem varsa sorgu yapar.
+      # 30 saniyede bir (6 alanlı, saniyeli ifade) — artık hız-kritik DEĞİL,
+      # yalnızca "doğrudan çağrı da SSE de başarısız oldu" nadir durumunu
+      # makul bir sürede yakalar. Horizon'a tur başına en fazla 20 tekil
+      # sorgu atar ve yalnızca 'submitted' işlem varsa sorgu yapar.
       - key: RECONCILIATION_CRON
-        value: "*/10 * * * * *"
-      # Bu yaştan genç işlem atlanır (önce SSE'ye şans). Varsayılan 20000.
+        value: "*/30 * * * * *"
+      # Bu yaştan genç işlem atlanır (önce doğrudan çağrıya/SSE'ye şans).
       - key: RECONCILIATION_MIN_AGE_MS
-        value: 8000
+        value: 20000
 
       # --- Canlı İşlem Akışı Paneli (/flow) — docs §9 ---
       # Panelde gösterilen veriler zincirde zaten açık (hash, adres, tutar) +

@@ -50,13 +50,25 @@ export function getSSEStatus() {
 }
 
 /**
- * Gelen SSE işlem kaydını işler ve MongoDB durumunu günceller.
+ * Gelen işlem kaydını işler ve MongoDB durumunu günceller.
  *
- * @param {object} record - Stellar Horizon transaction kaydı (hash, memo, ledger, vb.).
+ * ÜÇ AYRI YOL bu fonksiyonu çağırabilir (bkz. docs §9.9): (1) doğrudan submit
+ * yanıtı — Horizon'un senkron `submitTransaction()` cevabı geldiği anda,
+ * ARTIK ANA YOL bu; (2) SSE dinleyicisi; (3) mutabakat job'ı (yalnızca 1 ve
+ * 2 de başarısız olursa devreye giren gerçek bir emniyet ağı). Üçü de aynı
+ * işlem için, neredeyse aynı anda çağrılabilir — bu yüzden "onayı işleme"
+ * adımı ATOMİK'tir (`findOneAndUpdate` + `status !== 'confirmed'` filtresi):
+ * hangisi önce Mongo'ya varırsa o kazanır, GİB belgesi/akış olayları TAM
+ * OLARAK BİR KEZ üretilir. Önceki sürümde bu, okuma+yazma arasında yarışa
+ * açık bir "en iyi çaba" bayrağıyla (`firstCatch`) yapılıyordu.
+ *
+ * @param {object} record - Zincir işlem kaydı (hash, memo, ledger, vb.) —
+ *   Horizon SSE kaydı OLABİLİR, ya da doğrudan `{hash, ledger}` (submit yanıtı).
  * @param {object} [opts]
- * @param {'sse'|'reconciliation'} [opts.source='sse'] - Onayı kimin yakaladığı —
- *   canlı işlem akışının 7. adımında gösterilir (SSE mi, onun yedeği mutabakat mı).
- * @returns {Promise<object | null>} Güncellenen Transaction kaydı veya null.
+ * @param {'submit_response'|'sse'|'reconciliation'} [opts.source='sse'] -
+ *   Onayı kimin yakaladığı (teşhis/log amaçlı).
+ * @returns {Promise<object | null>} Güncellenen Transaction kaydı, ya da bu
+ *   çağrı KAYBETTİYSE (başka biri zaten yakaladıysa) ya da eşleşme yoksa null.
  */
 export async function handleTransaction(record, { source = 'sse' } = {}) {
   try {
@@ -69,35 +81,35 @@ export async function handleTransaction(record, { source = 'sse' } = {}) {
     const ledgerNumber = record.ledger_attr || record.ledger || 0;
     const memoKey = record.memo || record.memo_bytes || null;
 
-    logger.info(`[SSE] Yeni zincir içi işlem algılandı: ${txHash} (Ledger: ${ledgerNumber})`);
-
     // MongoDB'de işlemi arayalım: txHash, idempotencyKey veya memo ile eşleştirme
     const queryConditions = [{ txHash }];
     if (memoKey) {
       queryConditions.push({ idempotencyKey: memoKey });
     }
 
-    const transaction = await Transaction.findOne({ $or: queryConditions });
+    // ATOMİK "kazanan tek çağrı" garantisi: filtre `status !== 'confirmed'`
+    // içerir, yani başka bir yol ZATEN onaylamışsa bu güncelleme HİÇBİR
+    // belgeyi eşleştirmez (findOneAndUpdate null döner) — okuma ile yazma
+    // arasında pencere YOKTUR, üç yoldan ancak biri buradan geçebilir.
+    const transaction = await Transaction.findOneAndUpdate(
+      { $or: queryConditions, status: { $ne: 'confirmed' } },
+      { $set: { status: 'confirmed', txHash, ledgerNumber } },
+      { new: true }
+    );
 
     if (!transaction) {
-      logger.info(`[SSE] İşlem MongoDB kaydıyla eşleşmedi (Sistem dışı transfer olabilir): ${txHash}`);
+      // Teşhis için ayrım: hiç eşleşme yok mu, yoksa başka bir yol mu kazandı?
+      const alreadyConfirmed = await Transaction.exists({ $or: queryConditions, status: 'confirmed' });
+      if (alreadyConfirmed) {
+        logger.info(`[SSE] İşlem zaten başka bir yoldan onaylanmış (bu çağrı kaynağı: ${source}), tekrar işlenmiyor: ${txHash}`);
+      } else {
+        logger.info(`[SSE] İşlem MongoDB kaydıyla eşleşmedi (Sistem dışı transfer olabilir): ${txHash}`);
+      }
       return null;
     }
 
-    // Aynı işlem ikinci kez yakalanırsa (SSE + mutabakat yarışı) akışa tekrar yazılmaz.
-    const firstCatch = transaction.status !== 'confirmed';
-
-    // İşlem durumunu güncelleyelim
-    transaction.status = 'confirmed';
-    transaction.txHash = txHash;
-    transaction.ledgerNumber = ledgerNumber;
-    await transaction.save();
-
     logger.info(`[SSE] İşlem onaylandı (ID: ${transaction._id}, TxHash: ${txHash}, kaynak: ${source})`);
-
-    if (firstCatch) {
-      recordFlowEvent(transaction._id, 'caught', { data: { source, txHash, ledger: ledgerNumber } });
-    }
+    recordFlowEvent(transaction._id, 'caught', { data: { source, txHash, ledger: ledgerNumber } });
 
     // GİB Belge Taslağını Tetikle (5.5.3)
     try {
@@ -112,23 +124,19 @@ export async function handleTransaction(record, { source = 'sse' } = {}) {
       if (gibDoc) {
         transaction.gibDocumentId = gibDoc._id;
         await transaction.save();
-        if (firstCatch) {
-          recordFlowEvent(transaction._id, 'gib', {
-            data: {
-              gibDocumentId: gibDoc._id?.toString() ?? null,
-              documentType: gibDoc.documentType ?? null,
-              status: gibDoc.status ?? null,
-              // GİB'e gerçek gönderim yok — belge UBL-TR taslağı olarak üretilir (§GERCEK_VS_SIMULASYON).
-              simulated: true,
-            },
-          });
-        }
+        recordFlowEvent(transaction._id, 'gib', {
+          data: {
+            gibDocumentId: gibDoc._id?.toString() ?? null,
+            documentType: gibDoc.documentType ?? null,
+            status: gibDoc.status ?? null,
+            // GİB'e gerçek gönderim yok — belge UBL-TR taslağı olarak üretilir (§GERCEK_VS_SIMULASYON).
+            simulated: true,
+          },
+        });
       }
     } catch (gibErr) {
       logger.error(`[SSE] GİB belge üretimi tetikleme hatası: ${gibErr.message}`);
-      if (firstCatch) {
-        recordFlowEvent(transaction._id, 'gib', { status: 'failed', data: { error: gibErr.message } });
-      }
+      recordFlowEvent(transaction._id, 'gib', { status: 'failed', data: { error: gibErr.message } });
     }
 
     // İstemciye bildirim gönder

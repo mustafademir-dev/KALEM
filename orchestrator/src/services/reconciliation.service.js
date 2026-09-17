@@ -1,5 +1,5 @@
 /**
- * Mutabakat (Reconciliation) Servisi — SSE Dinleyicisinin Yedeği
+ * Mutabakat (Reconciliation) Servisi — GERÇEK BİR EMNİYET AĞI, ANA YOL DEĞİL
  *
  * §6.4'te belgelenen açığı kapatır: onay yakalama TEK ve kırılgan bir SSE
  * akışına bağlıydı; akış ölürse veya süreç yeniden başlarsa o pencerede
@@ -13,22 +13,35 @@
  * ancak SSE dinleyicisi `started: true` görünmesine rağmen **hiç mesaj almadı**
  * (`messageCount: 0`, `lastError: null`) ve GİB belgesi üretilmedi. Aynı kod,
  * aynı filtre ve aynı Horizon ile YERELDE sorunsuz çalıştı — yani sorun kodda
- * değil, çalıştığı ortamda. Dolayısıyla SSE'yi "düzeltmek" tek başına bir
- * garanti değildir; sistemin ağ akışından bağımsız bir kurtarma yolu olmalıdır.
+ * değil, çalıştığı ortamda.
  *
- * Ücretsiz bulut planında servis uykuya geçip yeniden başladığı için bu
- * senaryo demo boyunca TEKRARLANACAKTIR (bkz. `render.yaml` plan notu).
+ * ## §9.9 güncellemesi (17 Eylül 2026) — artık ANA YOL DEĞİL
+ *
+ * O tarihe kadar bu job, onayı (canlı işlem akışının 7. adımı) FİİLEN
+ * yakalayan taraftı (10 sn'lik döngüde) — SSE canlıda güvenilmediği için.
+ * Bu, uçtan uca 15-20 saniyelik gereksiz bir gecikmeye yol açıyordu: Horizon'un
+ * `submitTransaction()` çağrısı ZATEN SENKRON'dur (işlem ledger'a yazılana
+ * kadar bekler, hash+ledger'ı döner) — onay bilgisi `submitTransactionHandler`
+ * içinde ZATEN elimizdeydi, kullanılmıyordu. Artık `submitTransactionHandler`
+ * bu bilgiyi `handleTransaction()`'a DOĞRUDAN, anında iletiyor (bkz.
+ * transaction.routes.js). Bu job artık yalnızca "doğrudan çağrı da SSE de
+ * başarısız oldu" nadir durumu için devrede kalan GERÇEK bir emniyet ağıdır —
+ * bu yüzden `RECONCILIATION_CRON`/`RECONCILIATION_MIN_AGE_MS` tekrar
+ * gevşetildi (30 sn / 20 sn, bkz. render.yaml).
  *
  * ## Nasıl çalışır
  *
  * Periyodik olarak `submitted` durumunda ve belirli bir yaştan eski işlemleri
  * bulur, her biri için Horizon'a **tekil** sorgu atar ve zincirde başarılıysa
- * `handleTransaction()`'ı çağırır — onay/GİB/bildirim mantığı SSE yolundakiyle
- * BİREBİR AYNI kod yolundan geçer, kopyalanmaz.
+ * `handleTransaction()`'ı çağırır — onay/GİB/bildirim mantığı doğrudan-çağrı
+ * ve SSE yollarıyla BİREBİR AYNI kod yolundan geçer, kopyalanmaz. Üç yoldan
+ * hangisi önce varırsa `handleTransaction`'daki atomik `findOneAndUpdate` onu
+ * kazanan ilan eder; bu job geç kalırsa (normal ve beklenen durum) sessizce
+ * hiçbir şey yapmadan çıkar.
  *
  * Tasarım notları:
- * - `MIN_AGE_MS`: çok taze işlemler atlanır; SSE'ye önce şans verilir, böylece
- *   normal akışta gereksiz Horizon sorgusu yapılmaz.
+ * - `MIN_AGE_MS`: çok taze işlemler atlanır; doğrudan çağrıya/SSE'ye önce
+ *   şans verilir, böylece normal akışta gereksiz Horizon sorgusu yapılmaz.
  * - `MAX_BATCH`: tek turda sorgulanacak işlem sayısı sınırlıdır — geçmişte
  *   birikmiş çok sayıda kayıt Horizon'u aniden yüklemesin diye.
  * - Zincirde bulunamayan (404) işlem `submitted` bırakılır: henüz onaylanmamış
@@ -45,10 +58,9 @@ import logger from '../utils/logger.js';
 import { handleTransaction } from './sse-listener.service.js';
 
 /**
- * Bu yaştan genç işlemler atlanır — önce SSE'ye şans ver.
- * Env: `RECONCILIATION_MIN_AGE_MS` (varsayılan 20 sn). Canlı Render'da SSE hiç
- * mesaj almadığı için onayı fiilen mutabakat yakalıyor; demo için 8 sn'ye
- * indirildi (render.yaml, `/flow` panelinin 7. adımı).
+ * Bu yaştan genç işlemler atlanır — önce doğrudan çağrıya/SSE'ye şans ver.
+ * Env: `RECONCILIATION_MIN_AGE_MS` (varsayılan 20 sn, render.yaml'da da 20 sn —
+ * artık hız-kritik değil, bkz. dosya başı §9.9 notu).
  */
 const MIN_AGE_MS = config.reconciliation.minAgeMs;
 
