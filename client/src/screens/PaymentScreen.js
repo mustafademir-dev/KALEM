@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Animated,
+  Easing,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,6 +15,9 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Clipboard from 'expo-clipboard';
 import Screen from '../components/Screen.js';
 import Button from '../components/Button.js';
+import Icon from '../components/Icon.js';
+import Amount from '../components/Amount.js';
+import { InlineNotice, MerchantAvatar, Skeleton, StatusBadge } from '../components/StateViews.js';
 import StatusStep from '../components/StatusStep.js';
 import WebQrScanner from '../components/WebQrScanner.js';
 import BackButton from '../components/BackButton.js';
@@ -194,7 +200,7 @@ export default function PaymentScreen() {
           onCancel={handleCancelConfirm}
         />
       )}
-      {stage === 'processing' && <ProcessingStage steps={steps} />}
+      {stage === 'processing' && <ProcessingStage steps={steps} qrData={qrData} />}
       {stage === 'result' && (
         <ResultStage
           result={result}
@@ -207,7 +213,7 @@ export default function PaymentScreen() {
   );
 }
 
-function ScanStage({
+export function ScanStage({
   permission,
   requestPermission,
   onScanned,
@@ -235,27 +241,37 @@ function ScanStage({
         {isWeb ? (
           <View style={styles.cameraFrame}>
             <WebQrScanner key={webScannerKey} onScanned={onScanned} onStatusChange={onWebStatusChange} />
-            {webScanStatus === 'streaming' && <View style={styles.scanCorner} pointerEvents="none" />}
+            {webScanStatus === 'streaming' && <Viewfinder />}
             {webScanStatus !== 'streaming' && (
               <View style={[StyleSheet.absoluteFill, styles.webStatusOverlay]}>
                 <View style={styles.permissionCard}>
                   {webScanStatus === 'starting' && (
-                    <Text style={[type.body, { color: colors.textSecondary, textAlign: 'center' }]}>
-                      Kamera başlatılıyor…
-                    </Text>
+                    <>
+                      <ActivityIndicator color={colors.accent} />
+                      <Text style={[type.body, styles.centerText, { color: colors.textSecondary, marginTop: spacing.sm }]}>
+                        Kamera başlatılıyor…
+                      </Text>
+                    </>
                   )}
                   {webScanStatus === 'denied' && (
                     <>
-                      <Text style={[type.body, { color: colors.textSecondary, textAlign: 'center' }]}>
-                        Kamera izni verilmedi. Tarayıcı adres çubuğundan izin verip tekrar deneyin.
+                      <IconCircle name="camera" />
+                      <Text style={[type.h2, styles.centerText, { color: colors.textPrimary, marginTop: spacing.sm }]}>
+                        Kamera izni gerekli
                       </Text>
-                      <Button label="Tekrar Dene" onPress={onRetryWebCamera} style={{ marginTop: spacing.md }} />
+                      <Text style={[type.body, styles.centerText, { color: colors.textSecondary, marginTop: 4 }]}>
+                        Tarayıcı adres çubuğundan izin verip tekrar deneyin.
+                      </Text>
+                      <Button label="Tekrar Dene" icon="refresh" onPress={onRetryWebCamera} style={{ marginTop: spacing.md }} />
                     </>
                   )}
                   {webScanStatus === 'unsupported' && (
-                    <Text style={[type.body, { color: colors.textSecondary, textAlign: 'center' }]}>
-                      Bu tarayıcı kamera erişimini desteklemiyor — Demo QR'ı kullanabilirsiniz.
-                    </Text>
+                    <>
+                      <IconCircle name="info" />
+                      <Text style={[type.body, styles.centerText, { color: colors.textSecondary, marginTop: spacing.sm }]}>
+                        Bu tarayıcı kamera erişimini desteklemiyor — Demo QR'ı kullanabilirsiniz.
+                      </Text>
+                    </>
                   )}
                 </View>
               </View>
@@ -263,7 +279,11 @@ function ScanStage({
           </View>
         ) : permission && !permission.granted ? (
           <View style={styles.permissionCard}>
-            <Text style={[type.body, { color: colors.textSecondary, textAlign: 'center' }]}>
+            <IconCircle name="camera" />
+            <Text style={[type.h2, styles.centerText, { color: colors.textPrimary, marginTop: spacing.sm }]}>
+              Kamera izni gerekli
+            </Text>
+            <Text style={[type.body, styles.centerText, { color: colors.textSecondary, marginTop: 4 }]}>
               QR kodu okutmak için kamera izni gerekiyor.
             </Text>
             <Button label="Kameraya İzin Ver" onPress={requestPermission} style={{ marginTop: spacing.md }} />
@@ -275,33 +295,67 @@ function ScanStage({
               barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
               onBarcodeScanned={onScanned}
             />
-            <View style={styles.scanCorner} pointerEvents="none" />
+            <Viewfinder />
           </View>
         ) : (
           <View style={styles.permissionCard}>
-            <Text style={[type.body, { color: colors.textSecondary, textAlign: 'center' }]}>
+            <ActivityIndicator color={colors.accent} />
+            <Text style={[type.body, styles.centerText, { color: colors.textSecondary, marginTop: spacing.sm }]}>
               Kamera hazırlanıyor…
             </Text>
           </View>
         )}
       </View>
 
-      {error ? (
-        <View style={styles.errorBanner}>
-          <Text style={[type.captionMedium, { color: colors.danger }]}>{error}</Text>
-        </View>
-      ) : null}
+      {error ? <InlineNotice tone="danger" style={styles.errorBanner}>{error}</InlineNotice> : null}
 
       <View style={styles.footer}>
-        <Pressable onPress={onUseSample} style={styles.sampleLink}>
-          <Text style={[type.captionMedium, { color: colors.accent }]}>Demo QR ile dene →</Text>
-        </Pressable>
+        <Text style={[type.caption, { color: colors.textMuted, marginBottom: spacing.xs }]}>
+          Kamera kullanamıyor musunuz?
+        </Text>
+        <Button label="Demo QR ile dene" variant="secondary" icon="qr" onPress={onUseSample} style={styles.sampleButton} />
       </View>
     </View>
   );
 }
 
-function ConfirmStage({ qrData, balanceBefore, onConfirm, onCancel }) {
+/** Köşe işaretleri + yavaşça süpüren tarama çizgisi. Yalnızca görsel rehber. */
+function Viewfinder() {
+  const sweep = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(sweep, { toValue: 1, duration: 1900, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(sweep, { toValue: 0, duration: 1900, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [sweep]);
+
+  const top = sweep.interpolate({ inputRange: [0, 1], outputRange: ['6%', '94%'] });
+
+  return (
+    <View style={styles.scanBox} pointerEvents="none">
+      <View style={[styles.corner, styles.cornerTL]} />
+      <View style={[styles.corner, styles.cornerTR]} />
+      <View style={[styles.corner, styles.cornerBL]} />
+      <View style={[styles.corner, styles.cornerBR]} />
+      <Animated.View style={[styles.scanLine, { top }]} />
+    </View>
+  );
+}
+
+function IconCircle({ name }) {
+  return (
+    <View style={styles.iconCircle}>
+      <Icon name={name} size={26} color={colors.accentStrong} />
+    </View>
+  );
+}
+
+export function ConfirmStage({ qrData, balanceBefore, onConfirm, onCancel }) {
   const insufficientFunds =
     balanceBefore != null && BigInt(balanceBefore) < BigInt(qrData.totalAmount);
   const balanceAfter =
@@ -311,16 +365,26 @@ function ConfirmStage({ qrData, balanceBefore, onConfirm, onCancel }) {
     <ScrollView contentContainerStyle={styles.confirmScroll}>
       <View style={styles.header}>
         <Text style={[type.h1, { color: colors.textPrimary }]}>Ödemeyi Onayla</Text>
+        <Text style={[type.body, { color: colors.textSecondary, marginTop: 4 }]}>
+          Bilgileri kontrol edip onaylayın
+        </Text>
       </View>
 
       <View style={[styles.card, insufficientFunds && styles.cardDanger]}>
-        <Text style={[type.caption, { color: colors.textMuted }]}>ESNAF</Text>
-        <Text style={[type.h2, { color: colors.textPrimary, marginTop: 2 }]}>{qrData.businessName}</Text>
+        <View style={styles.merchantRow}>
+          <MerchantAvatar name={qrData.businessName} />
+          <View style={{ flex: 1 }}>
+            <Text style={[type.micro, { color: colors.textMuted }]}>ESNAF</Text>
+            <Text style={[type.h2, { color: colors.textPrimary }]} numberOfLines={1}>
+              {qrData.businessName}
+            </Text>
+          </View>
+        </View>
 
         <View style={styles.divider} />
 
-        <Text style={[type.caption, { color: colors.textMuted }]}>TUTAR</Text>
-        <Text style={styles.amount}>{formatDtl(qrData.totalAmount)}</Text>
+        <Text style={[type.micro, { color: colors.textMuted }]}>ÖDENECEK TUTAR</Text>
+        <Amount stroops={qrData.totalAmount} size={40} style={{ marginTop: 2 }} />
 
         {qrData.cartItems?.length > 0 && (
           <View style={styles.cartList}>
@@ -339,14 +403,26 @@ function ConfirmStage({ qrData, balanceBefore, onConfirm, onCancel }) {
         <View style={styles.divider} />
 
         <View style={styles.balanceRow}>
-          <Text style={[type.caption, { color: colors.textMuted }]}>Cüzdan bakiyeniz</Text>
-          <Text style={[type.captionMedium, { color: colors.textSecondary }]}>
-            {balanceBefore === undefined ? 'Yükleniyor…' : balanceBefore === null ? 'Alınamadı' : formatDtl(balanceBefore)}
-          </Text>
+          <View style={styles.balanceLabel}>
+            <Icon name="wallet" size={15} color={colors.textMuted} />
+            <Text style={[type.caption, { color: colors.textMuted }]}>Cüzdan bakiyeniz</Text>
+          </View>
+          {balanceBefore === undefined ? (
+            <Skeleton width={104} />
+          ) : balanceBefore === null ? (
+            <Text style={[type.captionMedium, { color: colors.textMuted }]}>Alınamadı</Text>
+          ) : (
+            <Text style={[type.captionMedium, { color: colors.textSecondary }]}>{formatDtl(balanceBefore)}</Text>
+          )}
         </View>
-        {balanceAfter !== null && (
-          <View style={styles.balanceRow}>
+        <View style={styles.balanceRow}>
+          <View style={styles.balanceLabel}>
+            <Icon name="arrowRight" size={15} color={colors.textMuted} />
             <Text style={[type.caption, { color: colors.textMuted }]}>İşlem sonrası</Text>
+          </View>
+          {balanceBefore === undefined ? (
+            <Skeleton width={104} />
+          ) : balanceAfter !== null ? (
             <Text
               style={[
                 type.captionMedium,
@@ -355,51 +431,99 @@ function ConfirmStage({ qrData, balanceBefore, onConfirm, onCancel }) {
             >
               {formatDtl(balanceAfter)}
             </Text>
-          </View>
-        )}
+          ) : (
+            <Text style={[type.captionMedium, { color: colors.textMuted }]}>—</Text>
+          )}
+        </View>
 
         {qrData.isStale && (
-          <Text style={[type.caption, { color: colors.warning, marginTop: spacing.sm }]}>
+          <InlineNotice tone="warning" style={{ marginTop: spacing.md }}>
             Bu QR kodu bir süre önce üretilmiş — tutarı esnafla teyit edin.
-          </Text>
+          </InlineNotice>
+        )}
+        {balanceBefore === null && (
+          <InlineNotice tone="info" style={{ marginTop: spacing.md }}>
+            Bakiyeniz okunamadı. Ödeme yine de denenebilir; yetersizse zincir reddeder.
+          </InlineNotice>
         )}
         {insufficientFunds && (
-          <Text style={[type.captionMedium, { color: colors.danger, marginTop: spacing.sm }]}>
+          <InlineNotice tone="danger" style={{ marginTop: spacing.md }}>
             Bakiyeniz bu ödeme için yetersiz.
-          </Text>
+          </InlineNotice>
         )}
       </View>
 
       <View style={styles.confirmActions}>
-        <Button label="İmzala ve Öde" onPress={onConfirm} disabled={insufficientFunds || balanceBefore === undefined} />
+        <Button
+          label="İmzala ve Öde"
+          icon="shield"
+          onPress={onConfirm}
+          disabled={insufficientFunds || balanceBefore === undefined}
+        />
         <Button label="Vazgeç" variant="secondary" onPress={onCancel} style={{ marginTop: spacing.sm }} />
+        <View style={styles.assurance}>
+          <Icon name="shield" size={14} color={colors.textMuted} />
+          <Text style={[type.caption, { color: colors.textMuted }]}>Cihazınızda imzalanır · Ağ ücreti sizden alınmaz</Text>
+        </View>
       </View>
     </ScrollView>
   );
 }
 
-function ProcessingStage({ steps }) {
+const PROCESSING_STEPS = [
+  { key: 'sign', label: 'Cihazda imzalanıyor', hint: 'Anahtarınız cihazdan çıkmaz' },
+  { key: 'submit', label: 'Ağa iletiliyor', hint: 'Ağ ücretini KALEM üstlenir' },
+  { key: 'confirm', label: 'Zincirde onaylanıyor', hint: 'Stellar ağı işlemi kesinleştiriyor' },
+];
+
+export function ProcessingStage({ steps, qrData }) {
   return (
     <View style={styles.centerFill}>
       <View style={styles.processingCard}>
-        <Text style={[type.h2, { color: colors.textPrimary, marginBottom: spacing.md }]}>
-          Ödeme işleniyor
-        </Text>
-        <StatusStep label="Cihazda imzalanıyor" state={steps.sign} />
-        <StatusStep label="Ağa iletiliyor" state={steps.submit} />
-        <StatusStep label="Zincirde onaylanıyor" state={steps.confirm} />
+        {qrData ? (
+          <View style={styles.processingSummary}>
+            <MerchantAvatar name={qrData.businessName} size={40} />
+            <View style={{ flex: 1 }}>
+              <Text style={[type.captionMedium, { color: colors.textMuted }]} numberOfLines={1}>
+                {qrData.businessName}
+              </Text>
+              <Amount stroops={qrData.totalAmount} size={24} />
+            </View>
+          </View>
+        ) : null}
+
+        <Text style={[type.h2, { color: colors.textPrimary, marginBottom: spacing.md }]}>Ödeme işleniyor</Text>
+        {PROCESSING_STEPS.map((step, index) => (
+          <StatusStep
+            key={step.key}
+            label={step.label}
+            state={steps[step.key]}
+            hint={steps[step.key] === 'error' ? 'Bu adımda hata oluştu' : step.hint}
+            isLast={index === PROCESSING_STEPS.length - 1}
+          />
+        ))}
       </View>
+      <Text style={[type.caption, { color: colors.textMuted, marginTop: spacing.md, textAlign: 'center' }]}>
+        Lütfen uygulamayı kapatmayın
+      </Text>
     </View>
   );
 }
 
-function ResultStage({ result, qrData, onDone, senderAddress }) {
+export function ResultStage({ result, qrData, onDone, senderAddress }) {
   const isSuccess = result?.ok;
+  // Onay beklenirken süre aşımı: ödeme ağa iletildi ama zincir onayı görülemedi —
+  // yeşil "tamamlandı" yerine dürüst bir "iletildi" durumu gösterilir.
+  const isPending = isSuccess && !result?.txHash;
+  const tone = !isSuccess ? 'danger' : isPending ? 'warning' : 'success';
   const [gibState, setGibState] = useState({ status: 'idle', document: null, error: null });
+  const [copied, setCopied] = useState(false);
 
   const handleCopyHash = useCallback(async () => {
     if (!result?.txHash) return;
     await Clipboard.setStringAsync(result.txHash);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
   }, [result]);
 
   const handleShowGib = useCallback(async () => {
@@ -418,71 +542,86 @@ function ResultStage({ result, qrData, onDone, senderAddress }) {
   }, [result, senderAddress]);
 
   return (
-    <View style={styles.centerFill}>
+    <ScrollView contentContainerStyle={styles.resultScroll} showsVerticalScrollIndicator={false}>
       <View style={styles.resultCard}>
-        <View
-          style={[
-            styles.resultBadge,
-            { backgroundColor: isSuccess ? colors.successBg : colors.dangerBg },
-          ]}
-        >
-          <Text style={{ fontSize: 32 }}>{isSuccess ? '✓' : '✕'}</Text>
-        </View>
+        <StatusBadge tone={tone} />
 
         <Text style={[type.h1, { color: colors.textPrimary, marginTop: spacing.md, textAlign: 'center' }]}>
-          {isSuccess ? 'Ödeme Tamamlandı' : 'Ödeme Başarısız'}
+          {!isSuccess ? 'Ödeme Başarısız' : isPending ? 'Ödeme İletildi' : 'Ödeme Tamamlandı'}
         </Text>
 
         {isSuccess && qrData && (
-          <Text style={[styles.amount, { marginTop: spacing.xs }]}>{formatDtl(qrData.totalAmount)}</Text>
+          <Amount stroops={qrData.totalAmount} size={38} align="center" style={{ marginTop: spacing.xs }} />
         )}
         {isSuccess && qrData && (
-          <Text style={[type.body, { color: colors.textSecondary, marginTop: 2 }]}>{qrData.businessName}</Text>
-        )}
-
-        {result?.message && (
-          <Text style={[type.caption, { color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center' }]}>
-            {result.message}
+          <Text style={[type.body, { color: colors.textSecondary, marginTop: 2, textAlign: 'center' }]}>
+            {qrData.businessName}
           </Text>
         )}
 
-        {result?.txHash && (
-          <Pressable onPress={handleCopyHash} style={styles.hashChip}>
-            <Text style={[type.mono, { color: colors.textSecondary }]}>{shortenMiddle(result.txHash, 10, 10)}</Text>
-            <Text style={[type.micro, { color: colors.accent, marginTop: 2 }]}>DOKUN: KOPYALA</Text>
-          </Pressable>
+        {result?.message && (
+          <InlineNotice tone={isSuccess ? 'warning' : 'danger'} style={styles.resultNotice}>
+            {result.message}
+          </InlineNotice>
         )}
+
         {result?.txHash && (
-          <Pressable onPress={() => Linking.openURL(stellarExpertTxUrl(result.txHash))}>
-            <Text style={[type.captionMedium, { color: colors.accent, marginTop: spacing.xs }]}>
-              Stellar Expert'te görüntüle ↗
-            </Text>
-          </Pressable>
+          <View style={styles.hashCard}>
+            <Pressable onPress={handleCopyHash} style={styles.hashRow} accessibilityRole="button" accessibilityLabel="İşlem numarasını kopyala">
+              <View style={{ flex: 1 }}>
+                <Text style={[type.micro, { color: colors.textMuted }]}>İŞLEM NO</Text>
+                <Text style={[type.mono, { color: colors.textSecondary, marginTop: 2 }]}>
+                  {shortenMiddle(result.txHash, 10, 10)}
+                </Text>
+              </View>
+              <View style={styles.copyPill}>
+                <Icon name={copied ? 'check' : 'copy'} size={14} color={copied ? colors.success : colors.accentStrong} />
+                <Text style={[type.micro, { color: copied ? colors.success : colors.accentStrong }]}>
+                  {copied ? 'KOPYALANDI' : 'KOPYALA'}
+                </Text>
+              </View>
+            </Pressable>
+            <View style={styles.hairline} />
+            <Pressable
+              onPress={() => Linking.openURL(stellarExpertTxUrl(result.txHash))}
+              style={styles.linkRow}
+              accessibilityRole="link"
+            >
+              <Text style={[type.captionMedium, { color: colors.accent }]}>Stellar Expert'te görüntüle</Text>
+              <Icon name="external" size={14} color={colors.accent} />
+            </Pressable>
+          </View>
         )}
 
         {isSuccess && result?.txHash && gibState.status !== 'loaded' && (
           <Button
             label="e-Belge Görüntüle"
             variant="secondary"
+            icon="receipt"
             onPress={handleShowGib}
             loading={gibState.status === 'loading'}
-            style={{ marginTop: spacing.md, minWidth: 220 }}
+            style={{ marginTop: spacing.md, alignSelf: 'stretch' }}
           />
         )}
         {gibState.status === 'error' && (
-          <Text style={[type.caption, { color: colors.danger, marginTop: spacing.sm, textAlign: 'center' }]}>
+          <InlineNotice
+            tone="warning"
+            style={styles.resultNotice}
+            actionLabel="Tekrar dene"
+            onAction={handleShowGib}
+          >
             {gibState.error}
-          </Text>
+          </InlineNotice>
         )}
         {gibState.status === 'loaded' && (
-          <View style={{ marginTop: spacing.md, width: '100%' }}>
+          <View style={{ marginTop: spacing.md, width: '100%', alignItems: 'center' }}>
             <GibReceiptCard document={gibState.document} />
           </View>
         )}
 
-        <Button label="Ana Ekrana Dön" onPress={onDone} style={{ marginTop: spacing.xl, minWidth: 220 }} />
+        <Button label="Ana Ekrana Dön" onPress={onDone} style={{ marginTop: spacing.lg, alignSelf: 'stretch' }} />
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -496,9 +635,13 @@ function describeError(err) {
   return err?.message ?? 'Beklenmeyen bir hata oluştu.';
 }
 
+const CORNER = 30;
+const CORNER_W = 4;
+
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   centerFill: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  centerText: { textAlign: 'center' },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   cameraWrap: { flex: 1, padding: spacing.lg, alignItems: 'center', justifyContent: 'center' },
   cameraFrame: {
@@ -507,21 +650,18 @@ const styles = StyleSheet.create({
     maxWidth: 360,
     borderRadius: radii.lg,
     overflow: 'hidden',
-    backgroundColor: colors.bgElevated,
+    backgroundColor: colors.textPrimary,
     borderWidth: 1,
     borderColor: colors.border,
     ...cardShadow,
   },
-  scanCorner: {
-    position: 'absolute',
-    top: '18%',
-    left: '18%',
-    right: '18%',
-    bottom: '18%',
-    borderWidth: 2,
-    borderColor: colors.accent,
-    borderRadius: radii.md,
-  },
+  scanBox: { position: 'absolute', top: '16%', left: '16%', right: '16%', bottom: '16%' },
+  corner: { position: 'absolute', width: CORNER, height: CORNER, borderColor: colors.accent },
+  cornerTL: { top: 0, left: 0, borderTopWidth: CORNER_W, borderLeftWidth: CORNER_W, borderTopLeftRadius: 10 },
+  cornerTR: { top: 0, right: 0, borderTopWidth: CORNER_W, borderRightWidth: CORNER_W, borderTopRightRadius: 10 },
+  cornerBL: { bottom: 0, left: 0, borderBottomWidth: CORNER_W, borderLeftWidth: CORNER_W, borderBottomLeftRadius: 10 },
+  cornerBR: { bottom: 0, right: 0, borderBottomWidth: CORNER_W, borderRightWidth: CORNER_W, borderBottomRightRadius: 10 },
+  scanLine: { position: 'absolute', left: 6, right: 6, height: 2, borderRadius: 1, backgroundColor: colors.accent, opacity: 0.85 },
   webStatusOverlay: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -538,15 +678,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     ...cardShadow,
   },
-  errorBanner: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-    padding: spacing.sm,
-    borderRadius: radii.md,
-    backgroundColor: colors.dangerBg,
+  iconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accentMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  errorBanner: { marginHorizontal: spacing.lg, marginBottom: spacing.sm },
   footer: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, alignItems: 'center' },
-  sampleLink: { padding: spacing.sm },
+  sampleButton: { minHeight: 44, paddingHorizontal: spacing.lg },
   confirmScroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
   card: {
     backgroundColor: colors.bgCard,
@@ -558,12 +700,20 @@ const styles = StyleSheet.create({
     ...cardShadow,
   },
   cardDanger: { borderColor: colors.danger },
+  merchantRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
-  amount: { fontFamily: 'Inter_800ExtraBold', fontSize: 36, color: colors.accent, marginTop: 4 },
-  cartList: { marginTop: spacing.sm, gap: 4 },
+  cartList: {
+    marginTop: spacing.sm,
+    gap: 6,
+    padding: spacing.sm,
+    borderRadius: radii.md,
+    backgroundColor: colors.bgCardAlt,
+  },
   cartRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm },
-  balanceRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
+  balanceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, minHeight: 20 },
+  balanceLabel: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   confirmActions: { marginTop: spacing.lg },
+  assurance: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.md },
   processingCard: {
     width: '100%',
     maxWidth: 360,
@@ -574,22 +724,36 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     ...cardShadow,
   },
-  resultCard: { alignItems: 'center', width: '100%', maxWidth: 360 },
-  resultBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: radii.pill,
+  processingSummary: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingBottom: spacing.md,
+    marginBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  hashChip: {
+  resultScroll: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  resultCard: { alignItems: 'center', width: '100%', maxWidth: 360 },
+  resultNotice: { marginTop: spacing.md, alignSelf: 'stretch' },
+  hashCard: {
+    alignSelf: 'stretch',
     marginTop: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
     borderRadius: radii.md,
-    backgroundColor: colors.bgCardAlt,
+    backgroundColor: colors.bgCard,
     borderWidth: 1,
     borderColor: colors.border,
-    alignItems: 'center',
   },
+  hashRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.sm, paddingHorizontal: spacing.md },
+  copyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+    backgroundColor: colors.bgCardAlt,
+  },
+  hairline: { height: 1, backgroundColor: colors.border },
+  linkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: spacing.sm },
 });

@@ -1,44 +1,64 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import Icon from './Icon.js';
 import { colors, spacing, type } from '../theme/index.js';
 
 /**
  * İşlem adımı satırı — İmzalama & Gönderim ekranında kullanılır.
  * state: 'pending' | 'active' | 'done' | 'error'
+ *
+ * `hint` (isteğe bağlı) etiketin altında kısa bir açıklama gösterir; yalnızca
+ * adım aktifken/hata verdiğinde görünür. `isLast` false ise adımlar arasında
+ * dikey bir bağlantı çizgisi çizilir.
  */
-export default function StatusStep({ label, state }) {
+export default function StatusStep({ label, state, hint, isLast = true }) {
+  const showHint = hint && (state === 'active' || state === 'error');
   return (
     <View style={styles.row}>
-      <View style={styles.indicator}>{renderIndicator(state)}</View>
-      <Text
-        style={[
-          type.bodyMedium,
-          {
-            color: state === 'pending' ? colors.textMuted : colors.textPrimary,
-          },
-        ]}
-      >
-        {label}
-      </Text>
+      <View style={styles.rail}>
+        <View style={styles.indicator}>{renderIndicator(state)}</View>
+        {!isLast && (
+          <View style={[styles.connector, { backgroundColor: state === 'done' ? colors.success : colors.border }]} />
+        )}
+      </View>
+      <View style={[styles.textCol, !isLast && { paddingBottom: spacing.md }]}>
+        <Text
+          style={[
+            type.bodyMedium,
+            { color: state === 'pending' ? colors.textMuted : colors.textPrimary, marginTop: 3 },
+          ]}
+        >
+          {label}
+        </Text>
+        {showHint ? (
+          <Text style={[type.caption, { color: state === 'error' ? colors.danger : colors.textMuted, marginTop: 2 }]}>
+            {hint}
+          </Text>
+        ) : null}
+      </View>
     </View>
   );
 }
 
 function renderIndicator(state) {
   if (state === 'active') {
-    return <ActivityIndicator size="small" color={colors.accent} />;
+    return (
+      <View style={[styles.dot, { backgroundColor: colors.accentMuted }]}>
+        <ActivityIndicator size="small" color={colors.accent} />
+      </View>
+    );
   }
   if (state === 'done') {
     return (
       <View style={[styles.dot, { backgroundColor: colors.success }]}>
-        <Text style={styles.check}>✓</Text>
+        <Icon name="check" size={14} color={colors.white} strokeWidth={3} />
       </View>
     );
   }
   if (state === 'error') {
     return (
       <View style={[styles.dot, { backgroundColor: colors.danger }]}>
-        <Text style={styles.check}>!</Text>
+        <Icon name="x" size={14} color={colors.white} strokeWidth={3} />
       </View>
     );
   }
@@ -46,32 +66,11 @@ function renderIndicator(state) {
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  indicator: {
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dotPending: {
-    borderWidth: 1.5,
-    borderColor: colors.border,
-  },
-  check: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  row: { flexDirection: 'row', gap: spacing.sm },
+  rail: { alignItems: 'center', width: 28 },
+  indicator: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  connector: { width: 2, flex: 1, minHeight: 12, borderRadius: 1, marginVertical: 2 },
+  textCol: { flex: 1 },
+  dot: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  dotPending: { borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.bgCard },
 });

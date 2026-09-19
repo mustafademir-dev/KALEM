@@ -1,5 +1,6 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import Icon from './Icon.js';
 import { colors, radii, spacing, type, cardShadow } from '../theme/index.js';
 
 const VARIANTS = {
@@ -10,7 +11,7 @@ const VARIANTS = {
     border: 'transparent',
   },
   secondary: {
-    bg: 'transparent',
+    bg: colors.bgCard,
     bgPressed: colors.bgCardAlt,
     text: colors.textPrimary,
     border: colors.borderStrong,
@@ -23,32 +24,44 @@ const VARIANTS = {
   },
 };
 
-export default function Button({ label, onPress, variant = 'primary', loading = false, disabled = false, style }) {
+/**
+ * @param {object} props
+ * @param {string} [props.icon] - Icon.js'teki bir ikon adı; etiketin soluna konur.
+ * @param {boolean} [props.loading] - Etiket KORUNUR (genişlik zıplamaz), yanında döner gösterge çıkar.
+ */
+export default function Button({ label, onPress, variant = 'primary', loading = false, disabled = false, icon, style }) {
   const palette = VARIANTS[variant] ?? VARIANTS.primary;
   const isDisabled = disabled || loading;
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ disabled: isDisabled }}
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: isDisabled, busy: loading }}
       onPress={isDisabled ? undefined : onPress}
       style={({ pressed }) => [
         styles.base,
-        variant === 'primary' && cardShadow,
+        variant === 'primary' && !isDisabled && cardShadow,
         {
           backgroundColor: pressed && !isDisabled ? palette.bgPressed : palette.bg,
           borderColor: palette.border,
           borderWidth: palette.border === 'transparent' ? 0 : 1.5,
-          opacity: isDisabled ? 0.5 : 1,
+          opacity: disabled && !loading ? 0.45 : 1,
+          transform: [{ scale: pressed && !isDisabled ? 0.985 : 1 }],
         },
         style,
       ]}
     >
-      {loading ? (
-        <ActivityIndicator color={palette.text} />
-      ) : (
-        <Text style={[type.bodyMedium, styles.label, { color: palette.text }]}>{label}</Text>
-      )}
+      <View style={styles.content}>
+        {loading ? (
+          <ActivityIndicator size="small" color={palette.text} />
+        ) : icon ? (
+          <Icon name={icon} size={18} color={palette.text} />
+        ) : null}
+        <Text style={[type.bodyMedium, styles.label, { color: palette.text, opacity: loading ? 0.75 : 1 }]}>
+          {label}
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -61,7 +74,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
   },
-  label: {
-    letterSpacing: 0.2,
-  },
+  content: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
+  label: { letterSpacing: 0.2 },
 });

@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import Screen from '../components/Screen.js';
 import Button from '../components/Button.js';
+import BackButton from '../components/BackButton.js';
+import Icon from '../components/Icon.js';
+import Amount from '../components/Amount.js';
+import { InlineNotice, MerchantAvatar, PulseDot, StatusBadge } from '../components/StateViews.js';
 import GibReceiptCard from '../components/GibReceiptCard.js';
 import { colors, radii, spacing, type, cardShadow } from '../theme/index.js';
 import { useNavigation } from '../navigation/Navigator.js';
 import { getCurrentLedger, findNewPayment } from '../services/merchant-chain.service.js';
 import { getGibDocument, acknowledgePaymentSeen, ApiError } from '../services/api.service.js';
-import { formatDtl, shortenMiddle, stellarExpertTxUrl } from '../utils/format.js';
+import { shortenMiddle, stellarExpertTxUrl } from '../utils/format.js';
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -82,73 +86,143 @@ export default function EsnafQrScreen({ params }) {
 
   if (payment) {
     return (
-      <Screen>
-        <View style={styles.centerFill}>
-          <View style={styles.successBadge}>
-            <Text style={{ fontSize: 32 }}>✓</Text>
-          </View>
-          <Text style={[type.h1, { color: colors.textPrimary, marginTop: spacing.md }]}>Ödeme Alındı</Text>
-          <Text style={styles.amount}>{formatDtl(payment.amount)}</Text>
-          <Text style={[type.caption, { color: colors.textMuted, marginTop: spacing.xs }]}>
-            Gönderen: {shortenMiddle(payment.from)}
-          </Text>
-          {payment.txHash && (
-            <Text
-              style={[type.captionMedium, { color: colors.accent, marginTop: spacing.sm }]}
-              onPress={() => Linking.openURL(stellarExpertTxUrl(payment.txHash))}
-            >
-              {shortenMiddle(payment.txHash, 8, 8)} ↗
-            </Text>
-          )}
-
-          {payment.txHash && session?.apiKey && gibState.status !== 'loaded' && (
-            <Button
-              label="e-Belge Görüntüle"
-              variant="secondary"
-              onPress={handleShowGib}
-              loading={gibState.status === 'loading'}
-              style={{ marginTop: spacing.md, minWidth: 220 }}
-            />
-          )}
-          {gibState.status === 'error' && (
-            <Text style={[type.caption, { color: colors.danger, marginTop: spacing.sm, textAlign: 'center' }]}>
-              {gibState.error}
-            </Text>
-          )}
-          {gibState.status === 'loaded' && (
-            <View style={{ marginTop: spacing.md, width: '100%' }}>
-              <GibReceiptCard document={gibState.document} />
-            </View>
-          )}
-
-          <Button label="Yeni Ödeme Al" onPress={handleNewPayment} style={{ marginTop: spacing.xl, minWidth: 220 }} />
-        </View>
-      </Screen>
+      <PaymentReceivedView
+        payment={payment}
+        canShowGib={Boolean(payment.txHash && session?.apiKey)}
+        gibState={gibState}
+        onShowGib={handleShowGib}
+        onNewPayment={handleNewPayment}
+      />
     );
   }
 
+  return <WaitingView payload={payload} totalAmount={totalAmount} businessName={session?.businessName} />;
+}
+
+/** Ödeme bekleme görünümü — yalnızca sunum; polling/mantık üst bileşendedir. */
+export function WaitingView({ payload, totalAmount, businessName }) {
   return (
     <Screen>
+      <View style={styles.topBar}>
+        <BackButton />
+      </View>
       <View style={styles.centerFill}>
-        <Text style={[type.caption, { color: colors.textMuted }]}>TUTAR</Text>
-        <Text style={styles.amount}>{formatDtl(totalAmount)}</Text>
+        {businessName ? (
+          <View style={styles.merchantChip}>
+            <MerchantAvatar name={businessName} size={24} />
+            <Text style={[type.captionMedium, { color: colors.textSecondary }]} numberOfLines={1}>
+              {businessName}
+            </Text>
+          </View>
+        ) : null}
+
+        <Text style={[type.micro, { color: colors.textMuted, marginTop: spacing.md }]}>TAHSİL EDİLECEK TUTAR</Text>
+        <Amount stroops={totalAmount} size={40} style={{ marginTop: 2 }} />
 
         <View style={styles.qrCard}>
-          <QRCode value={payload} size={240} backgroundColor={colors.white} color={colors.textPrimary} />
+          <View style={[styles.qrCorner, styles.qrTL]} />
+          <View style={[styles.qrCorner, styles.qrTR]} />
+          <View style={[styles.qrCorner, styles.qrBL]} />
+          <View style={[styles.qrCorner, styles.qrBR]} />
+          <QRCode value={payload} size={232} backgroundColor={colors.white} color={colors.textPrimary} />
         </View>
 
         <View style={styles.waitingRow}>
-          <View style={styles.pulseDot} />
-          <Text style={[type.captionMedium, { color: colors.textSecondary }]}>Ödeme bekleniyor…</Text>
+          <PulseDot />
+          <Text style={[type.bodyMedium, { color: colors.textSecondary }]}>Ödeme bekleniyor…</Text>
         </View>
+        <Text style={[type.caption, { color: colors.textMuted, marginTop: 2, textAlign: 'center' }]}>
+          Müşteri bu kodu KALEM uygulamasıyla okutmalı
+        </Text>
       </View>
     </Screen>
   );
 }
 
+/** Ödeme alındı görünümü — yalnızca sunum. */
+export function PaymentReceivedView({ payment, canShowGib, gibState, onShowGib, onNewPayment }) {
+  return (
+    <Screen>
+      <ScrollView contentContainerStyle={styles.receivedScroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.receivedCard}>
+          <StatusBadge tone="success" />
+          <Text style={[type.h1, { color: colors.textPrimary, marginTop: spacing.md }]}>Ödeme Alındı</Text>
+          <Amount stroops={payment.amount} size={38} align="center" style={{ marginTop: spacing.xs }} />
+
+          <View style={styles.detailCard}>
+            <View style={styles.detailRow}>
+              <Text style={[type.caption, { color: colors.textMuted }]}>Gönderen</Text>
+              <Text style={[type.mono, { color: colors.textSecondary }]}>{shortenMiddle(payment.from)}</Text>
+            </View>
+            {payment.txHash ? (
+              <>
+                <View style={styles.hairline} />
+                <Pressable
+                  onPress={() => Linking.openURL(stellarExpertTxUrl(payment.txHash))}
+                  style={styles.detailRow}
+                  accessibilityRole="link"
+                >
+                  <Text style={[type.caption, { color: colors.textMuted }]}>İşlem no</Text>
+                  <View style={styles.linkInline}>
+                    <Text style={[type.mono, { color: colors.accent }]}>{shortenMiddle(payment.txHash, 8, 8)}</Text>
+                    <Icon name="external" size={13} color={colors.accent} />
+                  </View>
+                </Pressable>
+              </>
+            ) : null}
+          </View>
+
+          {canShowGib && gibState.status !== 'loaded' && (
+            <Button
+              label="e-Belge Görüntüle"
+              variant="secondary"
+              icon="receipt"
+              onPress={onShowGib}
+              loading={gibState.status === 'loading'}
+              style={{ marginTop: spacing.md, alignSelf: 'stretch' }}
+            />
+          )}
+          {gibState.status === 'error' && (
+            <InlineNotice
+              tone="warning"
+              style={{ marginTop: spacing.md, alignSelf: 'stretch' }}
+              actionLabel="Tekrar dene"
+              onAction={onShowGib}
+            >
+              {gibState.error}
+            </InlineNotice>
+          )}
+          {gibState.status === 'loaded' && (
+            <View style={{ marginTop: spacing.md, width: '100%', alignItems: 'center' }}>
+              <GibReceiptCard document={gibState.document} />
+            </View>
+          )}
+
+          <Button label="Yeni Ödeme Al" icon="qr" onPress={onNewPayment} style={{ marginTop: spacing.lg, alignSelf: 'stretch' }} />
+        </View>
+      </ScrollView>
+    </Screen>
+  );
+}
+
+const QR_CORNER = 22;
+
 const styles = StyleSheet.create({
+  topBar: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   centerFill: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
-  amount: { fontFamily: 'Inter_800ExtraBold', fontSize: 36, color: colors.accent, marginTop: 4 },
+  merchantChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: 4,
+    paddingLeft: 4,
+    paddingRight: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.border,
+    maxWidth: '90%',
+  },
   qrCard: {
     marginTop: spacing.lg,
     padding: spacing.lg,
@@ -158,14 +232,29 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...cardShadow,
   },
-  waitingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.lg },
-  pulseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent },
-  successBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: 999,
-    backgroundColor: colors.successBg,
-    alignItems: 'center',
-    justifyContent: 'center',
+  qrCorner: { position: 'absolute', width: QR_CORNER, height: QR_CORNER, borderColor: colors.accent },
+  qrTL: { top: 8, left: 8, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 8 },
+  qrTR: { top: 8, right: 8, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 8 },
+  qrBL: { bottom: 8, left: 8, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 8 },
+  qrBR: { bottom: 8, right: 8, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 8 },
+  waitingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.md },
+  receivedScroll: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  receivedCard: { width: '100%', maxWidth: 360, alignItems: 'center' },
+  detailCard: {
+    alignSelf: 'stretch',
+    marginTop: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  hairline: { height: 1, backgroundColor: colors.border },
+  linkInline: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 });
