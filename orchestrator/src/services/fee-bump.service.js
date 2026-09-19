@@ -280,11 +280,16 @@ export function extractHorizonResultCodes(error) {
  *   Canlı işlem akışı (`/flow`) için gözlem kancası. `fee_bump`: dış zarf Havuz 2
  *   ile imzalandı; `sending`: Horizon'a gönderilmek üzere. Kancadaki bir hata
  *   ödeme yolunu ASLA etkilemez.
+ * @param {() => Promise<void>} [opts.beforeSend] - Horizon'a göndermeden HEMEN önce
+ *   beklenen kapı. Çağıranın, ön-simülasyonla paralel başlattığı bir işi (ör. işlem
+ *   kaydının yazılması) burada bekletmesini sağlar: reddederse ağa HİÇ gidilmez —
+ *   kaydı olmayan bir işlemin zincire yazılması engellenir. Kancanın hatası
+ *   (onProgress'in aksine) ödeme yolunu KESER.
  * @returns {Promise<object>} Horizon API'sinden dönen işlem sonucu.
  *
  * @throws {Error} İç zarf geçersizse veya Horizon iletimi başarısızsa.
  */
-export async function wrapAndSubmitFeeBump(signedInnerXdr, { onProgress } = {}) {
+export async function wrapAndSubmitFeeBump(signedInnerXdr, { onProgress, beforeSend } = {}) {
   const progress = (stage, data) => {
     try {
       onProgress?.(stage, data);
@@ -349,7 +354,8 @@ export async function wrapAndSubmitFeeBump(signedInnerXdr, { onProgress } = {}) 
       preSimulation: 'SUCCESS',
     });
 
-    // 8. Ağa ilet
+    // 8. Ağa ilet — önce çağıranın paralel yürüttüğü işin (varsa) bittiğinden emin ol
+    await beforeSend?.();
     progress('sending', { sentAt: new Date() });
     const response = await submitTransaction(feeBumpTx);
 

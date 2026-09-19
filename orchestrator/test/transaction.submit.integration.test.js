@@ -224,8 +224,12 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
 
     assert.equal(response.status, 201);
     assert.equal(body.status, 'submitted');
+    // Client'ın Horizon'u ayrıca yoklamaması için hash + ledger yanıtta döner.
+    assert.match(body.txHash, /^integration-hash-/);
+    assert.equal(body.ledger, 999);
 
     const txDoc = await Transaction.findOne({ idempotencyKey });
+    assert.equal(body.txHash, txDoc.txHash, 'yanıttaki hash, kaydedilen hash ile aynı olmalı');
     assert.ok(txDoc, 'Transaction koleksiyonuna gerçekten yazılmalı (müşteri yolu)');
     assert.equal(txDoc.senderAddress, customerKp.publicKey());
 
@@ -459,6 +463,44 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
       const doc = await Transaction.findById(tx._id).lean();
       assert.equal(doc.flowEvents.length, 0, 'yetkisiz bildirim akışa yazılmamalı');
     });
+  });
+
+  it('işlem kaydı yazılamazsa (simülasyonla paralel başladığı halde) Horizon\'a HİÇ gidilmemeli ve idempotency failed olmalı', async () => {
+    const previousHorizon = stellarConfig.horizonServer;
+    const originalCreate = Transaction.create;
+    let horizonCalled = false;
+    stellarConfig.horizonServer = {
+      submitTransaction: async () => {
+        horizonCalled = true;
+        return { hash: 'x', ledger: 1 };
+      },
+    };
+    Transaction.create = async () => {
+      throw new Error('mongo yazma hatası (test)');
+    };
+
+    try {
+      const { merchant } = await createRealMerchant();
+      const idempotencyKey = randomUUID();
+
+      const response = await fetch(`${baseUrl}/api/v1/transactions/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({
+          signedXdr: buildSignedInnerXdr(StellarSdk.Keypair.random()),
+          merchantId: merchant._id.toString(),
+          totalAmount: '25000000',
+        }),
+      });
+      assert.equal(response.status, 502);
+      assert.equal(horizonCalled, false, 'kaydı olmayan işlem zincire gönderilmemeli');
+
+      const idemDoc = await IdempotencyKey.findOne({ key: idempotencyKey });
+      assert.equal(idemDoc.status, 'failed');
+    } finally {
+      Transaction.create = originalCreate;
+      stellarConfig.horizonServer = previousHorizon;
+    }
   });
 
   it('canlı işlem akışı: ön-simülasyon başarısızsa 3. adım (fee_bump) failed yazılmalı, Horizon\'a gidilmemeli', async () => {

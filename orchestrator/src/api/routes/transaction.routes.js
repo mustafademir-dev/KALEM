@@ -100,13 +100,18 @@ export async function submitTransactionHandler(req, res) {
   }
 
   let transaction;
+  let creation = null;
   // Fee-Bump servisinin hangi aşamaya kadar ilerlediği — hata hangi adımda
   // oluştuysa zaman çizelgesinde O adım kırmızıya döner.
   let feeBumpDone = false;
   let sentAt = null;
   let chainAccepted = false;
   try {
-    transaction = await Transaction.create({
+    // İşlem kaydı, Fee-Bump servisindeki ön-simülasyonla (ağ gecikmesi) PARALEL
+    // yazılır — ikisi birbirine bağlı değil.
+    // Horizon'a göndermeden önce (`beforeSend`) kaydın yazıldığı GARANTİ
+    // edilir: kaydı olmayan bir işlem asla zincire gitmez.
+    creation = Transaction.create({
       idempotencyKey,
       senderAddress,
       innerTxHash,
@@ -114,17 +119,26 @@ export async function submitTransactionHandler(req, res) {
       totalAmount,
       status: 'pending',
     });
+    creation.catch(() => {}); // hata aşağıda `await creation` ile ele alınır; işlenmemiş ret olmasın
 
-    // Akış olayları beklenmez (await yok): kayıt, ödemeyi yavaşlatmamalı.
-    // Sıra, flow-events servisindeki işlem başı zincirle korunur.
+    // Akış olayları beklenmez (await yok): kayıt, ödemeyi yavaşlatmamalı. Olaylar
+    // kaydın yazılmasından SONRA, kaydedildikleri sırayla işlenir (Promise
+    // reaksiyonları kayıt sırasıyla çalışır); işlem başı sıra ayrıca
+    // flow-events servisindeki zincirle korunur.
+    const record = (step, opts) => {
+      creation.then(
+        (created) => recordFlowEvent(created._id, step, opts),
+        () => {} // kayıt yazılamadıysa olay da yazılmaz; asıl hata catch bloğunda
+      );
+    };
     if (signatureCheck) {
-      recordFlowEvent(transaction._id, 'signed', {
+      record('signed', {
         status: signatureCheck.valid ? 'done' : 'failed',
         at: signatureCheck.at,
         data: { signer: senderAddress, innerTxHash, algorithm: 'Ed25519' },
       });
     }
-    recordFlowEvent(transaction._id, 'received', {
+    record('received', {
       at: req.idempotencyLockedAt ?? new Date(),
       data: {
         idempotencyKey,
@@ -137,10 +151,13 @@ export async function submitTransactionHandler(req, res) {
       onProgress: (stage, data) => {
         if (stage === 'fee_bump') {
           feeBumpDone = true;
-          recordFlowEvent(transaction._id, 'fee_bump', { data });
+          record('fee_bump', { data });
         } else if (stage === 'sending') {
           sentAt = data.sentAt;
         }
+      },
+      beforeSend: async () => {
+        transaction = await creation;
       },
     });
 
@@ -153,41 +170,59 @@ export async function submitTransactionHandler(req, res) {
 
     transaction.status = 'submitted';
     transaction.txHash = response.hash;
-    await transaction.save();
 
-    // 5. ve 6. adımlar: kontrat olayları RPC'den okunur — cevabı bekletmeden arka planda.
-    recordChainOutcome(transaction._id, response.hash);
-
-    // 7. adım (Onaylandı) + GİB: Horizon'un `submitTransaction()` cevabı
-    // ZATEN SENKRON — işlem ledger'a yazılana kadar bekler, hash+ledger'ı
-    // burada döner (bkz. docs §9.9). SSE'yi (Render'da güvenilmez, hiç
-    // mesaj almayabiliyor) ya da mutabakat turunu (30 sn'ye kadar
-    // gecikebilir) beklemeye GEREK YOK — onayı burada, hemen, doğrudan
-    // işleriz. `handleTransaction` üç yoldan (bu çağrı / SSE / mutabakat)
-    // hangisi önce varırsa onu atomik olarak kabul eder (bkz. o fonksiyondaki
-    // `findOneAndUpdate`); geri kalanlar güvenle hiçbir şey yapmaz — çift
-    // GİB belgesi üretilmez. txHash az önce kaydedildiği için (yukarıda)
-    // buradaki arama güvenle eşleşir.
-    handleTransaction(
-      { hash: response.hash, ledger: response.ledger ?? null },
-      { source: 'submit_response' }
-    ).catch((err) => {
-      logger.error(`[Transaction] Doğrudan onay tetikleme hatası: ${err.message}`);
-    });
-
+    // Horizon'un senkron cevabı = işlem ledger'da (§9.9). Client'ın zincir onayı
+    // için ayrıca Horizon'u yoklamasına gerek kalmasın diye hash ve ledger
+    // yanıtta döner (idempotency replay'i de aynı sonucu taşır).
     const result = {
       transactionId: transaction._id.toString(),
       status: 'submitted',
+      txHash: response.hash,
+      ledger: response.ledger ?? null,
       message: 'İşlem Fee-Bump ile sarmalanarak Stellar ağına iletildi.',
     };
 
-    await finalizeIdempotencyKey(idempotencyKey, 'completed', result);
+    // `save` ile idempotency kaydının kapatılması BAĞIMSIZ — paralel yazılır
+    // (kritik yoldan bir sıralı Mongo yazması çıkar). Yanıt ikisi de bitince
+    // gider; böylece 'completed' anlamı değişmez (hızlı bir yeniden deneme
+    // 409 değil, replay alır).
+    const persisted = transaction.save().then(() => {
+      // 5. ve 6. adımlar: kontrat olayları RPC'den okunur — cevabı bekletmeden arka planda.
+      recordChainOutcome(transaction._id, response.hash);
+
+      // 7. adım (Onaylandı) + GİB: Horizon'un `submitTransaction()` cevabı
+      // ZATEN SENKRON — işlem ledger'a yazılana kadar bekler, hash+ledger'ı
+      // burada döner (bkz. docs §9.9). SSE'yi (Render'da güvenilmez, hiç
+      // mesaj almayabiliyor) ya da mutabakat turunu (30 sn'ye kadar
+      // gecikebilir) beklemeye GEREK YOK — onayı burada, hemen, doğrudan
+      // işleriz. `handleTransaction` üç yoldan (bu çağrı / SSE / mutabakat)
+      // hangisi önce varırsa onu atomik olarak kabul eder (bkz. o fonksiyondaki
+      // `findOneAndUpdate`); geri kalanlar güvenle hiçbir şey yapmaz — çift
+      // GİB belgesi üretilmez. Arama `txHash` ile yapıldığı için, kayıt
+      // yazıldıktan SONRA (bu `then`) tetiklenmesi şarttır.
+      handleTransaction(
+        { hash: response.hash, ledger: response.ledger ?? null },
+        { source: 'submit_response' }
+      ).catch((err) => {
+        logger.error(`[Transaction] Doğrudan onay tetikleme hatası: ${err.message}`);
+      });
+    });
+    const outcomes = await Promise.allSettled([
+      persisted,
+      finalizeIdempotencyKey(idempotencyKey, 'completed', result),
+    ]);
+    // İkisi de bitmeden hata fırlatılmaz: catch bloğundaki 'failed' yazımı,
+    // uçuştaki 'completed' yazımını geçemesin.
+    const failed = outcomes.find((o) => o.status === 'rejected');
+    if (failed) throw failed.reason;
 
     logger.info(`[Transaction] Gönderildi (id: ${transaction._id}, hash: ${response.hash})`);
     res.status(201).json(result);
   } catch (error) {
     logger.error(`[Transaction] submitTransactionHandler hatası: ${error.message}`);
 
+    // Hata, kayıt yazılırken ya da ondan önce (ön-simülasyon) olmuş olabilir.
+    if (!transaction && creation) transaction = await creation.catch(() => null);
     if (transaction) {
       transaction.status = 'failed';
       transaction.errorMessage = error.message;

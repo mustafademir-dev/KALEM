@@ -110,7 +110,7 @@ export default function PaymentScreen() {
       innerTxHash = built.innerTxHash;
       setSteps((s) => ({ ...s, sign: 'done', submit: 'active' }));
 
-      await submitTransaction({
+      const submitted = await submitTransaction({
         signedXdr: built.signedXdr,
         idempotencyKey: built.idempotencyKey,
         merchantId: qrData.merchantId,
@@ -119,7 +119,12 @@ export default function PaymentScreen() {
       });
       setSteps((s) => ({ ...s, submit: 'done', confirm: 'active' }));
 
-      const confirmation = await awaitInnerTransactionConfirmation(wallet.stellarAddress, innerTxHash);
+      // Sunucu, Horizon'un senkron cevabını (işlem ledger'a yazıldıktan sonra
+      // döner) yanıtla birlikte iletir — bu durumda ayrıca Horizon'u yoklamaya
+      // gerek yok (0,2-2,7 sn kazanç). Eski biçimde (txHash yok) yoklama sürer.
+      const confirmation = submitted?.txHash
+        ? { status: 'success', txHash: submitted.txHash, ledger: submitted.ledger }
+        : await awaitInnerTransactionConfirmation(wallet.stellarAddress, innerTxHash);
 
       if (confirmation.status === 'success') {
         setSteps((s) => ({ ...s, confirm: 'done' }));
