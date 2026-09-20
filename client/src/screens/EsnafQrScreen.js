@@ -15,6 +15,8 @@ import { getGibDocument, acknowledgePaymentSeen, ApiError } from '../services/ap
 import { shortenMiddle, stellarExpertTxUrl } from '../utils/format.js';
 
 const POLL_INTERVAL_MS = 3000;
+/** Bu kadar ardışık başarısız turdan sonra esnafa "zinciri okuyamıyorum" uyarısı gösterilir. */
+const FAILURES_BEFORE_WARNING = 3;
 
 export default function EsnafQrScreen({ params }) {
   const { payload, totalAmount, stellarAddress, session } = params;
@@ -22,28 +24,32 @@ export default function EsnafQrScreen({ params }) {
 
   const [payment, setPayment] = useState(null); // { from, amount, txHash }
   const [gibState, setGibState] = useState({ status: 'idle', document: null, error: null });
+  const [networkWarning, setNetworkWarning] = useState(false);
   const sinceLedgerRef = useRef(null);
   const stoppedRef = useRef(false);
+  const failureCountRef = useRef(0);
 
   useEffect(() => {
     stoppedRef.current = false;
 
-    (async () => {
-      try {
-        sinceLedgerRef.current = (await getCurrentLedger()) - 1; // -1: aynı ledger'da gelen ödemeyi de kaçırma
-      } catch {
-        sinceLedgerRef.current = null;
-      }
-      poll();
-    })();
+    poll();
 
     async function poll() {
-      if (stoppedRef.current || sinceLedgerRef.current == null) return;
+      if (stoppedRef.current) return;
       try {
+        // Başlangıç ledger'ı yoksa (ilk tur ya da önceki denemede ağ hatası)
+        // HER TURDA yeniden denenir. Eskiden bu yalnızca bir kez denenir, hata
+        // alınca poll() kalıcı olarak dururdu: ağ bir anlığına koptuysa ekran
+        // ödeme gelse bile sonsuza kadar "Ödeme bekleniyor…" gösteriyordu.
+        if (sinceLedgerRef.current == null) {
+          sinceLedgerRef.current = (await getCurrentLedger()) - 1; // -1: aynı ledger'daki ödemeyi de kaçırma
+        }
         const found = await findNewPayment(stellarAddress, {
           sinceLedger: sinceLedgerRef.current,
           expectedTotal: totalAmount,
         });
+        failureCountRef.current = 0;
+        setNetworkWarning(false);
         if (found) {
           setPayment(found);
           // Canlı işlem akışı 9. adımı: "esnaf ekranında göründü" — ekran bunu
@@ -55,7 +61,11 @@ export default function EsnafQrScreen({ params }) {
           return; // bulununca polling'i durdur
         }
       } catch {
-        // Ağ hatası — sessizce bir sonraki turda tekrar dene.
+        // Ağ hatası — bir sonraki turda tekrar denenir. Üst üste birkaç tur
+        // başarısızsa esnafa sessiz kalmak yerine durumu söyle: ekran "ödeme
+        // bekleniyor" gösterirken aslında zinciri hiç okuyamıyor olabilir.
+        failureCountRef.current += 1;
+        if (failureCountRef.current >= FAILURES_BEFORE_WARNING) setNetworkWarning(true);
       }
       if (!stoppedRef.current) setTimeout(poll, POLL_INTERVAL_MS);
     }
@@ -96,11 +106,18 @@ export default function EsnafQrScreen({ params }) {
     );
   }
 
-  return <WaitingView payload={payload} totalAmount={totalAmount} businessName={session?.businessName} />;
+  return (
+    <WaitingView
+      payload={payload}
+      totalAmount={totalAmount}
+      businessName={session?.businessName}
+      networkWarning={networkWarning}
+    />
+  );
 }
 
 /** Ödeme bekleme görünümü — yalnızca sunum; polling/mantık üst bileşendedir. */
-export function WaitingView({ payload, totalAmount, businessName }) {
+export function WaitingView({ payload, totalAmount, businessName, networkWarning }) {
   return (
     <Screen>
       <View style={styles.topBar}>
@@ -134,6 +151,13 @@ export function WaitingView({ payload, totalAmount, businessName }) {
         <Text style={[type.caption, { color: colors.textMuted, marginTop: 2, textAlign: 'center' }]}>
           Müşteri bu kodu KALEM uygulamasıyla okutmalı
         </Text>
+
+        {networkWarning && (
+          <InlineNotice tone="warning" style={{ marginTop: spacing.md }}>
+            Zincir şu an okunamıyor; ödeme yapılsa bile bu ekranda görünmeyebilir. İnternet bağlantınızı kontrol edin —
+            bağlantı gelince kontrol kendiliğinden sürer.
+          </InlineNotice>
+        )}
       </View>
     </Screen>
   );
