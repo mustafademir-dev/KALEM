@@ -146,7 +146,32 @@ export function MerchantAvatar({ name, size = 44 }) {
   );
 }
 
+/** Liste/ekran boşken gösterilen durum: ikon, başlık, açıklama, (isteğe bağlı) eylem. */
+export function EmptyState({ icon = 'receipt', title, text, action }) {
+  return (
+    <View style={styles.empty}>
+      <View style={styles.emptyIcon}>
+        <Icon name={icon} size={28} color={colors.accentStrong} />
+      </View>
+      <Text style={[type.h2, { color: colors.textPrimary, marginTop: spacing.md, textAlign: 'center' }]}>{title}</Text>
+      {text ? (
+        <Text style={[type.body, { color: colors.textSecondary, marginTop: 4, textAlign: 'center' }]}>{text}</Text>
+      ) : null}
+      {action ? <View style={{ marginTop: spacing.md, alignSelf: 'stretch' }}>{action}</View> : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  empty: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.lg },
+  emptyIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accentMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   notice: {
     flexDirection: 'row',
     gap: spacing.xs,

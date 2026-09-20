@@ -4,7 +4,7 @@ import Screen from '../components/Screen.js';
 import BackButton from '../components/BackButton.js';
 import { colors, radii, spacing, type } from '../theme/index.js';
 import { getIncomingTransfers } from '../services/merchant-chain.service.js';
-import { formatDtl, shortenMiddle, stellarExpertTxUrl } from '../utils/format.js';
+import { formatTl, shortenMiddle, stellarExpertTxUrl } from '../utils/format.js';
 
 export default function EsnafHistoryScreen({ params }) {
   const { stellarAddress } = params;
@@ -53,7 +53,7 @@ export default function EsnafHistoryScreen({ params }) {
           {state.items.map((item, idx) => (
             <View key={`${item.ledger}-${idx}`} style={styles.row}>
               <View style={{ flex: 1 }}>
-                <Text style={[type.bodyMedium, { color: colors.textPrimary }]}>{formatDtl(item.amount)}</Text>
+                <Text style={[type.bodyMedium, { color: colors.textPrimary }]}>{formatTl(item.amount)}</Text>
                 <Text style={[type.caption, { color: colors.textMuted, marginTop: 2 }]}>
                   {shortenMiddle(item.from)} · Ledger {item.ledger}
                 </Text>

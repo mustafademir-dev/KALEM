@@ -192,3 +192,40 @@ export async function acknowledgePaymentSeen(txHash, { apiKey, detectedLedger } 
   }
   return false;
 }
+
+/**
+ * Esnaf ana ekranı için TEK çağrıda tüm veri: bakiye, bugünkü özet, son işlemler,
+ * Sosyal Fon (bkz. orchestrator `merchant-reports.routes.js`). Tüm tutarlar STROOP string'idir.
+ *
+ * @param {string} merchantId
+ * @param {string} apiKey
+ * @returns {Promise<object>}
+ */
+export async function getMerchantDashboard(merchantId, apiKey) {
+  return request(`/api/v1/merchants/${merchantId}/dashboard`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+}
+
+/**
+ * Esnafın onaylı işlemleri, yeniden eskiye, sayfalı (Faturalarım). `date` (YYYY-MM-DD,
+ * Türkiye saati) verilirse yalnızca o gün ve yanıta o günün TAMAMININ özeti (`summary`) eklenir.
+ *
+ * @param {string} merchantId
+ * @param {string} apiKey
+ * @param {object} [opts]
+ * @param {number} [opts.limit]
+ * @param {string} [opts.cursor] - Önceki yanıttaki `nextCursor`.
+ * @param {string} [opts.date]
+ * @returns {Promise<{items: Array, nextCursor: string|null, summary?: object}>}
+ */
+export async function getMerchantTransactions(merchantId, apiKey, { limit, cursor, date } = {}) {
+  const query = new URLSearchParams();
+  if (limit) query.set('limit', String(limit));
+  if (cursor) query.set('cursor', cursor);
+  if (date) query.set('date', date);
+  const qs = query.toString();
+  return request(`/api/v1/merchants/${merchantId}/transactions${qs ? `?${qs}` : ''}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+}

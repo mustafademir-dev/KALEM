@@ -23,6 +23,7 @@ import EsnafDashboardScreen from './screens/EsnafDashboardScreen.js';
 import EsnafAmountEntryScreen from './screens/EsnafAmountEntryScreen.js';
 import EsnafQrScreen from './screens/EsnafQrScreen.js';
 import EsnafHistoryScreen from './screens/EsnafHistoryScreen.js';
+import EsnafReceiptScreen from './screens/EsnafReceiptScreen.js';
 
 const SCREENS = {
   RoleSelect: RoleSelectScreen,
@@ -35,6 +36,7 @@ const SCREENS = {
   MerchantAmountEntry: EsnafAmountEntryScreen,
   MerchantQr: EsnafQrScreen,
   MerchantHistory: EsnafHistoryScreen,
+  MerchantReceipt: EsnafReceiptScreen,
 };
 
 function RootNavigator() {

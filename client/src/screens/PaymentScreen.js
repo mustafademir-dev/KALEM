@@ -16,6 +16,7 @@ import * as Clipboard from 'expo-clipboard';
 import Screen from '../components/Screen.js';
 import Button from '../components/Button.js';
 import Icon from '../components/Icon.js';
+import TestnetBadge from '../components/TestnetBadge.js';
 import Amount from '../components/Amount.js';
 import { InlineNotice, MerchantAvatar, Skeleton, StatusBadge } from '../components/StateViews.js';
 import StatusStep from '../components/StatusStep.js';
@@ -28,7 +29,7 @@ import { readDtlBalance, awaitInnerTransactionConfirmation } from '../services/s
 import { createPaymentTransaction } from '../services/transaction.service.js';
 import { submitTransaction, getGibDocument, ApiError } from '../services/api.service.js';
 import { parseQrPayload, getSampleQrPayload, QrPayloadError } from '../utils/qrPayload.js';
-import { formatDtl, shortenMiddle, stellarExpertTxUrl } from '../utils/format.js';
+import { formatTl, shortenMiddle, stellarExpertTxUrl } from '../utils/format.js';
 
 /** @typedef {'scan'|'confirm'|'processing'|'result'} StageId */
 
@@ -368,6 +369,7 @@ export function ConfirmStage({ qrData, balanceBefore, onConfirm, onCancel }) {
         <Text style={[type.body, { color: colors.textSecondary, marginTop: 4 }]}>
           Bilgileri kontrol edip onaylayın
         </Text>
+        <TestnetBadge note style={{ marginTop: spacing.xs }} />
       </View>
 
       <View style={[styles.card, insufficientFunds && styles.cardDanger]}>
@@ -394,7 +396,7 @@ export function ConfirmStage({ qrData, balanceBefore, onConfirm, onCancel }) {
                   {item.quantity > 1 ? `${item.quantity}× ` : ''}
                   {item.name}
                 </Text>
-                <Text style={[type.caption, { color: colors.textSecondary }]}>{formatDtl(item.price)}</Text>
+                <Text style={[type.caption, { color: colors.textSecondary }]}>{formatTl(item.price)}</Text>
               </View>
             ))}
           </View>
@@ -412,7 +414,7 @@ export function ConfirmStage({ qrData, balanceBefore, onConfirm, onCancel }) {
           ) : balanceBefore === null ? (
             <Text style={[type.captionMedium, { color: colors.textMuted }]}>Alınamadı</Text>
           ) : (
-            <Text style={[type.captionMedium, { color: colors.textSecondary }]}>{formatDtl(balanceBefore)}</Text>
+            <Text style={[type.captionMedium, { color: colors.textSecondary }]}>{formatTl(balanceBefore)}</Text>
           )}
         </View>
         <View style={styles.balanceRow}>
@@ -429,7 +431,7 @@ export function ConfirmStage({ qrData, balanceBefore, onConfirm, onCancel }) {
                 { color: insufficientFunds ? colors.danger : colors.textSecondary },
               ]}
             >
-              {formatDtl(balanceAfter)}
+              {formatTl(balanceAfter)}
             </Text>
           ) : (
             <Text style={[type.captionMedium, { color: colors.textMuted }]}>—</Text>

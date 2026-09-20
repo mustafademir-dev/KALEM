@@ -9,7 +9,7 @@ import { signData, bytesToBase64 } from '../services/wallet.service.js';
 import { accountExists, fundViaFriendbot, readDtlBalance } from '../services/stellar-read.service.js';
 import { requestFaucetMint, ApiError } from '../services/api.service.js';
 import { buildFaucetMintChallenge } from '../utils/faucetChallenge.js';
-import { formatDtl, shortenMiddle, stellarExpertTxUrl } from '../utils/format.js';
+import { formatTl, shortenMiddle, stellarExpertTxUrl } from '../utils/format.js';
 
 /**
  * "Bakiye Yükle" — demo/testnet akışı. İki adımı birleştirir:
@@ -75,7 +75,7 @@ export default function CustomerTopUpScreen({ params }) {
         <BackButton />
         <Text style={[type.h1, { color: colors.textPrimary, marginTop: spacing.sm }]}>Bakiye Yükle</Text>
         <Text style={[type.body, { color: colors.textSecondary, marginTop: 4 }]}>
-          Demo — testnet hesabınızı fonlar ve dTL yükler
+          Demo — testnet hesabınızı fonlar ve TL bakiyesi yükler
         </Text>
       </View>
 
@@ -83,7 +83,7 @@ export default function CustomerTopUpScreen({ params }) {
         {stage === 'idle' && (
           <View style={styles.card}>
             <Text style={[type.body, { color: colors.textSecondary, textAlign: 'center' }]}>
-              Testnet hesabınız gerekirse fonlanacak, ardından hesabınıza sabit bir demo dTL tutarı
+              Testnet hesabınız gerekirse fonlanacak, ardından hesabınıza sabit bir demo TL tutarı
               yüklenecektir.
             </Text>
             <Button label="Bakiye Yükle" onPress={handleTopUp} style={{ marginTop: spacing.lg }} />
@@ -93,7 +93,7 @@ export default function CustomerTopUpScreen({ params }) {
         {(stage === 'running' || stage === 'error') && (
           <View style={styles.card}>
             <StatusStep label="Testnet hesabı fonlanıyor (gerekirse)" state={steps.fund} />
-            <StatusStep label="Demo dTL yükleniyor" state={steps.mint} />
+            <StatusStep label="Demo TL bakiyesi yükleniyor" state={steps.mint} />
             {stage === 'error' && (
               <>
                 <Text style={[type.captionMedium, { color: colors.danger, marginTop: spacing.md }]}>
@@ -113,10 +113,10 @@ export default function CustomerTopUpScreen({ params }) {
             <Text style={[type.h2, { color: colors.textPrimary, marginTop: spacing.md, textAlign: 'center' }]}>
               Bakiye Yüklendi
             </Text>
-            <Text style={styles.amount}>{formatDtl(result.amount)}</Text>
+            <Text style={styles.amount}>{formatTl(result.amount)}</Text>
             {result.newBalance != null && (
               <Text style={[type.caption, { color: colors.textMuted, marginTop: 4 }]}>
-                Güncel bakiye: {formatDtl(result.newBalance)}
+                Güncel bakiye: {formatTl(result.newBalance)}
               </Text>
             )}
             <Text

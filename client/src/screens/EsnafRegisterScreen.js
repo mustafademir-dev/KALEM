@@ -108,7 +108,7 @@ export default function EsnafRegisterScreen() {
           </View>
 
           <Text style={[type.caption, { color: colors.textMuted, marginTop: spacing.md }]}>
-            On-chain onay (esnafın gerçek dTL alabilmesi için) arka planda, ayrı bir admin adımıyla
+            On-chain onay (esnafın ödeme alabilmesi için) arka planda, ayrı bir admin adımıyla
             yapılır — birkaç dakika sürebilir. Onaylanana kadar panelde "Beklemede" rozeti görünür.
           </Text>
 

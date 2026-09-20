@@ -25,9 +25,49 @@ export function dtlToStroops(dtlAmount) {
   return stroops.toString();
 }
 
-/** Stroop → "1.2500000 dTL" gösterim string'i. */
-export function formatDtl(stroops) {
-  return `${stroopsToDtl(stroops)} dTL`;
+/** "1234567" → "1.234.567" (Türkçe binlik ayracı). */
+function groupThousands(digits) {
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+/**
+ * Stroop → kullanıcıya gösterilecek TL parçaları (ürün kararı: 1 dTL = 1 TL).
+ *
+ * - Tam sayılar ondalıksız: 1 → "1"
+ * - Kesirliler en az 2 haneli: 1,5 → "1,50"
+ * - 2 haneden fazla ANLAMLI basamak varsa korunur (en fazla 7): 0,005 → "0,005".
+ *   Ödeme 7 hane hassasiyetinde işlendiği için gösterimde sessizce yuvarlamak yanıltırdı.
+ * - Binlik ayracı nokta, ondalık ayracı virgül: "1.250,75"
+ *
+ * @param {string|bigint|number} stroops
+ * @returns {{negative: boolean, whole: string, fraction: string|null}}
+ */
+export function tlParts(stroops) {
+  const n = typeof stroops === 'bigint' ? stroops : BigInt(stroops ?? 0);
+  const negative = n < 0n;
+  const abs = negative ? -n : n;
+  const whole = groupThousands((abs / STROOPS_PER_DTL).toString());
+  let fraction = (abs % STROOPS_PER_DTL).toString().padStart(7, '0').replace(/0+$/, '');
+  if (fraction.length === 0) fraction = null;
+  else if (fraction.length < 2) fraction = fraction.padEnd(2, '0');
+  return { negative, whole, fraction };
+}
+
+/**
+ * Stroop → "5.00" (kuruşa yuvarlanmış, nokta ayraçlı) — sunucudaki GİB belgesinin
+ * `totalAmountTL` biçimiyle aynıdır; bir fişin tutarının işlem tutarıyla tutup
+ * tutmadığını karşılaştırmak için kullanılır.
+ */
+export function stroopsToFixed2(stroops) {
+  const n = typeof stroops === 'bigint' ? stroops : BigInt(stroops ?? 0);
+  const kurus = (n + 50000n) / 100000n;
+  return `${kurus / 100n}.${(kurus % 100n).toString().padStart(2, '0')}`;
+}
+
+/** Stroop → "1.250,75 TL" gösterim string'i (bkz. `tlParts`). */
+export function formatTl(stroops) {
+  const { negative, whole, fraction } = tlParts(stroops);
+  return `${negative ? '-' : ''}${whole}${fraction ? `,${fraction}` : ''} TL`;
 }
 
 /** "GDE47H...V67L3R3B" gibi kısaltılmış adres/hash gösterimi. */

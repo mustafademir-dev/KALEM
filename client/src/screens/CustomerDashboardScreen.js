@@ -6,7 +6,9 @@ import { colors, radii, spacing, type, cardShadow } from '../theme/index.js';
 import { useNavigation } from '../navigation/Navigator.js';
 import { createWallet, loadWallet } from '../services/wallet.service.js';
 import { readDtlBalance } from '../services/stellar-read.service.js';
-import { formatDtl, shortenMiddle } from '../utils/format.js';
+import Amount from '../components/Amount.js';
+import TestnetBadge from '../components/TestnetBadge.js';
+import { shortenMiddle } from '../utils/format.js';
 
 export default function CustomerDashboardScreen() {
   const { navigate } = useNavigation();
@@ -59,14 +61,16 @@ export default function CustomerDashboardScreen() {
       <View style={styles.header}>
         <Text style={[type.caption, { color: colors.textMuted }]}>{shortenMiddle(wallet.stellarAddress, 6, 6)}</Text>
         <Text style={[type.h1, { color: colors.textPrimary }]}>Cüzdanım</Text>
+        <TestnetBadge style={{ marginTop: spacing.xs }} />
       </View>
 
       <View style={styles.balanceCard}>
         <Text style={[type.caption, { color: colors.textMuted }]}>BAKİYE (ZİNCİRDEN)</Text>
-        <Text style={styles.balanceAmount}>
-          {balance === undefined ? '···' : balance === null ? 'Alınamadı' : formatDtl(balance).replace(' dTL', '')}
-          <Text style={styles.balanceUnit}> dTL</Text>
-        </Text>
+        {balance === undefined || balance === null ? (
+          <Text style={styles.balanceAmount}>{balance === null ? 'Alınamadı' : '···'}</Text>
+        ) : (
+          <Amount stroops={balance} size={34} style={{ marginTop: 4 }} />
+        )}
         <Pressable onPress={handleRefresh} disabled={refreshing}>
           <Text style={[type.captionMedium, { color: colors.accent, marginTop: spacing.xs }]}>
             {refreshing ? 'Yenileniyor…' : 'Bakiyeyi Yenile'}
