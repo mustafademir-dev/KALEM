@@ -50,7 +50,8 @@ export default function PaymentScreen() {
   const [balanceBefore, setBalanceBefore] = useState(undefined); // undefined = yükleniyor, null = alınamadı
 
   const [steps, setSteps] = useState({ sign: 'pending', submit: 'pending', confirm: 'pending' });
-  const [result, setResult] = useState(null); // { ok, txHash, message }
+  const [result, setResult] = useState(null); // { ok, txHash, message, innerTxHash? }
+  const [rechecking, setRechecking] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -153,7 +154,12 @@ export default function PaymentScreen() {
         setResult({
           ok: true,
           txHash: null,
-          message: 'İşlem ağa iletildi; zincir onayı beklenenden uzun sürüyor. Kısa süre sonra işlem geçmişinde görünecektir.',
+          // innerTxHash saklanır: kullanıcı "Durumu Kontrol Et" derse onay bu
+          // hash ile yeniden aranır. Onaylanırsa fiş de o anda arşive yazılır —
+          // aksi halde zaman aşımına uğrayan bir ödeme, sonradan zincirde
+          // onaylansa bile Fişlerim'e hiç girmezdi.
+          innerTxHash,
+          message: 'İşlem ağa iletildi ama zincir onayı henüz görünmüyor. Aşağıdan durumu yeniden kontrol edebilirsiniz.',
         });
       } else {
         setSteps((s) => ({ ...s, confirm: 'error' }));
@@ -170,6 +176,42 @@ export default function PaymentScreen() {
       setStage('result');
     }
   }, [wallet, qrData]);
+
+  /**
+   * Zaman aşımına uğramış bir ödemenin onayını yeniden arar. Onay bulunursa
+   * ekran "tamamlandı"ya geçer VE fiş arşive yazılır; hâlâ yoksa kullanıcı
+   * belirsizlikte bırakılmaz, durum açıkça söylenir.
+   */
+  const handleRecheck = useCallback(async () => {
+    if (!result?.innerTxHash || !wallet || !qrData) return;
+    setRechecking(true);
+    try {
+      const confirmation = await awaitInnerTransactionConfirmation(wallet.stellarAddress, result.innerTxHash, {
+        timeoutMs: 15000,
+      });
+      if (confirmation.status === 'success') {
+        setResult({ ok: true, txHash: confirmation.txHash });
+        await recordReceipt({
+          stellarAddress: wallet.stellarAddress,
+          txHash: confirmation.txHash,
+          totalAmount: qrData.totalAmount,
+          businessName: qrData.businessName,
+        });
+      } else if (confirmation.status === 'failed') {
+        setResult({ ok: false, message: 'İşlem zincirde başarısız oldu.' });
+      } else {
+        setResult((r) => ({
+          ...r,
+          message:
+            'Zincir onayı hâlâ görünmüyor. Ödeme ağa iletildi; birkaç dakika sonra tekrar deneyin ya da esnafla teyit edin.',
+        }));
+      }
+    } catch {
+      setResult((r) => ({ ...r, message: 'Durum kontrol edilemedi — internet bağlantınızı kontrol edin.' }));
+    } finally {
+      setRechecking(false);
+    }
+  }, [result, wallet, qrData]);
 
   const handleReset = useCallback(() => {
     scanLockRef.current = false;
@@ -220,6 +262,8 @@ export default function PaymentScreen() {
           qrData={qrData}
           onDone={handleReset}
           onHome={goBack}
+          onRecheck={handleRecheck}
+          rechecking={rechecking}
           senderAddress={wallet.stellarAddress}
         />
       )}
@@ -525,7 +569,7 @@ export function ProcessingStage({ steps, qrData }) {
   );
 }
 
-export function ResultStage({ result, qrData, onDone, onHome, senderAddress }) {
+export function ResultStage({ result, qrData, onDone, onHome, onRecheck, rechecking, senderAddress }) {
   const isSuccess = result?.ok;
   // Onay beklenirken süre aşımı: ödeme ağa iletildi ama zincir onayı görülemedi —
   // yeşil "tamamlandı" yerine dürüst bir "iletildi" durumu gösterilir.
@@ -572,6 +616,17 @@ export function ResultStage({ result, qrData, onDone, onHome, senderAddress }) {
           <Text style={[type.body, { color: colors.textSecondary, marginTop: 2, textAlign: 'center' }]}>
             {qrData.businessName}
           </Text>
+        )}
+
+        {isPending && (
+          <Button
+            label={rechecking ? 'Kontrol ediliyor…' : 'Durumu Kontrol Et'}
+            icon="refresh"
+            variant="secondary"
+            loading={rechecking}
+            onPress={onRecheck}
+            style={{ marginTop: spacing.md, alignSelf: 'stretch' }}
+          />
         )}
 
         {result?.message && (
