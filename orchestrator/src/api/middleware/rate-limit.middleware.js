@@ -227,6 +227,27 @@ export const gibReadRateLimiter = createLimiter({
 });
 
 /**
+ * `GET /merchants/:id/dashboard` ve `/transactions` — IP bazlı.
+ * Bearer'lı okuma uçları; Mongo sorgusu yaptıkları için (Atlas ayrı bölgede) toplu
+ * çağrıya karşı bir tavan konur. Ana ekran birkaç çağrıyla açıldığı için 60/dk rahattır.
+ */
+export const merchantReadRateLimiter = createLimiter({
+  name: 'merchant:read',
+  limits: config.rateLimit.merchantRead,
+  keyGenerator: ipKey,
+});
+
+/**
+ * `GET /merchants/:id/reports/daily` — IP bazlı. Bir günün tüm belgelerini derler;
+ * en ağır okuma ucudur, bu yüzden dakikada 10.
+ */
+export const merchantReportRateLimiter = createLimiter({
+  name: 'merchant:report',
+  limits: config.rateLimit.merchantReport,
+  keyGenerator: ipKey,
+});
+
+/**
  * `GET /flow/latest` ve `GET /flow/stream` — IP bazlı.
  * Token'lı okuma uçlarıdır; limit, token sızsa bile toplu sorgu/bağlantı
  * açma hızını sınırlar. EventSource koptuğunda birkaç saniyede bir yeniden

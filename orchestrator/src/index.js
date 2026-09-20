@@ -17,6 +17,7 @@ import logger from './utils/logger.js';
 // --- Route'lar ---
 import transactionRoutes from './api/routes/transaction.routes.js';
 import merchantRoutes from './api/routes/merchant.routes.js';
+import merchantReportRoutes from './api/routes/merchant-reports.routes.js';
 import healthRoutes from './api/routes/health.routes.js';
 import faucetRoutes from './api/routes/faucet.routes.js';
 import gibRoutes from './api/routes/gib.routes.js';
@@ -80,6 +81,7 @@ app.use('/api/v1/health', healthRoutes);
 app.use('/api/v1/transactions', transactionRoutes);
 app.use('/api/v1/transactions', gibRoutes); // /:txHash/gib-document — ayrı dosya, aynı URL alanı
 app.use('/api/v1/merchants', merchantRoutes);
+app.use('/api/v1/merchants', merchantReportRoutes); // /:id/dashboard, /transactions, /reports/daily — okuma uçları
 app.use('/api/v1/faucet', faucetRoutes);
 app.use('/api/v1/flow', flowRoutes);
 

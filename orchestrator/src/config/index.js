@@ -167,6 +167,16 @@ const config = {
       windowMs: parseInt(requireEnv('RATE_LIMIT_GIB_READ_WINDOW_MS', '60000'), 10), // 1 dk
       max: parseInt(requireEnv('RATE_LIMIT_GIB_READ_MAX', '60'), 10),
     },
+    // GET /merchants/:id/dashboard ve /transactions — esnaf okuma uçları (Bearer'lı).
+    merchantRead: {
+      windowMs: parseInt(requireEnv('RATE_LIMIT_MERCHANT_READ_WINDOW_MS', '60000'), 10), // 1 dk
+      max: parseInt(requireEnv('RATE_LIMIT_MERCHANT_READ_MAX', '60'), 10),
+    },
+    // GET /merchants/:id/reports/daily — gün sonu CSV (ağır sorgu, daha sıkı).
+    merchantReport: {
+      windowMs: parseInt(requireEnv('RATE_LIMIT_MERCHANT_REPORT_WINDOW_MS', '60000'), 10), // 1 dk
+      max: parseInt(requireEnv('RATE_LIMIT_MERCHANT_REPORT_MAX', '10'), 10),
+    },
     // GET /flow/latest ve /flow/stream — panel okuma uçları (token'lı).
     flowRead: {
       windowMs: parseInt(requireEnv('RATE_LIMIT_FLOW_READ_WINDOW_MS', '60000'), 10), // 1 dk

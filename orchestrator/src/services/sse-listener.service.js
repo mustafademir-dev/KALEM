@@ -12,7 +12,9 @@
  * 4. İstemciye anlık bildirim gönderir (notifyClient)
  */
 
+import mongoose from 'mongoose';
 import logger from '../utils/logger.js';
+import Merchant from '../models/Merchant.model.js';
 import stellarConfig from '../config/stellar.js';
 import config from '../config/index.js';
 import Transaction from '../models/Transaction.model.js';
@@ -113,12 +115,28 @@ export async function handleTransaction(record, { source = 'sse' } = {}) {
 
     // GİB Belge Taslağını Tetikle (5.5.3)
     try {
+      // Belgeye GERÇEK esnaf kimliği yazılır (VKN + ad). Bulunamazsa/DB yoksa
+      // belge yine de üretilir (varsayılan simülasyon değerleriyle) — bu arama
+      // GİB üretimini asla engellemez.
+      let merchantTaxId = 'VKN-SIMULATED';
+      let merchantName;
+      if (mongoose.connection.readyState === 1) {
+        try {
+          const merchant = await Merchant.findById(transaction.merchantId).select('taxId businessName').lean();
+          if (merchant?.taxId) merchantTaxId = merchant.taxId;
+          if (merchant?.businessName) merchantName = merchant.businessName;
+        } catch (lookupErr) {
+          logger.warn(`[SSE] GİB için esnaf bilgisi okunamadı, varsayılan kullanılacak: ${lookupErr.message}`);
+        }
+      }
+
       const gibDoc = await generateGibDocument({
         txHash: transaction.txHash,
         transactionId: transaction._id,
-        merchantTaxId: transaction.merchantId?.toString() || 'VKN-SIMULATED',
-        totalAmountTL: transaction.totalAmount,
-        cartItems: [], // Sepet detayları transaction ile gelir
+        merchantTaxId,
+        merchantName,
+        totalAmountStroops: transaction.totalAmount, // stroop — TL'ye servis içinde çevrilir
+        cartItems: transaction.cartItems ?? [],
       });
 
       if (gibDoc) {

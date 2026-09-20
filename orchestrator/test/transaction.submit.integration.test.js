@@ -41,6 +41,7 @@ import stellarConfig from '../src/config/stellar.js';
 import Merchant from '../src/models/Merchant.model.js';
 import Transaction from '../src/models/Transaction.model.js';
 import IdempotencyKey from '../src/models/IdempotencyKey.model.js';
+import GibDocument from '../src/models/GibDocument.model.js';
 import { hashApiKey } from '../src/utils/crypto.js';
 import transactionRoutes from '../src/api/routes/transaction.routes.js';
 import { flushFlowEvents } from '../src/services/flow-events.service.js';
@@ -409,6 +410,84 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
       config.contracts.dtlTokenId = originalContracts.dtlTokenId;
       stellarConfig.sorobanServer = previousSoroban;
     }
+  });
+
+  /** Ödemeyi gönderir, GİB belgesi üretilene kadar bekler; işlem ve belgeyi döner. */
+  async function submitAndAwaitGib({ merchant, totalAmount, cartItems }) {
+    const idempotencyKey = randomUUID();
+    const response = await fetch(`${baseUrl}/api/v1/transactions/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify({
+        signedXdr: buildSignedInnerXdr(StellarSdk.Keypair.random()),
+        merchantId: merchant._id.toString(),
+        totalAmount,
+        cartItems,
+      }),
+    });
+    let txDoc;
+    for (let i = 0; i < 100; i += 1) {
+      await flushFlowEvents();
+      txDoc = await Transaction.findOne({ idempotencyKey }).lean();
+      if (txDoc?.gibDocumentId) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    const gibDoc = txDoc?.gibDocumentId ? await GibDocument.findById(txDoc.gibDocumentId).lean() : null;
+    return { response, txDoc, gibDoc };
+  }
+
+  it('GİB düzeltmeleri A+B+C uçtan uca: gerçek VKN/ad, doğru TL tutar, sepet satırları — yeni belge doğru üretilir', async () => {
+    const { merchant } = await createRealMerchant();
+    const { response, txDoc, gibDoc } = await submitAndAwaitGib({
+      merchant,
+      totalAmount: '10000000', // 1 TL
+      cartItems: [
+        { name: 'A4 Kağıdı', quantity: 1, price: '7500000', vatRate: 20 },
+        { name: 'Jel Kalem', quantity: 1, price: '2500000', vatRate: 20 },
+      ],
+    });
+
+    assert.equal(response.status, 201);
+    assert.deepEqual(
+      txDoc.cartItems,
+      [
+        { name: 'A4 Kağıdı', quantity: 1, price: '7500000' },
+        { name: 'Jel Kalem', quantity: 1, price: '2500000' },
+      ],
+      'sepet temizlenmiş halde saklanmalı (vatRate gibi bilinmeyen alanlar atılır)'
+    );
+
+    assert.ok(gibDoc, 'GİB belgesi üretilmiş olmalı');
+    const inv = gibDoc.ublContent.Invoice;
+    // B: gerçek esnaf kimliği (eskiden Mongo ObjectId / sabit ad yazılıyordu)
+    assert.equal(gibDoc.merchantTaxId, merchant.taxId);
+    assert.notEqual(gibDoc.merchantTaxId, merchant._id.toString());
+    assert.equal(inv.AccountingSupplierParty.Party.PartyName.Name, 'Entegrasyon Test Esnafı');
+    // A: 1 TL = 10.000.000 stroop → fişte 1,00 TL (eskiden 10.000.000 TL)
+    assert.equal(inv.LegalMonetaryTotal.PayableAmount, '1.00');
+    assert.equal(gibDoc.totalAmountTL, '1.00');
+    // C: sepet satırları fişte
+    assert.deepEqual(inv.InvoiceLine.map((l) => l.Item.Name), ['A4 Kağıdı', 'Jel Kalem']);
+  });
+
+  it('çöp/uyuşmayan cartItems ÖDEMEYİ BOZMAZ: 201 döner, işlem onaylanır, fiş tek satırla üretilir', async () => {
+    const { merchant } = await createRealMerchant();
+
+    const junk = await submitAndAwaitGib({
+      merchant,
+      totalAmount: '5000000',
+      cartItems: [null, 'x', { name: '', quantity: -1, price: 'abc' }, { name: 'Y', quantity: 1, price: '1' }],
+    });
+    assert.equal(junk.response.status, 201);
+    assert.equal(junk.txDoc.status, 'confirmed');
+    // 1 stroop'luk tek geçerli kalem toplamla (5.000.000) tutmaz → satır kullanılmaz
+    assert.equal(junk.gibDoc.ublContent.Invoice.InvoiceLine.length, 1);
+    assert.equal(junk.gibDoc.ublContent.Invoice.InvoiceLine[0].Item.Name, 'Genel Perakende Satış');
+    assert.equal(junk.gibDoc.ublContent.Invoice.LegalMonetaryTotal.PayableAmount, '0.50');
+
+    const none = await submitAndAwaitGib({ merchant, totalAmount: '5000000', cartItems: undefined });
+    assert.equal(none.response.status, 201);
+    assert.deepEqual(none.txDoc.cartItems, []);
   });
 
   describe('POST /:txHash/merchant-ack — akışın 9. adımı', () => {

@@ -91,6 +91,21 @@ const transactionSchema = new mongoose.Schema(
       required: true,
     },
 
+    /**
+     * Sepet kalemleri (QR'dan; birim fiyat = stroop). Güvenilmeyen girdidir —
+     * kayıttan önce `utils/cart-items.js#sanitizeCartItems` ile temizlenir. GİB
+     * belgesine yalnızca toplamla TAM tutuyorsa yansıtılır.
+     */
+    cartItems: {
+      type: [
+        new mongoose.Schema(
+          { name: String, quantity: Number, price: String },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+
     // Dağılım tutarları `pay_merchant` kontrat olayından (zincirden) yazılır,
     // backend'de hesaplanmaz (bkz. services/contract-events.service.js).
 
@@ -139,6 +154,10 @@ const transactionSchema = new mongoose.Schema(
     timestamps: true, // createdAt, updatedAt
   }
 );
+
+// Esnaf işlem listesi / günlük özet / gün sonu raporu sorguları:
+// `merchantId` ile filtreleyip `createdAt` aralığına göre sıralar.
+transactionSchema.index({ merchantId: 1, createdAt: -1 });
 
 const Transaction = mongoose.model('Transaction', transactionSchema);
 

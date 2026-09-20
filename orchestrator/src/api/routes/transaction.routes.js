@@ -19,6 +19,7 @@ import { finalizeIdempotencyKey } from '../../services/idempotency.service.js';
 import { recordFlowEvent } from '../../services/flow-events.service.js';
 import { recordChainOutcome } from '../../services/contract-events.service.js';
 import { handleTransaction } from '../../services/sse-listener.service.js';
+import { sanitizeCartItems } from '../../utils/cart-items.js';
 import { authMiddleware, submitAuthMiddleware } from '../middleware/auth.middleware.js';
 import { validateTransactionSubmit } from '../middleware/validation.middleware.js';
 import { idempotencyMiddleware } from '../middleware/idempotency.middleware.js';
@@ -58,7 +59,7 @@ const router = Router();
  *   Idempotency-Key: <UUID v4>
  */
 export async function submitTransactionHandler(req, res) {
-  const { signedXdr, merchantId, totalAmount } = req.body;
+  const { signedXdr, merchantId, totalAmount, cartItems } = req.body;
   const idempotencyKey = req.idempotencyKey;
 
   // Esnaf yolu (Bearer API key ile geldi): yalnızca kendi işyeri adına gönderebilir.
@@ -117,6 +118,8 @@ export async function submitTransactionHandler(req, res) {
       innerTxHash,
       merchantId,
       totalAmount,
+      // Sepet GİB fişi içindir; temizleyici asla hata fırlatmaz (geçersiz → []).
+      cartItems: sanitizeCartItems(cartItems),
       status: 'pending',
     });
     creation.catch(() => {}); // hata aşağıda `await creation` ile ele alınır; işlenmemiş ret olmasın
