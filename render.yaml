@@ -8,6 +8,12 @@
 # panelindeki Environment sekmesinden elle girilir. Gizli anahtarlar
 # (POOL2_SECRET_KEY, ISSUER_SECRET_KEY, MONGODB_URI) asla repoya girmez.
 
+# GERÇEK DURUM (20 Eylül 2026): Canlı servis bu dosyadan (Blueprint) OLUŞTURULMADI —
+# panelden elle kuruldu (adı `KALEM`, Oregon) ve env'ler panelde elle girili.
+# Bu dosya bu yüzden canlıyı OTOMATİK senkronlamaz; değişiklik yaptığında canlıya
+# panelden (ya da Render MCP ile) ayrıca uygula. Bilinen fark: canlı mutabakat cron'u
+# ilk değerde (10 sn) kaldı, aşağıdaki 30 sn'ye çekilmedi.
+
 services:
   - type: web
     name: kalem-orchestrator
@@ -22,8 +28,14 @@ services:
     # Uyanması ~50sn sürer ve bu sürede SSE dinleyicisi ölür — ödeme zincire
     # yazılır ama onay yakalanmaz, GİB belgesi üretilmez ve §6.4 gereği
     # (kalıcı cursor yok) o onay KALICI olarak kaybolur.
-    # Demo/sunum öncesi `starter` yapılması önerilir — tek satırlık değişiklik.
-    plan: free
+    # KARAR (20 Eylül 2026): canlı servis `starter` — uyku sorunu kapandı.
+    plan: starter
+
+    # BÖLGE: Oregon. Frankfurt DENENDİ ve bırakıldı: 6'şar ödemede Stellar'a
+    # gönderme süresi Oregon ~3,8 sn, Frankfurt ~5,0 sn (Atlas Frankfurt'ta olsa
+    # da). Frankfurt'ta ayrıca TRUST_PROXY_HOPS 2 çıktı (Oregon'da 3) — bölge
+    # değişirse hop sayısı YENİDEN ölçülmeli. Ayrıntı: docs §8.2.
+    region: oregon
 
     # Liveness ucu: her zaman 200 döner. Kasıtlı olarak /health/ready DEĞİL —
     # readiness 503 dönebildiği için geçici bir MongoDB kesintisi Render'da
@@ -108,8 +120,12 @@ services:
         value: 2
       - key: FEE_BUMP_MAX_BASE_FEE_STROOPS
         value: 100000
+      # 20 Eylül 2026: 10M (1 XLM) iken, dTL bakiye kaydı OLMAYAN bir hesaba İLK
+      # ödeme (~10,06M stroop kaynak ücreti; kontratta bakiye kaydı 30 gün TTL
+      # kirasıyla yazılır) reddediliyordu. Sonraki ödemeler ~36,6k stroop.
+      # Tavanı düşürme: yeni esnafın ilk ödemesi tekrar başarısız olur.
       - key: FEE_BUMP_MAX_TOTAL_FEE_STROOPS
-        value: 10000000
+        value: 20000000
       - key: FEE_BUMP_MAX_INNER_OPERATIONS
         value: 1
       - key: FEE_BUMP_REQUIRE_TIMEBOUNDS
