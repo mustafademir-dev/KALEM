@@ -32,6 +32,7 @@ export default function CustomerDashboardScreen() {
   const [wallet, setWallet] = useState(null);
   const [balance, setBalance] = useState(undefined); // undefined = yükleniyor, null = alınamadı
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState(false);
   const [archive, setArchive] = useState({ loading: true, items: [] });
 
   useEffect(() => {
@@ -55,11 +56,14 @@ export default function CustomerDashboardScreen() {
   const handleRefresh = useCallback(async () => {
     if (!wallet) return;
     setRefreshing(true);
+    setRefreshError(false);
     try {
       const bal = await readDtlBalance(wallet.stellarAddress);
       setBalance(bal);
     } catch {
-      // Sessizce yok say — son bilinen bakiye görünmeye devam eder.
+      // Son bilinen bakiye ekranda KALIR (silmek yanıltıcı olurdu), ama hata
+      // artık sessizce yutulmaz: kullanıcı gördüğü rakamın tazelenmediğini bilmeli.
+      setRefreshError(true);
     } finally {
       setRefreshing(false);
     }
@@ -104,6 +108,7 @@ export default function CustomerDashboardScreen() {
               stellarAddress={wallet.stellarAddress}
               balance={balance}
               refreshing={refreshing}
+              refreshError={refreshError}
               onRefresh={handleRefresh}
               receipts={archive.items}
               summary={summary}
@@ -125,6 +130,7 @@ export default function CustomerDashboardScreen() {
               stellarAddress={wallet.stellarAddress}
               balance={balance}
               refreshing={refreshing}
+              refreshError={refreshError}
               onRefresh={handleRefresh}
               onTopUp={handleTopUp}
             />

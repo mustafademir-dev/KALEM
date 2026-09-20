@@ -5,7 +5,7 @@ import Button from '../Button.js';
 import Icon from '../Icon.js';
 import TestnetBadge from '../TestnetBadge.js';
 import ReceiptRow from './ReceiptRow.js';
-import { EmptyState, Skeleton } from '../StateViews.js';
+import { EmptyState, InlineNotice, Skeleton } from '../StateViews.js';
 import { TAB_BAR_CLEARANCE } from './CustomerTabBar.js';
 import { colors, radii, spacing, type, cardShadow } from '../../theme/index.js';
 import { formatTl, shortenMiddle } from '../../utils/format.js';
@@ -24,6 +24,7 @@ export default function CustomerHomeTab({
   stellarAddress,
   balance,
   refreshing,
+  refreshError,
   onRefresh,
   receipts,
   summary,
@@ -63,6 +64,13 @@ export default function CustomerHomeTab({
             <Icon name="chevronRight" size={14} color={colors.accent} />
           </Pressable>
         </View>
+
+        {/* Yenileme başarısızsa yukarıdaki rakam ESKİ olabilir — sessiz kalmak yanıltıcı olurdu. */}
+        {refreshError && (
+          <InlineNotice tone="warning" style={{ marginTop: spacing.sm }}>
+            Bakiye tazelenemedi; gösterilen tutar güncel olmayabilir.
+          </InlineNotice>
+        )}
       </View>
 
       <View style={styles.summaryCard}>

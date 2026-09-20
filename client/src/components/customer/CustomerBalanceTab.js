@@ -16,7 +16,7 @@ import { shortenMiddle } from '../../utils/format.js';
  * kullanıcıya da bu söylenir, çünkü sistemin "biz banka gibi saklamayız"
  * ilkesinin görünür olduğu yer burasıdır.
  */
-export default function CustomerBalanceTab({ stellarAddress, balance, refreshing, onRefresh, onTopUp }) {
+export default function CustomerBalanceTab({ stellarAddress, balance, refreshing, refreshError, onRefresh, onTopUp }) {
   return (
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
       <Text style={[type.h1, { color: colors.textPrimary }]}>Bakiye</Text>
@@ -50,11 +50,15 @@ export default function CustomerBalanceTab({ stellarAddress, balance, refreshing
 
       <Button label="Bakiye Yükle" icon="wallet" onPress={onTopUp} style={{ marginTop: spacing.md }} />
 
-      {balance === null && (
+      {balance === null ? (
         <InlineNotice tone="warning" style={{ marginTop: spacing.md }}>
           Bakiye şu an okunamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.
         </InlineNotice>
-      )}
+      ) : refreshError ? (
+        <InlineNotice tone="warning" style={{ marginTop: spacing.md }}>
+          Bakiye tazelenemedi; yukarıdaki tutar son okunan değerdir, güncel olmayabilir.
+        </InlineNotice>
+      ) : null}
 
       <View style={styles.addressCard}>
         <Text style={[type.micro, { color: colors.textMuted }]}>CÜZDAN ADRESİNİZ</Text>
