@@ -25,6 +25,9 @@ import BackButton from '../components/BackButton.js';
 import GibReceiptCard from '../components/GibReceiptCard.js';
 import { colors, radii, spacing, type, cardShadow } from '../theme/index.js';
 import { createWallet, loadWallet } from '../services/wallet.service.js';
+import { recordReceipt } from '../services/receipt-archive.service.js';
+import ReceiptActions from '../components/ReceiptActions.js';
+import { useNavigation } from '../navigation/Navigator.js';
 import { readDtlBalance, awaitInnerTransactionConfirmation } from '../services/stellar-read.service.js';
 import { createPaymentTransaction } from '../services/transaction.service.js';
 import { submitTransaction, getGibDocument, ApiError } from '../services/api.service.js';
@@ -34,6 +37,7 @@ import { formatTl, shortenMiddle, stellarExpertTxUrl } from '../utils/format.js'
 /** @typedef {'scan'|'confirm'|'processing'|'result'} StageId */
 
 export default function PaymentScreen() {
+  const { goBack } = useNavigation();
   const [stage, setStage] = useState('booting');
   const [wallet, setWallet] = useState(null);
   const [scanError, setScanError] = useState(null);
@@ -136,6 +140,14 @@ export default function PaymentScreen() {
       if (confirmation.status === 'success') {
         setSteps((s) => ({ ...s, confirm: 'done' }));
         setResult({ ok: true, txHash: confirmation.txHash });
+        // Fiş arşivine yaz (cihazda). Bu çağrı hata FIRLATMAZ — depo dolu ya da
+        // erişilemez olsa bile ödeme sonucu etkilenmez, yalnızca liste eksik kalır.
+        await recordReceipt({
+          stellarAddress: wallet.stellarAddress,
+          txHash: confirmation.txHash,
+          totalAmount: qrData.totalAmount,
+          businessName: qrData.businessName,
+        });
       } else if (confirmation.status === 'timeout') {
         setSteps((s) => ({ ...s, confirm: 'done' }));
         setResult({
@@ -207,6 +219,7 @@ export default function PaymentScreen() {
           result={result}
           qrData={qrData}
           onDone={handleReset}
+          onHome={goBack}
           senderAddress={wallet.stellarAddress}
         />
       )}
@@ -512,7 +525,7 @@ export function ProcessingStage({ steps, qrData }) {
   );
 }
 
-export function ResultStage({ result, qrData, onDone, senderAddress }) {
+export function ResultStage({ result, qrData, onDone, onHome, senderAddress }) {
   const isSuccess = result?.ok;
   // Onay beklenirken süre aşımı: ödeme ağa iletildi ama zincir onayı görülemedi —
   // yeşil "tamamlandı" yerine dürüst bir "iletildi" durumu gösterilir.
@@ -618,10 +631,20 @@ export function ResultStage({ result, qrData, onDone, senderAddress }) {
         {gibState.status === 'loaded' && (
           <View style={{ marginTop: spacing.md, width: '100%', alignItems: 'center' }}>
             <GibReceiptCard document={gibState.document} />
+            <ReceiptActions document={gibState.document} txHash={result.txHash} />
           </View>
         )}
 
-        <Button label="Ana Ekrana Dön" onPress={onDone} style={{ marginTop: spacing.lg, alignSelf: 'stretch' }} />
+        {/* "Ana Ekrana Dön" gerçekten ana ekrana döner (fiş arşivi ve bakiye orada tazelenir);
+            tekrar ödeme yapmak isteyen için tarayıcıya dönen ayrı bir düğme var. */}
+        <Button label="Ana Ekrana Dön" onPress={onHome} style={{ marginTop: spacing.lg, alignSelf: 'stretch' }} />
+        <Button
+          label="Yeni Ödeme"
+          variant="secondary"
+          icon="scan"
+          onPress={onDone}
+          style={{ marginTop: spacing.sm, alignSelf: 'stretch' }}
+        />
       </View>
     </ScrollView>
   );

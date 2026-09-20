@@ -4,6 +4,7 @@ import Screen from '../components/Screen.js';
 import Button from '../components/Button.js';
 import BackButton from '../components/BackButton.js';
 import GibReceiptCard from '../components/GibReceiptCard.js';
+import ReceiptActions from '../components/ReceiptActions.js';
 import { EmptyState, InlineNotice, Skeleton } from '../components/StateViews.js';
 import { colors, spacing, type } from '../theme/index.js';
 import { getGibDocument, ApiError } from '../services/api.service.js';
@@ -53,6 +54,10 @@ export default function EsnafReceiptScreen({ params }) {
     state.document?.totalAmountTL !== undefined &&
     Math.abs(Number(state.document.totalAmountTL) - Number(stroopsToFixed2(totalAmount))) > 0.005;
 
+  const legacyWarning = legacyMismatch
+    ? `Bu fiş, tutar hesabı düzeltilmeden önce üretildi; aşağıdaki rakamlar hatalı olabilir. İşlemin doğru tutarı ${formatTl(totalAmount)}.`
+    : undefined;
+
   return (
     <Screen>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -84,11 +89,11 @@ export default function EsnafReceiptScreen({ params }) {
             <>
               {legacyMismatch && (
                 <InlineNotice tone="warning" style={{ alignSelf: 'stretch', marginBottom: spacing.md }}>
-                  Bu fiş, tutar hesabı düzeltilmeden önce üretildi; aşağıdaki rakamlar hatalı olabilir. İşlemin doğru
-                  tutarı {formatTl(totalAmount)}.
+                  {legacyWarning}
                 </InlineNotice>
               )}
               <GibReceiptCard document={state.document} />
+              <ReceiptActions document={state.document} txHash={txHash} warning={legacyWarning} />
             </>
           )}
         </View>

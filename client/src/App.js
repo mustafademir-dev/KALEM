@@ -16,6 +16,7 @@ import { NavigationProvider, useNavigation } from './navigation/Navigator.js';
 import RoleSelectScreen from './screens/RoleSelectScreen.js';
 import CustomerDashboardScreen from './screens/CustomerDashboardScreen.js';
 import CustomerTopUpScreen from './screens/CustomerTopUpScreen.js';
+import CustomerReceiptScreen from './screens/CustomerReceiptScreen.js';
 import PaymentScreen from './screens/PaymentScreen.js';
 import EsnafLoginScreen from './screens/EsnafLoginScreen.js';
 import EsnafRegisterScreen from './screens/EsnafRegisterScreen.js';
@@ -29,6 +30,7 @@ const SCREENS = {
   RoleSelect: RoleSelectScreen,
   CustomerDashboard: CustomerDashboardScreen,
   CustomerTopUp: CustomerTopUpScreen,
+  CustomerReceipt: CustomerReceiptScreen,
   CustomerPayment: PaymentScreen,
   MerchantLogin: EsnafLoginScreen,
   MerchantRegister: EsnafRegisterScreen,
