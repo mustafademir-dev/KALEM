@@ -1,0 +1,45 @@
+# Geçici derleme çıktıları ve bağımlılıklar — repoya girmez.
+build/
+out/
+node_modules/
+
+# ---------------------------------------------------------------------------
+# artifacts/ REPOYA GİRER — bilinçli karar
+# ---------------------------------------------------------------------------
+#
+# Kök .gitignore'daki `**/*.wasm` kuralı bu dizindeki wasm dosyalarını da
+# dışlar; aşağıdaki istisnalar onu geçersiz kılar. (Dizin düzeyinde dışlama
+# olsaydı istisna İŞE YARAMAZDI — git dışlanmış bir dizinin içine hiç bakmaz.
+# `artifacts/` adı tam da bu yüzden `build/` deseninin dışında tutuldu.)
+#
+# NEDEN: testnet'teki doğrulayıcı kontrat
+#   CAK3OCQQ5RAOWPIYYW25SYINSOUXSH6MNWWMGRAVPXWTZRTEQHCUJZZG
+# BU doğrulama anahtarıyla başlatıldı ve `initialize` yalnızca BİR KEZ
+# çağrılabilir — anahtar değiştirilemez.
+#
+# Bu dosyalar kaybolursa "yeniden üretmek" İŞE YARAMAZ: yeni bir kurulum
+# FARKLI bir doğrulama anahtarı üretir, onunla üretilen kanıtlar canlı
+# kontratta doğrulanmaz ve kontratı yeniden deploy etmek gerekir — bu da
+# mevcut işlem kayıtlarını ve contract ID'yi değersizleştirir.
+#
+# Kısacası: bunlar "türetilebilir çıktı" değil, canlı bir kontratla
+# EŞLEŞMEK ZORUNDA OLAN sabitlerdir. Toplam ~11 MB.
+
+!artifacts/
+!artifacts/*.wasm
+!artifacts/*.js
+!artifacts/*.json
+!artifacts/*.zkey
+
+# ---------------------------------------------------------------------------
+# Bilerek DIŞARIDA bırakılanlar
+# ---------------------------------------------------------------------------
+# build/ptau/*.ptau  → kanıt üretmek için GEREKMİYOR (deneyle doğrulandı:
+#                      ptau kaldırılıp kanıt üretildi ve doğrulandı).
+#                      Yalnızca yeni kurulum için gerekir, o da zaten farklı
+#                      bir anahtar üretir. ~47 MB, faydası sıfır.
+# build/se_0000.zkey → faz-2 katkısı öncesi ara dosya; kanıt üretiminde
+#                      kullanılmaz.
+
+# Teşhis amaçlı geçici denemeler
+probe/

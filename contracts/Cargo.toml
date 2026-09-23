@@ -4,6 +4,7 @@ members = [
     "shared",
     "dtl-token",
     "pool-manager",
+    "support-verifier",
 ]
 
 [workspace.dependencies]
