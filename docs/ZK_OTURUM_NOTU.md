@@ -1,6 +1,7 @@
 # ZK Katmanı — Oturum Notu ve Devam Noktası
 
-> **Son güncelleme: 23 Eylül 2026.**
+> **Son güncelleme: 23 Eylül 2026.** · **Not (26 Eylül):** ZK dosyaları commit'lendi
+> (`588765f`) ve push edildi; aşağıdaki "untracked / commit edilmedi" ifadeleri o günün durumudur.
 > Bu dosya, sıfır bilgi ispatı (ZK) çalışmasının nerede kaldığını ve yeni bir
 > oturumun nereden devam edeceğini anlatır. Bağlam için önce
 > `docs/DTL_PEG_VE_JURI_STRATEJISI.md` okunmalıdır — ZK kararının *neden*

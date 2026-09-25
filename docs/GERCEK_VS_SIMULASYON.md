@@ -128,9 +128,14 @@ Bu bir eksiklik değil, **bilinçli bir dürüstlük kararıdır** (§5.2): olma
 
 **Sonuç:** ekonomik döngü şu an kendi kendine kapanmıyor; kapanması için elle bir operasyonel adım gerekiyor.
 
-### 3.6. Sistem henüz internette değil
+### 3.6. Sistem internette — ama testnet üzerinde
 
-Backend yalnızca `localhost:3000` üzerinde çalışır. Çalışan bir sistemdir, ancak şu an **yalnızca geliştirme makinesinde**. Bulut host'a taşıma, §8'deki "Sıradaki adımlar" listesinin 1. maddesidir.
+> **Düzeltme (26 Eylül 2026):** Bu bölüm eskiden "backend yalnızca localhost'ta" diyordu; artık doğru değil.
+
+- **Backend:** Render'da canlı — <https://kalem-5i08.onrender.com> (Oregon, Starter plan).
+- **Uygulama (web):** Render static site olarak yayında — <https://kalem-app.onrender.com>. Telefondan tarayıcıyla açılır, kamera HTTPS gerektirdiği için yerel ağ adresi yerine bu adres kullanılır.
+- Her ikisi de **Stellar testnet** üzerinde çalışır; §3.1'deki "gerçek para değildir" kısıtı aynen geçerlidir.
+- GitHub'a her push iki servisi de yeniden derler (autoDeploy).
 
 ---
 

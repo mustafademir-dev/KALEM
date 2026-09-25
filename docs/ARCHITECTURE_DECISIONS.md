@@ -849,3 +849,58 @@ Uçtan uca (imza → onay + GİB) süre, 15-20 saniyeden **saniyenin altına** i
 
 **Doğrulama durumu:** 194/194 orchestrator testi (3 art arda çalıştırma). Client değişikliği (`PaymentScreen.js`) test altyapısı olmadığı için **çalıştırılmadı** — canlıda bir ödemeyle doğrulanmalı.
 
+
+---
+
+## 10. Ürünleşme turu — iade, hesaplar, web yayını (25-26 Eylül 2026)
+
+> Bu bölüm §8.2'deki devam notundan SONRAKİ işleri özetler. Ayrıntı commit mesajlarında
+> (`94c5c5a` … `b17d904`). Sunum çerçevesi repo dışındaki `KALEM_Final_Sunum_Notlari.docx`'te.
+
+### 10.1. Yayın
+- **Web uygulaması:** Render static site `kalem-app` → <https://kalem-app.onrender.com>
+  (build: `cd client && npm install && npx expo export --platform web`, publish: `client/dist`,
+  `EXPO_PUBLIC_ORCHESTRATOR_BASE_URL` = backend). Telefonda kamera HTTPS ister; bu yüzden
+  yerel ağ adresi değil bu site kullanılır. autoDeploy açık.
+- **Backend env değişiklikleri (Render panel/MCP; `render.yaml` referans niteliğinde):**
+  `CORS_ALLOWED_ORIGINS=https://kalem-app.onrender.com`, `FAUCET_MINT_AMOUNT_STROOPS=10000000000`
+  (1.000 TL), `FEE_BUMP_MAX_TOTAL_FEE_STROOPS=30000000` (yeni esnafa ilk ödeme 21,3M ölçüldü
+  > eski 20M tavan), `CUSTOMER_ID_HASH_SECRET` (TC HMAC anahtarı — **değişirse tüm müşteri
+  girişleri kırılır**).
+
+### 10.2. İade (esnaf başlatır, tam iade)
+`POST /merchants/:id/refunds {documentNo}` — `services/refund.service.js`. Kontrat
+değişmedi: ihraççı yetkisiyle esnaftan %99,6, Havuz 3'ten %0,1, Havuz 4'ten %0,3 **burn**,
+müşteriye %100 **mint** (arz sabit, havuz oranı korunur). 4 ayrı işlem (atomik değil):
+bakiyeler önce kontrol edilir, mint EN SONDA, adımlar `Transaction.refund.steps`'e yazılır,
+tekrar deneme kaldığı yerden sürer. İade edilenler rapor toplamlarından düşer.
+Müşteri: `POST /customers/refunds` (imzalı) → "İade alındı" bildirimi.
+
+### 10.3. Hesaplar
+- **Esnaf:** VKN + şifre (`POST /merchants/login`, scrypt). Oturum anahtarının yalnızca özeti
+  (`sessionKeyHashes`, son 10) saklanır; kayıt anahtarı (`apiKeyHash`) da geçerli.
+  Şifresiz eski esnaf: `scripts/set-merchant-password.mjs`.
+- **Müşteri:** TC + 6 haneli PIN (`models/Customer.model.js`, `services/customer-account.service.js`).
+  **TC açık hâlde saklanmaz** (HMAC); PIN scrypt. Kayıt/girişte cihazdaki cüzdanın imzası.
+  **Yeni cihazda giriş** → eski cüzdandaki bakiye burn + yeni cüzdana mint (`pendingMigration`
+  ile yarıda kalma korumalı), eski adres `addressHistory`'ye. **Tek aktif cihaz.**
+  Canlıda doğrulandı (1.000 TL gidiş ~14 sn, dönüş ~9 sn).
+- **Fiş geçmişi:** `POST /customers/receipts` (imzalı) — önceki cihaz adresleri dahil.
+- 5 hatalı denemede 15 dk kilit (`utils/credentials.js`); giriş/kayıt uçlarında IP limiti.
+- **Yok:** SMS doğrulaması (üründe yeni cihazda şart olmalı).
+
+### 10.4. Esnaf onayı
+`approve-merchant.mjs` artık onaydan sonra 1 stroop mint + burn ile esnafın bakiye kaydını
+açar: ilk müşteri ödemesi kira ödemez (§8.2'deki ~1-2 XLM ilk ödeme maliyeti onay anına
+taşındı). Best-effort. Sınır: kayıt 30 gün TTL'li — 30 gün ödeme almayan esnafta kira tekrar.
+
+### 10.5. Görünüm kararları (ürün sahibi, 25 Eylül)
+Ekranlardan ve indirilen dosyalardan (fiş metni, gün sonu CSV) "Test ağı / SİMÜLASYON /
+demo / PoC" ibareleri kaldırıldı; cüzdan adresleri "Teknik bilgiler" altına alındı;
+"Ödeme Alındı" satış tutarını, bakiye kartı "Çekilebilir"i gösterir. Testnet olduğu
+bilgisi sunumda sözlü verilir. §5 "Sunumda Dikkat Edilecek İfadeler" (GERCEK_VS_SIMULASYON)
+geçerliliğini korur.
+
+### 10.6. Demo hesapları
+Repo dışında `KALEM_Demo_Hesaplari.docx` (VKN/şifre, test TC/PIN). Demo esnaf VKN
+`9990000001`, zincirde onaylı. Test TC `10000000146` (sağlaması geçerli, yaygın test numarası).

@@ -161,8 +161,18 @@ ulaştıracağı açık bir sorudur. Bu proje tam olarak orayı inşa etmiş.
    zincirde tanımlama örneği, negatif kanıtla doğrulanmış.
 
 **Verilecek mesaj:** "Biz Dijital TL'ye rakip değiliz; Dijital TL'nin üzerinde koşacak
-bir üye işyeri ödeme katmanının çalışan prototipiyiz. Token katmanını değiştirin,
-üstteki her şey aynen çalışır."
+bir üye işyeri ödeme katmanının çalışan prototipiyiz."
+
+> ⚠ **Düzeltme (24-26 Eylül 2026) — "token katmanını değiştirin, üstteki her şey aynen
+> çalışır" DENMEYECEK.** TCMB Faz 1 Değerlendirme ve Faz 2 İlerleme raporları okundu:
+> Dijital TL **izinli** bir dağıtık defterde (TCMB + lisanslı kurumlar) çalışıyor;
+> programlanabilirlik kurumların tanımladığı **ödeme şablonları / paketleriyle** sağlanıyor.
+> Soroban kontratları oraya taşınmaz; taşınan şey **ürün mantığıdır** (esnaf deneyimi,
+> ödeme anında belge, dağılım kuralı). Doğru ifade: "tedavül kararı verilirse, TCMB'nin
+> öngördüğü hizmet sağlayıcı modeliyle bir aracı kurum üzerinden Dijital TL'nin servis
+> katmanına bağlanırız." Ayrıca "esnaf gönderemez" kuralı Dijital TL özelliği gibi
+> sunulmamalı — TCMB "programlanabilir para değil, programlanabilir ödeme" diyor.
+> Güncel sunum çerçevesi: `KALEM_Final_Sunum_Notlari.docx` (repo dışında).
 
 **Zayıflığı teslim et — çünkü onun çözdüğü bir zayıflık:**
 > "Bugünkü en kırılgan ekonomik noktamız ağ ücretini dalgalı XLM ile ödememiz.
