@@ -64,14 +64,14 @@ function Stat({ label, value, loading, accent }) {
   );
 }
 
-/** Esnafın zincirdeki bakiyesi. */
+/** Esnafın zincirdeki bakiyesi: kesintiler ödeme anında düşüldüğü için çekilebilir tutarın kendisidir. */
 export function BalanceCard({ balance, loading }) {
   return (
     <View style={[styles.card, styles.half]}>
       <View style={styles.iconBubble}>
         <Icon name="wallet" size={18} color={colors.accentStrong} />
       </View>
-      <Text style={[type.micro, styles.cardLabel]}>BAKİYE</Text>
+      <Text style={[type.micro, styles.cardLabel]}>ÇEKİLEBİLİR</Text>
       {loading ? (
         <Skeleton width={90} height={22} style={{ marginTop: 6 }} />
       ) : balance === null || balance === undefined ? (
@@ -79,7 +79,7 @@ export function BalanceCard({ balance, loading }) {
       ) : (
         <Amount stroops={balance} size={22} style={{ marginTop: 2 }} />
       )}
-      <Text style={[type.caption, { color: colors.textMuted, marginTop: 2 }]}>Zincirden okunur</Text>
+      <Text style={[type.caption, { color: colors.textMuted, marginTop: 2 }]}>%0,4 hizmet bedeli düşülmüş</Text>
     </View>
   );
 }

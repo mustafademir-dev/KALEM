@@ -79,6 +79,11 @@ export default function EsnafQrScreen({ params }) {
     navigate('MerchantAmountEntry', { session: params.session ?? null, stellarAddress });
   }, [navigate, params.session, stellarAddress]);
 
+  // Ödeme alınabildiyse esnaf zincirde kayıtlıdır (kayıtsız esnafa ödeme kontratta reddedilir).
+  const handleGoHome = useCallback(() => {
+    reset('MerchantDashboard', { session, stellarAddress, onChainRegistered: true });
+  }, [reset, session, stellarAddress]);
+
   const handleShowGib = useCallback(async () => {
     if (!payment?.txHash || !session?.apiKey) return;
     setGibState({ status: 'loading', document: null, error: null });
@@ -98,10 +103,12 @@ export default function EsnafQrScreen({ params }) {
     return (
       <PaymentReceivedView
         payment={payment}
+        saleAmount={totalAmount}
         canShowGib={Boolean(payment.txHash && session?.apiKey)}
         gibState={gibState}
         onShowGib={handleShowGib}
         onNewPayment={handleNewPayment}
+        onGoHome={handleGoHome}
       />
     );
   }
@@ -164,14 +171,15 @@ export function WaitingView({ payload, totalAmount, businessName, networkWarning
 }
 
 /** Ödeme alındı görünümü — yalnızca sunum. */
-export function PaymentReceivedView({ payment, canShowGib, gibState, onShowGib, onNewPayment }) {
+export function PaymentReceivedView({ payment, saleAmount, canShowGib, gibState, onShowGib, onNewPayment, onGoHome }) {
   return (
     <Screen>
       <ScrollView contentContainerStyle={styles.receivedScroll} showsVerticalScrollIndicator={false}>
         <View style={styles.receivedCard}>
           <StatusBadge tone="success" />
           <Text style={[type.h1, { color: colors.textPrimary, marginTop: spacing.md }]}>Ödeme Alındı</Text>
-          <Amount stroops={payment.amount} size={38} align="center" style={{ marginTop: spacing.xs }} />
+          {/* Satış tutarı (müşterinin ödediği). Kesinti sonrası net, Ana Sayfa > Çekilebilir'de. */}
+          <Amount stroops={saleAmount ?? payment.amount} size={38} align="center" style={{ marginTop: spacing.xs }} />
 
           <View style={styles.detailCard}>
             <View style={styles.detailRow}>
@@ -223,6 +231,15 @@ export function PaymentReceivedView({ payment, canShowGib, gibState, onShowGib, 
           )}
 
           <Button label="Yeni Ödeme Al" icon="qr" onPress={onNewPayment} style={{ marginTop: spacing.lg, alignSelf: 'stretch' }} />
+          {onGoHome ? (
+            <Button
+              label="Ana Sayfaya Dön"
+              variant="secondary"
+              icon="home"
+              onPress={onGoHome}
+              style={{ marginTop: spacing.sm, alignSelf: 'stretch' }}
+            />
+          ) : null}
         </View>
       </ScrollView>
     </Screen>

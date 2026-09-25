@@ -20,6 +20,7 @@ export default function HomeTab({
   onRefresh,
   onRetry,
   onPay,
+  onRefund,
   onSeeAll,
   onOpenReceipt,
   balanceFallback,
@@ -88,6 +89,22 @@ export default function HomeTab({
         </View>
         <Icon name="arrowRight" size={26} color={colors.white} />
       </Pressable>
+
+      {onRefund ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="İade"
+          onPress={onRefund}
+          style={({ pressed }) => [styles.refundAction, pressed && { backgroundColor: colors.bgCardAlt }]}
+        >
+          <Icon name="refresh" size={20} color={colors.textSecondary} />
+          <View style={{ flex: 1 }}>
+            <Text style={[type.bodyMedium, { color: colors.textPrimary }]}>İade</Text>
+            <Text style={[type.caption, { color: colors.textMuted }]}>Fiş numarasıyla ödemeyi geri ver</Text>
+          </View>
+          <Icon name="chevronRight" size={18} color={colors.textMuted} />
+        </Pressable>
+      ) : null}
 
       {status === 'error' && (
         <InlineNotice
@@ -177,6 +194,17 @@ function SpinningIcon({ spinning }) {
 }
 
 const styles = StyleSheet.create({
+  refundAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    backgroundColor: colors.bgCard,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   scroll: { padding: spacing.lg, paddingBottom: TAB_BAR_CLEARANCE },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   refresh: { padding: 6 },

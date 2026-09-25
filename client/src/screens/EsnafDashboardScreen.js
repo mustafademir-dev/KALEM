@@ -104,6 +104,7 @@ export default function EsnafDashboardScreen({ params }) {
             onRefresh={() => loadDashboard({ manual: true })}
             onRetry={() => loadDashboard()}
             onPay={handlePay}
+            onRefund={handleRefund}
             onSeeAll={() => setTab('invoices')}
             onOpenReceipt={handleOpenReceipt}
             balanceFallback={params.balance}
@@ -116,7 +117,6 @@ export default function EsnafDashboardScreen({ params }) {
             session={session}
             stellarAddress={stellarAddress}
             onChainRegistered={onChainRegistered}
-            onRefund={handleRefund}
             onLogout={handleLogout}
           />
         )}
