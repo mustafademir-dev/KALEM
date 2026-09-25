@@ -16,6 +16,9 @@ const customerSchema = new mongoose.Schema(
     pinHash: { type: String, required: true, select: false },
     stellarAddress: { type: String, required: true, unique: true },
 
+    /** Önceki cihazların cüzdan adresleri — fiş geçmişi yeni cihazda da görünsün diye. */
+    addressHistory: { type: [String], default: [] },
+
     /** Yarıda kalmış cihaz değişimi: eski adresten yakıldı ama yeniye henüz basılmadıysa. */
     pendingMigration: {
       type: new mongoose.Schema(

@@ -98,8 +98,7 @@ export async function dailyReportHandler(req, res) {
     const csv = await buildDailyReportCsv(merchant, date);
     res.set({
       'Content-Type': 'text/csv; charset=utf-8',
-      // Dosya adında da damga: belge başka yere kopyalansa bile simülasyon olduğu anlaşılsın.
-      'Content-Disposition': `attachment; filename="kalem-gun-sonu-SIMULASYON-${date}.csv"`,
+      'Content-Disposition': `attachment; filename="kalem-gun-sonu-${date}.csv"`,
       'Cache-Control': 'no-store',
     });
     res.status(200).send(csv);

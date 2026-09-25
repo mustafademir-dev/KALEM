@@ -39,6 +39,15 @@ export class AccountError extends Error {
 const CHALLENGE_MAX_AGE_MS = 5 * 60 * 1000;
 const WRONG_CREDENTIALS = 'TC kimlik numarası veya PIN hatalı.';
 
+/**
+ * Bir cüzdan adresinin sahibinin TÜM adresleri (şu anki + önceki cihazlar).
+ * Adres bir hesaba bağlı değilse yalnızca kendisi.
+ */
+export async function customerAddresses(address) {
+  const customer = await Customer.findOne({ stellarAddress: address }).select('stellarAddress addressHistory').lean();
+  return customer ? [customer.stellarAddress, ...(customer.addressHistory ?? [])] : [address];
+}
+
 const defaultDeps = {
   readBalance: (address) => readContractBalance(config.contracts.dtlTokenId, address),
   issuerCall: issuerTokenCall,
@@ -142,6 +151,9 @@ async function migrateToNewDevice(customer, newAddress, deps) {
     logger.info(`[Customer] Cihaz değişimi: yeni cüzdana ${pending.amount} stroop basıldı.`);
   }
 
+  if (customer.stellarAddress !== newAddress && !customer.addressHistory.includes(customer.stellarAddress)) {
+    customer.addressHistory.push(customer.stellarAddress);
+  }
   customer.stellarAddress = newAddress;
   customer.pendingMigration = undefined;
   await customer.save();

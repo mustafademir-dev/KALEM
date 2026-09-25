@@ -279,3 +279,11 @@ export async function refundByDocumentNo(merchantId, apiKey, documentNo) {
 export async function getMyRefunds({ address, timestamp, signature }) {
   return request('/api/v1/customers/refunds', { method: 'POST', body: { address, timestamp, signature } });
 }
+
+/**
+ * Müşterinin fiş geçmişi (önceki cihazlar dahil). Adres sahipliği imzayla
+ * kanıtlanır (`KALEM-CUSTOMER-RECEIPTS:{address}:{timestamp}`).
+ */
+export async function getMyReceipts({ address, timestamp, signature }) {
+  return request('/api/v1/customers/receipts', { method: 'POST', body: { address, timestamp, signature } });
+}

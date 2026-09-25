@@ -22,7 +22,7 @@ import { ApiError } from './api.service.js';
  * @returns {Promise<{filename: string, method: 'download'|'share'}>}
  */
 export async function downloadDailyReport({ merchantId, apiKey, date }) {
-  const filename = `kalem-gun-sonu-SIMULASYON-${date}.csv`;
+  const filename = `kalem-gun-sonu-${date}.csv`;
 
   let response;
   try {

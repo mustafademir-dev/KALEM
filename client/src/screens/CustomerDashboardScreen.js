@@ -10,9 +10,9 @@ import { colors, spacing, type } from '../theme/index.js';
 import { useNavigation } from '../navigation/Navigator.js';
 import { createWallet, loadWallet, signData, bytesToBase64 } from '../services/wallet.service.js';
 import { readDtlBalance } from '../services/stellar-read.service.js';
-import { listReceipts, syncRefunds } from '../services/receipt-archive.service.js';
-import { getMyRefunds } from '../services/api.service.js';
-import { buildCustomerRefundsChallenge } from '../utils/faucetChallenge.js';
+import { listReceipts, syncRefunds, syncServerReceipts } from '../services/receipt-archive.service.js';
+import { getMyRefunds, getMyReceipts } from '../services/api.service.js';
+import { buildCustomerRefundsChallenge, buildCustomerReceiptsChallenge } from '../utils/faucetChallenge.js';
 import { summarizeArchive } from '../utils/receiptArchive.js';
 
 /**
@@ -32,8 +32,22 @@ import { summarizeArchive } from '../utils/receiptArchive.js';
  * Esnafın yaptığı iadeleri sunucudan (imzalı) alıp cihazdaki arşive işler.
  * Best-effort: hata olursa `null` döner, ekran etkilenmez.
  */
+async function signed(address, buildChallenge) {
+  const timestamp = Date.now();
+  const signature = bytesToBase64(await signData(Buffer.from(buildChallenge(address, timestamp), 'utf8')));
+  return { address, timestamp, signature };
+}
+
 async function checkRefunds(address) {
   try {
+    // Önce fiş geçmişi: yeni telefonda eski fişler (ve iade bilgileri) arşive gelsin.
+    // Böylece daha önce görülmüş iadeler yeni cihazda tekrar "iade alındı" diye bildirilmez.
+    try {
+      const { receipts } = await getMyReceipts(await signed(address, buildCustomerReceiptsChallenge));
+      await syncServerReceipts(address, receipts ?? []);
+    } catch {
+      // fiş geçmişi alınamazsa cihazdaki arşivle devam
+    }
     const timestamp = Date.now();
     const challenge = buildCustomerRefundsChallenge(address, timestamp);
     const signature = bytesToBase64(await signData(Buffer.from(challenge, 'utf8')));
@@ -113,7 +127,8 @@ export default function CustomerDashboardScreen({ params = {} }) {
         totalAmount: item.totalAmount,
         businessName: item.businessName,
         paidAt: item.paidAt,
-        senderAddress: wallet.stellarAddress,
+        // Önceki cihazdan yapılmış ödemenin belgesi o cihazın adresiyle açılır.
+        senderAddress: item.senderAddress ?? wallet.stellarAddress,
       }),
     [navigate, wallet]
   );

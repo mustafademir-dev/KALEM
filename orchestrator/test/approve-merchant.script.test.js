@@ -161,8 +161,14 @@ describe('approve-merchant.mjs Unit Tests', () => {
       };
 
       try {
-        const result = await approveMerchant({ taxId: merchant.taxId, operator: 'test-operator' });
+        const opened = [];
+        const result = await approveMerchant({
+          taxId: merchant.taxId,
+          operator: 'test-operator',
+          openBalanceEntry: async (address) => opened.push(address),
+        });
 
+        assert.deepEqual(opened, [merchant.stellarAddress], 'onaydan sonra esnafın bakiye kaydı önceden açılmalı');
         assert.equal(simulateCallCount, 1, 'Önce zincir durumu bir kez sorgulanmalı (idempotent kontrol)');
         assert.equal(result.status, 'completed');
         assert.equal(result.registerTxHash, 'approvehash123');
@@ -170,6 +176,48 @@ describe('approve-merchant.mjs Unit Tests', () => {
         assert.equal(merchant.onChainRegistered, true);
         assert.equal(approvalInstance.status, 'completed');
         assert.equal(approvalInstance.registerTxHash, 'approvehash123');
+      } finally {
+        Merchant.findOne = originalFindOne;
+        MerchantApproval.create = originalApprovalCreate;
+        stellarConfig.horizonServer = originalHorizon;
+        stellarConfig.sorobanServer = originalSoroban;
+        config.secrets.issuerSecretKey = originalIssuerSecret;
+        config.contracts.dtlTokenId = originalDtlId;
+      }
+    });
+
+    it('bakiye kaydı açılamazsa onay YİNE DE tamamlanır (best-effort)', async () => {
+      const originalFindOne = Merchant.findOne;
+      const originalApprovalCreate = MerchantApproval.create;
+      const originalHorizon = stellarConfig.horizonServer;
+      const originalSoroban = stellarConfig.sorobanServer;
+      const originalIssuerSecret = config.secrets.issuerSecretKey;
+      const originalDtlId = config.contracts.dtlTokenId;
+      const issuerKp = StellarSdk.Keypair.random();
+      config.secrets.issuerSecretKey = issuerKp.secret();
+      config.contracts.dtlTokenId = 'CC4ME5GZASQP456TPFEEADRK4NOFVV4KWX5TJGHJBO7SGK34IMIPWTX4';
+      const merchant = makeMerchantDoc();
+      Merchant.findOne = async () => merchant;
+      const approvalInstance = { status: 'pending', save: async () => {} };
+      MerchantApproval.create = async (doc) => Object.assign(approvalInstance, doc);
+      stellarConfig.sorobanServer = {
+        simulateTransaction: async () => ({ transactionData: {}, result: { retval: StellarSdk.nativeToScVal(false, { type: 'bool' }) } }),
+        prepareTransaction: async (rawTx) => rawTx,
+      };
+      stellarConfig.horizonServer = {
+        loadAccount: async () => new StellarSdk.Account(issuerKp.publicKey(), '100'),
+        submitTransaction: async () => ({ hash: 'approvehash123' }),
+      };
+      try {
+        const result = await approveMerchant({
+          taxId: merchant.taxId,
+          operator: 'op',
+          openBalanceEntry: async () => {
+            throw new Error('ağ hatası');
+          },
+        });
+        assert.equal(result.status, 'completed');
+        assert.equal(merchant.onChainRegistered, true);
       } finally {
         Merchant.findOne = originalFindOne;
         MerchantApproval.create = originalApprovalCreate;

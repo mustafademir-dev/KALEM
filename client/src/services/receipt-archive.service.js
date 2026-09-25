@@ -13,7 +13,14 @@
  */
 
 import storage from '../utils/storage.js';
-import { applyRefunds, archiveKey, packArchive, parseArchive, upsertEntry } from '../utils/receiptArchive.js';
+import {
+  applyRefunds,
+  archiveKey,
+  mergeServerReceipts,
+  packArchive,
+  parseArchive,
+  upsertEntry,
+} from '../utils/receiptArchive.js';
 
 /**
  * Cüzdana ait fiş listesini okur (yeniden eskiye sıralı).
@@ -57,6 +64,23 @@ export async function recordReceipt({ stellarAddress, txHash, totalAmount, busin
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Sunucudaki fiş geçmişini arşive ekler ve kaydeder. Hata fırlatmaz.
+ *
+ * @returns {Promise<Array>} Güncel liste.
+ */
+export async function syncServerReceipts(stellarAddress, receipts) {
+  try {
+    const key = archiveKey(stellarAddress);
+    const merged = mergeServerReceipts(parseArchive(await storage.getItemAsync(key)), receipts, stellarAddress);
+    const { json, kept } = packArchive(merged);
+    await storage.setItemAsync(key, json);
+    return kept;
+  } catch {
+    return listReceipts(stellarAddress);
   }
 }
 

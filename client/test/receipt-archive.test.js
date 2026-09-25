@@ -9,7 +9,6 @@ import {
   summarizeArchive,
   upsertEntry,
   MAX_ENTRIES,
-  STAMP,
 } from '../src/utils/receiptArchive.js';
 
 const entry = (txHash, paidAt, extra = {}) => ({
@@ -168,15 +167,14 @@ describe('archiveKey (cüzdan başına ayrı arşiv)', () => {
 });
 
 describe('receiptFilename', () => {
-  it('dosya adında SİMÜLASYON ibaresi ve tarih geçer', () => {
+  it('dosya adında tarih ve işlem no başı geçer', () => {
     const name = receiptFilename({ txHash: 'abcdef1234567890', paidAt: '2026-09-20T10:00:00.000Z' });
-    assert.ok(name.includes('SIMULASYON'), 'dosya adı damga taşımalı');
-    assert.ok(name.includes('2026-09-20'));
+    assert.equal(name, 'kalem-fis-2026-09-20-abcdef12.txt');
     assert.ok(name.endsWith('.txt'));
   });
 
   it('tarih/hash yoksa bile geçerli bir ad üretir', () => {
-    assert.equal(receiptFilename({}), 'kalem-fis-SIMULASYON-tarihsiz-fis.txt');
+    assert.equal(receiptFilename({}), 'kalem-fis-tarihsiz-fis.txt');
   });
 });
 
@@ -200,11 +198,10 @@ describe('receiptToText', () => {
     },
   };
 
-  it('damga hem başta hem sonda yer alır', () => {
+  it('başlık belgeyle başlar, simülasyon damgası taşımaz', () => {
     const text = receiptToText(document);
-    assert.ok(text.startsWith(STAMP), 'metin damgayla başlamalı');
-    assert.ok(text.trimEnd().includes(STAMP), 'metin damgayla bitmeli');
-    assert.equal(text.split(STAMP).length - 1, 2, 'damga iki kez geçmeli');
+    assert.ok(text.startsWith('KALEM — e-Belge'));
+    assert.ok(!/SİMÜLASYON|PoC/.test(text));
   });
 
   it('işyeri, VKN, kalemler ve toplam metne girer', () => {
@@ -224,10 +221,9 @@ describe('receiptToText', () => {
     assert.ok(text.indexOf('Bu fiş eski') < text.indexOf('Örnek Market'), 'uyarı fiş gövdesinden önce gelmeli');
   });
 
-  it('belge okunamazsa hata fırlatmaz, damgalı bir metin döner', () => {
+  it('belge okunamazsa hata fırlatmaz, açıklayıcı bir metin döner', () => {
     for (const bad of [null, undefined, {}, { ublContent: {} }]) {
       const text = receiptToText(bad);
-      assert.ok(text.includes(STAMP));
       assert.ok(text.includes('okunamadı'));
     }
   });
@@ -272,5 +268,29 @@ describe('applyRefunds (müşteriye iade bildirimi)', () => {
     const s = summarizeArchive(list, { now: new Date('2026-09-25T12:00:00.000Z') });
     assert.equal(s.monthCount, 1);
     assert.equal(s.monthTotal, '100000000');
+  });
+});
+
+describe('mergeServerReceipts (yeni telefonda fiş geçmişi)', () => {
+  it('arşivde olmayan fişi ekler; önceki cihazın adresini saklar, şu ankini saklamaz', async () => {
+    const { mergeServerReceipts } = await import('../src/utils/receiptArchive.js');
+    const merged = mergeServerReceipts(
+      [{ txHash: 'a', totalAmount: '1', paidAt: '2026-09-25T10:00:00.000Z' }],
+      [
+        { txHash: 'a', totalAmount: '1', paidAt: '2026-09-25T10:00:00.000Z', senderAddress: 'GNEW' },
+        { txHash: 'b', totalAmount: '2', businessName: 'Fırın', paidAt: '2026-09-24T10:00:00.000Z', senderAddress: 'GOLD', refundedAt: '2026-09-24T11:00:00.000Z' },
+        { txHash: 'c', totalAmount: '3', paidAt: '2026-09-26T10:00:00.000Z', senderAddress: 'GNEW' },
+      ],
+      'GNEW'
+    );
+    assert.deepEqual(merged.map((e) => e.txHash), ['c', 'a', 'b']);
+    assert.equal(merged.find((e) => e.txHash === 'b').senderAddress, 'GOLD');
+    assert.equal(merged.find((e) => e.txHash === 'b').refundedAt, '2026-09-24T11:00:00.000Z');
+    assert.equal(merged.find((e) => e.txHash === 'c').senderAddress, undefined);
+  });
+
+  it('bozuk sunucu verisini yok sayar', async () => {
+    const { mergeServerReceipts } = await import('../src/utils/receiptArchive.js');
+    assert.deepEqual(mergeServerReceipts([], [null, {}, { txHash: 'x' }], 'G'), []);
   });
 });

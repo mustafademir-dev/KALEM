@@ -279,11 +279,6 @@ export async function listTransactions(merchantId, { limit = 20, cursor = null, 
 
 // --- Gün sonu CSV ---------------------------------------------------------------------
 
-const SIMULATION_STAMP = '*** SİMÜLASYON — MALİ DEĞERİ YOKTUR ***';
-const SIMULATION_NOTE =
-  'Bu belge KALEM PoC sisteminin ürettiği bir SİMÜLASYONDUR; GİB ile gerçek bir entegrasyon yoktur. ' +
-  'Resmi bir Z raporu, fatura veya e-Belge değildir ve mali/hukuki değer taşımaz.';
-
 /** CSV hücresi: `;`, tırnak, satır sonu içeriyorsa tırnaklar; formül enjeksiyonunu (=,+,-,@) etkisizleştirir. */
 export function csvText(value) {
   let s = value === null || value === undefined ? '' : String(value);
@@ -322,8 +317,6 @@ export async function buildDailyReportCsv(merchant, dateStr, now = new Date()) {
   const row = (...cells) => lines.push(cells.join(';'));
 
   row(csvText('KALEM Gün Sonu Raporu'));
-  row(csvText(SIMULATION_STAMP));
-  row(csvText(SIMULATION_NOTE));
   row('İşletme', csvText(merchant.businessName));
   row('VKN', csvText(merchant.taxId));
   row('Tarih', `${dateStr} (Türkiye saati)`);
@@ -369,7 +362,6 @@ export async function buildDailyReportCsv(merchant, dateStr, now = new Date()) {
     );
   }
   if (truncated) row(csvText(`Not: Gün ${LIMIT}'den fazla işlem içeriyor; rapor son ${LIMIT} işlemi kapsar.`));
-  row(csvText(SIMULATION_STAMP));
 
   return `﻿${lines.join('\r\n')}\r\n`;
 }

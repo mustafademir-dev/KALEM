@@ -28,7 +28,11 @@ import config from '../src/config/index.js';
 import logger from '../src/utils/logger.js';
 import Merchant from '../src/models/Merchant.model.js';
 import MerchantApproval from '../src/models/MerchantApproval.model.js';
-import { registerMerchantOnChain, isMerchantAlreadyRegistered } from '../src/services/merchant-onchain.service.js';
+import {
+  registerMerchantOnChain,
+  isMerchantAlreadyRegistered,
+  openMerchantBalanceEntry,
+} from '../src/services/merchant-onchain.service.js';
 
 /**
  * `process.argv`'den `--key=value` biçimindeki argümanları ayrıştırır.
@@ -56,7 +60,7 @@ export function parseArgs(argv) {
  * @param {string} params.operator - İşlemi tetikleyen operatörün adı (hesap verebilirlik).
  * @returns {Promise<{status: 'completed'|'already_registered'|'failed', merchantId?: string, registerTxHash?: string, message: string}>}
  */
-export async function approveMerchant({ taxId, operator }) {
+export async function approveMerchant({ taxId, operator, openBalanceEntry = openMerchantBalanceEntry }) {
   if (!taxId || !taxId.trim()) {
     throw new Error('--taxId zorunludur.');
   }
@@ -131,6 +135,15 @@ export async function approveMerchant({ taxId, operator }) {
     logger.info(
       `[ApproveMerchant] ONAYLANDI — ${merchant.businessName} (${merchant.stellarAddress}), tx: ${txHash}`
     );
+
+    // İlk müşteri ödemesi pahalı olmasın diye bakiye kaydını şimdi aç. Best-effort:
+    // başarısız olursa onay GEÇERLİ kalır, yalnızca ilk ödeme kirayı öder.
+    try {
+      await openBalanceEntry(merchant.stellarAddress);
+    } catch (error) {
+      logger.warn(`[ApproveMerchant] Bakiye kaydı önceden açılamadı (ilk ödeme kirayı öder): ${error.message}`);
+    }
+
     return {
       status: 'completed',
       merchantId: merchant._id.toString(),

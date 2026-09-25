@@ -178,8 +178,33 @@ export function applyRefunds(list, refunds) {
 }
 
 /**
- * İndirilecek fiş dosyasının adı. Ürün kararı gereği "SİMÜLASYON" ibaresi
- * dosya ADINDA da geçer (gün sonu CSV'siyle aynı kural).
+ * Sunucudaki fiş geçmişini cihazdaki arşivle birleştirir (yeni telefonda eski fişler
+ * gelsin diye). Arşivde olmayan fiş eklenir; olan fişin iade bilgisi tamamlanır.
+ * `senderAddress` yalnızca ŞU ANKİ cüzdandan farklıysa saklanır (önceki cihazın
+ * fişini açarken gerekir) — depo bayt bütçesi dar.
+ *
+ * @param {Array} list - Arşiv.
+ * @param {Array<{txHash, totalAmount, businessName, paidAt, senderAddress, refundedAt}>} receipts
+ * @param {string} currentAddress - Bu cihazdaki cüzdan.
+ * @returns {Array} Yeni liste (yeniden eskiye).
+ */
+export function mergeServerReceipts(list, receipts, currentAddress) {
+  const byHash = new Map((Array.isArray(list) ? list : []).filter(isValidEntry).map((e) => [e.txHash, e]));
+  for (const r of Array.isArray(receipts) ? receipts : []) {
+    if (!r?.txHash || !r.paidAt) continue;
+    const existing = byHash.get(r.txHash);
+    const entry = existing
+      ? { ...existing }
+      : { txHash: r.txHash, totalAmount: r.totalAmount, businessName: r.businessName ?? undefined, paidAt: r.paidAt };
+    if (r.refundedAt && !entry.refundedAt) entry.refundedAt = r.refundedAt;
+    if (!existing && r.senderAddress && r.senderAddress !== currentAddress) entry.senderAddress = r.senderAddress;
+    byHash.set(r.txHash, entry);
+  }
+  return [...byHash.values()].sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt));
+}
+
+/**
+ * İndirilecek fiş dosyasının adı.
  *
  * @param {{txHash: string, paidAt?: string}} entry
  * @returns {string}
@@ -187,11 +212,8 @@ export function applyRefunds(list, refunds) {
 export function receiptFilename(entry) {
   const date = String(entry?.paidAt ?? '').slice(0, 10) || 'tarihsiz';
   const short = String(entry?.txHash ?? '').slice(0, 8) || 'fis';
-  return `kalem-fis-SIMULASYON-${date}-${short}.txt`;
+  return `kalem-fis-${date}-${short}.txt`;
 }
-
-/** Ürün kararı: damga belgenin BAŞINDA, SONUNDA ve dosya ADINDA geçer. */
-export const STAMP = '*** SİMÜLASYON — MALİ DEĞERİ YOKTUR ***';
 
 function money(value) {
   return value === undefined || value === null ? '—' : `${value} TL`;
@@ -200,21 +222,18 @@ function money(value) {
 /**
  * Fiş belgesini paylaşılabilir/indirilebilir düz metne çevirir.
  *
- * Damga başta VE sonda tekrarlanır (ürün kararı): belge tek başına dolaşıma
- * girdiğinde gerçek bir mali belge sanılmamalıdır.
- *
  * @param {object} document - `GET /transactions/:txHash/gib-document` yanıtı.
  * @param {{warning?: string}} [options] - Ör. eski (hatalı tutarlı) belge uyarısı.
  * @returns {string}
  */
 export function receiptToText(document, { warning } = {}) {
   const invoice = document?.ublContent?.Invoice;
-  const lines = [STAMP, ''];
+  const lines = [];
 
   if (warning) lines.push(`! ${warning}`, '');
 
   if (!invoice) {
-    lines.push('Belge içeriği okunamadı.', '', STAMP);
+    lines.push('Belge içeriği okunamadı.');
     return lines.join('\n');
   }
 
@@ -222,7 +241,7 @@ export function receiptToText(document, { warning } = {}) {
   const merchantName = invoice.AccountingSupplierParty?.Party?.PartyName?.Name ?? '—';
 
   lines.push(
-    'KALEM — e-Belge / ÖKC Fişi (PoC)',
+    'KALEM — e-Belge',
     '',
     `İşyeri   : ${merchantName}`,
     `VKN      : ${document?.merchantTaxId ?? '—'}`,
@@ -249,10 +268,7 @@ export function receiptToText(document, { warning } = {}) {
     `KDV (%20) : ${money(invoice.TaxTotal?.TaxAmount)}`,
     `TOPLAM    : ${money(invoice.LegalMonetaryTotal?.PayableAmount)}`,
     '',
-    `Stellar TX: ${document?.txHash ?? '—'}`,
-    '',
-    STAMP,
-    'Bu belge KALEM PoC sistemi tarafından üretilmiştir; resmi bir mali belge değildir.'
+    `İşlem no  : ${document?.txHash ?? '—'}`
   );
 
   return lines.join('\n');

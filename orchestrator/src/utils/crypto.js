@@ -109,6 +109,11 @@ export function buildCustomerRefundsChallenge(address, timestamp) {
   return `KALEM-CUSTOMER-REFUNDS:${address}:${timestamp}`;
 }
 
+/** Müşterinin fiş geçmişini alırken adres sahipliğini kanıtlamak için imzalanan mesaj. */
+export function buildCustomerReceiptsChallenge(address, timestamp) {
+  return `KALEM-CUSTOMER-RECEIPTS:${address}:${timestamp}`;
+}
+
 /** Müşteri kaydı/girişinde cihazdaki cüzdanın sahipliğini kanıtlamak için imzalanan mesaj. */
 export function buildCustomerAuthChallenge(address, timestamp) {
   return `KALEM-CUSTOMER-AUTH:${address}:${timestamp}`;

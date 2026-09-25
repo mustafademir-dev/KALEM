@@ -10,7 +10,7 @@ import { getMerchantTransactions, ApiError } from '../../services/api.service.js
 import { downloadDailyReport } from '../../services/report-download.service.js';
 import { formatTrDate, istanbulToday, shiftDate } from '../../utils/dates.js';
 
-/** Gün Sonu: gün seç → o günün özetini gör → muhasebeci için CSV indir (SİMÜLASYON damgalı). */
+/** Gün Sonu: gün seç → o günün özetini gör → muhasebeci için CSV indir. */
 export default function ReportTab({ session }) {
   const today = istanbulToday();
   const [date, setDate] = useState(today);

@@ -11,8 +11,10 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 
 import Transaction from '../src/models/Transaction.model.js';
 import GibDocument from '../src/models/GibDocument.model.js';
-import { buildCustomerRefundsChallenge } from '../src/utils/crypto.js';
-import { listCustomerRefundsHandler } from '../src/api/routes/customer.routes.js';
+import Customer from '../src/models/Customer.model.js';
+import Merchant from '../src/models/Merchant.model.js';
+import { buildCustomerRefundsChallenge, buildCustomerReceiptsChallenge } from '../src/utils/crypto.js';
+import { listCustomerRefundsHandler, listCustomerReceiptsHandler } from '../src/api/routes/customer.routes.js';
 
 async function paidTx(sender, { refunded = false, documentNo = null } = {}) {
   const tx = await Transaction.create({
@@ -32,9 +34,9 @@ async function paidTx(sender, { refunded = false, documentNo = null } = {}) {
   return tx;
 }
 
-function signedBody(kp, { timestamp = Date.now(), wrongKey = false } = {}) {
+function signedBody(kp, { timestamp = Date.now(), wrongKey = false, challenge = buildCustomerRefundsChallenge } = {}) {
   const signer = wrongKey ? StellarSdk.Keypair.random() : kp;
-  const signature = signer.sign(Buffer.from(buildCustomerRefundsChallenge(kp.publicKey(), timestamp), 'utf8')).toString('base64');
+  const signature = signer.sign(Buffer.from(challenge(kp.publicKey(), timestamp), 'utf8')).toString('base64');
   return { address: kp.publicKey(), timestamp, signature };
 }
 
@@ -53,6 +55,7 @@ describe('Müşteri iadeleri ucu', () => {
     const app = express();
     app.use(express.json());
     app.post('/api/v1/customers/refunds', listCustomerRefundsHandler);
+    app.post('/api/v1/customers/receipts', listCustomerReceiptsHandler);
     await new Promise((r) => { server = app.listen(0, r); });
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
@@ -62,7 +65,7 @@ describe('Müşteri iadeleri ucu', () => {
     await mongod.stop();
   });
   beforeEach(async () => {
-    await Promise.all([Transaction.deleteMany({}), GibDocument.deleteMany({})]);
+    await Promise.all([Transaction.deleteMany({}), GibDocument.deleteMany({}), Customer.deleteMany({}), Merchant.deleteMany({})]);
   });
 
   it('yalnızca kendi iade EDİLMİŞ ödemelerini, fiş numarasıyla döner', async () => {
@@ -85,5 +88,42 @@ describe('Müşteri iadeleri ucu', () => {
     assert.equal((await post(signedBody(me, { wrongKey: true }))).status, 403);
     assert.equal((await post(signedBody(me, { timestamp: Date.now() - 10 * 60 * 1000 }))).status, 400);
     assert.equal((await post({ address: 'bozuk', timestamp: Date.now(), signature: 'x' })).status, 400);
+  });
+
+  it('fiş geçmişi: önceki cihazın ödemeleri de gelir, işletme adı ve iade bilgisiyle', async () => {
+    const oldKp = StellarSdk.Keypair.random();
+    const newKp = StellarSdk.Keypair.random();
+    await Customer.create({ tcHash: 'h', pinHash: 'p', stellarAddress: newKp.publicKey(), addressHistory: [oldKp.publicKey()] });
+    const m = await Merchant.create({
+      businessName: 'Demo Kırtasiye', taxId: 'T1', stellarAddress: StellarSdk.Keypair.random().publicKey(),
+      apiKeyHash: 'x' + randomUUID(), ownershipVerified: true,
+    });
+    const oldTx = await paidTx(oldKp.publicKey(), { refunded: true });
+    await Transaction.updateOne({ _id: oldTx._id }, { $set: { merchantId: m._id } });
+    await paidTx(newKp.publicKey());
+    await paidTx(StellarSdk.Keypair.random().publicKey()); // başkasının
+
+    const res = await fetch(`${baseUrl}/api/v1/customers/receipts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signedBody(newKp, { challenge: buildCustomerReceiptsChallenge })),
+    });
+    assert.equal(res.status, 200);
+    const { receipts } = await res.json();
+    assert.equal(receipts.length, 2);
+    const old = receipts.find((r) => r.txHash === oldTx.txHash);
+    assert.equal(old.businessName, 'Demo Kırtasiye');
+    assert.equal(old.senderAddress, oldKp.publicKey());
+    assert.ok(old.refundedAt);
+  });
+
+  it('fiş geçmişi: iade imza mesajıyla (başka amaçla imzalanmış) istek reddedilir', async () => {
+    const kp = StellarSdk.Keypair.random();
+    const res = await fetch(`${baseUrl}/api/v1/customers/receipts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signedBody(kp)),
+    });
+    assert.equal(res.status, 403);
   });
 });

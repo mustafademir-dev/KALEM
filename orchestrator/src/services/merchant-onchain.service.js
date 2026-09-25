@@ -74,3 +74,25 @@ export async function registerMerchantOnChain(merchantStellarAddress) {
 export async function isMerchantAlreadyRegistered(merchantStellarAddress) {
   return isMerchantOnChain(config.contracts.dtlTokenId, merchantStellarAddress);
 }
+
+/**
+ * Esnafın dtl-token bakiye kaydını ÖNCEDEN açar: 1 stroop basar ve hemen geri yakar.
+ *
+ * Neden: bir adrese İLK kez e-TL geldiğinde kontrat zincirde yeni bir bakiye kaydı
+ * açar ve bunun kirası (~1-2 XLM) o işlemin ücretine eklenir. Bu adım yapılmazsa
+ * bedeli esnafa gelen ilk müşteri ödemesi öder: pahalı ve ücret tavanına takılabilir.
+ * Onay sırasında açılınca bedeli ihraççı bir kez öder, ilk müşteri ödemesi ucuz geçer.
+ * Toplam arz değişmez (basılan = yakılan).
+ *
+ * Sınır: kontrat bakiye kaydını 30 günlük TTL ile yazar; esnaf 30 gün ödeme almazsa
+ * kayıt arşivlenir ve bir sonraki ödeme yine kira öder.
+ *
+ * @returns {Promise<{mintTxHash: string, burnTxHash: string}>}
+ */
+export async function openMerchantBalanceEntry(merchantStellarAddress, { issuerCall } = {}) {
+  const call = issuerCall ?? (await import('./refund.service.js')).issuerTokenCall;
+  const mintTxHash = await call('mint', merchantStellarAddress, '1');
+  const burnTxHash = await call('burn', merchantStellarAddress, '1');
+  logger.info(`[MerchantOnChain] Esnaf bakiye kaydı açıldı (esnaf: ${merchantStellarAddress})`);
+  return { mintTxHash, burnTxHash };
+}

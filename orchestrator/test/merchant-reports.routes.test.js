@@ -310,7 +310,7 @@ describe('Esnaf raporlama uçları', () => {
       return { res, bytes, text: new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes) };
     }
 
-    it('CSV: UTF-8 BOM, ; ayraç, virgüllü ondalık, Türkiye saati, doğru toplamlar; SİMÜLASYON damgası BAŞTA ve SONDA', async () => {
+    it('CSV: UTF-8 BOM, ; ayraç, virgüllü ondalık, Türkiye saati, doğru toplamlar', async () => {
       const { merchant, apiKey } = await createMerchant({ businessName: 'Kadıköy Simit Fırını', taxId: '1234567890' });
       const { merchant: other } = await createMerchant();
       await createTx(merchant, { ...HUNDRED, createdAt: new Date('2026-09-19T10:05:07.000Z'), gib: 'KALEM2026091900001' });
@@ -321,16 +321,14 @@ describe('Esnaf raporlama uçları', () => {
       const { res, text, bytes } = await csvFor(apiKey, merchant, '2026-09-19');
       assert.equal(res.status, 200);
       assert.match(res.headers.get('content-type'), /^text\/csv; charset=utf-8/);
-      assert.match(res.headers.get('content-disposition'), /attachment; filename="kalem-gun-sonu-SIMULASYON-2026-09-19\.csv"/);
+      assert.match(res.headers.get('content-disposition'), /attachment; filename="kalem-gun-sonu-2026-09-19\.csv"/);
       assert.equal(res.headers.get('cache-control'), 'no-store');
 
       assert.deepEqual([...bytes.slice(0, 3)], [0xef, 0xbb, 0xbf], 'Excel için UTF-8 BOM (ham baytlar)');
       const lines = text.replace(/^﻿/, '').split('\r\n').filter((l) => l !== '');
 
-      // ZORUNLU damga: başta ve sonda, ayrıca açıklama satırı
-      assert.equal(lines[1], '*** SİMÜLASYON — MALİ DEĞERİ YOKTUR ***');
-      assert.match(lines[2], /SİMÜLASYON.*GİB ile gerçek bir entegrasyon yoktur.*mali\/hukuki değer taşımaz/);
-      assert.equal(lines[lines.length - 1], '*** SİMÜLASYON — MALİ DEĞERİ YOKTUR ***');
+      assert.equal(lines[0], 'KALEM Gün Sonu Raporu');
+      assert.ok(!text.includes('SİMÜLASYON'), 'rapor simülasyon damgası taşımaz');
 
       assert.ok(lines.includes('İşletme;Kadıköy Simit Fırını'));
       assert.ok(lines.includes('VKN;1234567890'));
@@ -389,18 +387,17 @@ describe('Esnaf raporlama uçları', () => {
       assert.ok(text.includes("VKN;'+905551112233"));
     });
 
-    it('boş gün: yine geçerli CSV, damgalı, TOPLAM sıfır', async () => {
+    it('boş gün: yine geçerli CSV, TOPLAM sıfır', async () => {
       const { merchant, apiKey } = await createMerchant();
       const { res, text } = await csvFor(apiKey, merchant, '2026-01-01');
       assert.equal(res.status, 200);
       assert.ok(text.includes('TOPLAM;0 işlem;0,00'));
-      assert.equal(text.trimEnd().split('\r\n').pop(), '*** SİMÜLASYON — MALİ DEĞERİ YOKTUR ***');
     });
 
     it('date verilmezse bugün (Türkiye saati); geçersiz tarih 400', async () => {
       const { merchant, apiKey } = await createMerchant();
       const res = await get(`/${merchant._id}/reports/daily`, apiKey);
-      assert.match(res.headers.get('content-disposition'), new RegExp(`SIMULASYON-${istanbulToday()}\\.csv`));
+      assert.match(res.headers.get('content-disposition'), new RegExp(`kalem-gun-sonu-${istanbulToday()}\\.csv`));
       assert.equal((await get(`/${merchant._id}/reports/daily?date=2026-02-31`, apiKey)).status, 400);
     });
   });
