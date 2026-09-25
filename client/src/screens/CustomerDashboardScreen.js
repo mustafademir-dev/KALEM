@@ -44,7 +44,7 @@ async function checkRefunds(address) {
   }
 }
 
-export default function CustomerDashboardScreen() {
+export default function CustomerDashboardScreen({ params = {} }) {
   const { navigate, reset } = useNavigation();
   const [tab, setTab] = useState('home');
   const [wallet, setWallet] = useState(null);
@@ -53,6 +53,7 @@ export default function CustomerDashboardScreen() {
   const [refreshError, setRefreshError] = useState(false);
   const [archive, setArchive] = useState({ loading: true, items: [] });
   const [newRefunds, setNewRefunds] = useState([]);
+  const [migratedAmount, setMigratedAmount] = useState(params.migratedAmount ?? null);
 
   const applyRefundCheck = useCallback(async (address) => {
     const result = await checkRefunds(address);
@@ -147,6 +148,8 @@ export default function CustomerDashboardScreen() {
               onTopUp={handleTopUp}
               newRefunds={newRefunds}
               onDismissRefunds={() => setNewRefunds([])}
+              migratedAmount={migratedAmount}
+              onDismissMigrated={() => setMigratedAmount(null)}
             />
           )}
           {tab === 'receipts' && (

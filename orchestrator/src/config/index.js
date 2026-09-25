@@ -72,6 +72,9 @@ const config = {
   secrets: {
     pool2SecretKey: requireEnv('POOL2_SECRET_KEY', ''),
     issuerSecretKey: requireEnv('ISSUER_SECRET_KEY', ''),
+    // Müşteri TC kimlik numarasının HMAC özeti için sunucu gizli anahtarı
+    // (bkz. utils/credentials.js). TC açık hâlde saklanmaz.
+    customerIdHashSecret: requireEnv('CUSTOMER_ID_HASH_SECRET', ''),
   },
 
   // --- Şifreleme ---
@@ -158,6 +161,12 @@ const config = {
       max: parseInt(requireEnv('RATE_LIMIT_FAUCET_IP_MAX', '15'), 10),
     },
     // POST /merchants/register — kimliksiz, her istek kalıcı bir Merchant kaydı yazar.
+    // Esnaf (VKN+şifre) ve müşteri (TC+PIN) girişi/kaydı — IP bazlı.
+    // Hesap bazlı deneme kilidi ayrıca vardır (5 hatada 15 dk, utils/credentials.js).
+    accountAuth: {
+      windowMs: parseInt(requireEnv('RATE_LIMIT_ACCOUNT_AUTH_WINDOW_MS', '900000'), 10), // 15 dk
+      max: parseInt(requireEnv('RATE_LIMIT_ACCOUNT_AUTH_MAX', '30'), 10),
+    },
     merchantRegister: {
       windowMs: parseInt(requireEnv('RATE_LIMIT_MERCHANT_REGISTER_WINDOW_MS', '3600000'), 10), // 1 saat
       max: parseInt(requireEnv('RATE_LIMIT_MERCHANT_REGISTER_MAX', '10'), 10),

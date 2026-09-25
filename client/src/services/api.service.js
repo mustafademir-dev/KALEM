@@ -95,11 +95,33 @@ export async function submitTransaction({
  * @param {string} [params.phone]
  * @returns {Promise<{merchantId: string, businessName: string, kycStatus: string, apiKey: string}>}
  */
-export async function registerMerchant({ businessName, taxId, stellarAddress, signature, email, phone }) {
+export async function registerMerchant({ businessName, taxId, stellarAddress, signature, email, phone, password }) {
   return request('/api/v1/merchants/register', {
     method: 'POST',
-    body: { businessName, taxId, stellarAddress, signature, email, phone },
+    body: { businessName, taxId, stellarAddress, signature, email, phone, password },
   });
+}
+
+/**
+ * Esnaf girişi: VKN + şifre. Yanıttaki `apiKey` bu cihazın oturum anahtarıdır.
+ *
+ * @returns {Promise<{merchantId: string, apiKey: string, businessName: string, stellarAddress: string, onChainRegistered: boolean, kycStatus: string}>}
+ */
+export async function loginMerchant({ taxId, password }) {
+  return request('/api/v1/merchants/login', { method: 'POST', body: { taxId, password } });
+}
+
+/**
+ * Müşteri hesabı açma / giriş: TC + 6 haneli PIN + cihazdaki cüzdanın imzası
+ * (`KALEM-CUSTOMER-AUTH:{address}:{timestamp}`). Girişte cihaz farklıysa bakiye
+ * yeni cüzdana taşınır (`migratedAmount`).
+ */
+export async function registerCustomer(body) {
+  return request('/api/v1/customers/register', { method: 'POST', body });
+}
+
+export async function loginCustomer(body) {
+  return request('/api/v1/customers/login', { method: 'POST', body });
 }
 
 /**

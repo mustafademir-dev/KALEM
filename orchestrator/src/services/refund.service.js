@@ -42,7 +42,7 @@ export class RefundError extends Error {
 }
 
 /** İhraççı anahtarıyla dtl-token üzerinde `burn(from, amount)` / `mint(to, amount)` çağırır. */
-async function issuerTokenCall(method, address, amountStroops) {
+export async function issuerTokenCall(method, address, amountStroops) {
   if (!config.secrets.issuerSecretKey) {
     throw new Error('İhraççı gizli anahtarı yapılandırılmamış (ISSUER_SECRET_KEY).');
   }

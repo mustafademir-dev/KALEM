@@ -108,3 +108,8 @@ export function buildFaucetMintChallenge(address, timestamp) {
 export function buildCustomerRefundsChallenge(address, timestamp) {
   return `KALEM-CUSTOMER-REFUNDS:${address}:${timestamp}`;
 }
+
+/** Müşteri kaydı/girişinde cihazdaki cüzdanın sahipliğini kanıtlamak için imzalanan mesaj. */
+export function buildCustomerAuthChallenge(address, timestamp) {
+  return `KALEM-CUSTOMER-AUTH:${address}:${timestamp}`;
+}

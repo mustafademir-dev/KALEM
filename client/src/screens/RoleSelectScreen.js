@@ -25,7 +25,7 @@ export default function RoleSelectScreen() {
             icon="wallet"
             title="Müşteri"
             description="Bakiye yükle, QR okutarak TL ile ödeme yap"
-            onPress={() => navigate('CustomerDashboard')}
+            onPress={() => navigate('CustomerAuth')}
           />
           <RoleCard
             icon="store"

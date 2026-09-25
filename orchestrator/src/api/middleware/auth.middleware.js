@@ -32,7 +32,10 @@ export async function authMiddleware(req, res, next) {
     }
 
     const apiKeyHash = hashApiKey(token);
-    const merchant = await Merchant.findOne({ apiKeyHash }).select('+apiKeyHash');
+    // Kayıtta verilen anahtar YA DA girişte (VKN + şifre) verilen oturum anahtarı.
+    const merchant = await Merchant.findOne({ $or: [{ apiKeyHash }, { sessionKeyHashes: apiKeyHash }] }).select(
+      '+apiKeyHash'
+    );
 
     if (!merchant) {
       return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Geçersiz API anahtarı.' });

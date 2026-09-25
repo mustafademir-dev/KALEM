@@ -177,6 +177,7 @@ describe('Validation Middleware Unit Tests', () => {
           taxId: '9876543210',
           stellarAddress: validAddress,
           signature: 'ZmFrZS1zaWduYXR1cmU=',
+          password: 'dukkan123',
           email: 'test@example.com',
           phone: '+905551112233',
         },
@@ -186,6 +187,19 @@ describe('Validation Middleware Unit Tests', () => {
       validateMerchantRegister(req, res, () => (nextCalled = true));
       assert.equal(nextCalled, true);
       assert.equal(res.statusCode, null);
+    });
+
+    it('şifresiz ya da 6 karakterden kısa şifreyle kayıt REDDEDİLMELİDİR', () => {
+      for (const password of [undefined, '12345']) {
+        const req = {
+          body: { businessName: 'Test', taxId: '9876543210', stellarAddress: validAddress, signature: 'eA==', password },
+        };
+        const res = createMockRes();
+        let nextCalled = false;
+        validateMerchantRegister(req, res, () => (nextCalled = true));
+        assert.equal(nextCalled, false);
+        assert.equal(res.statusCode, 400);
+      }
     });
   });
 });

@@ -33,6 +33,8 @@ export default function CustomerHomeTab({
   onTopUp,
   newRefunds = [],
   onDismissRefunds,
+  migratedAmount = null,
+  onDismissMigrated,
 }) {
   const recent = receipts.slice(0, RECENT_COUNT);
 
@@ -41,6 +43,12 @@ export default function CustomerHomeTab({
       <View style={styles.header}>
         <Text style={[type.h1, { color: colors.textPrimary }]}>Cüzdanım</Text>
       </View>
+
+      {migratedAmount ? (
+        <InlineNotice tone="success" style={{ marginTop: spacing.md }} actionLabel="Tamam" onAction={onDismissMigrated}>
+          Önceki cihazınızdaki {formatTl(migratedAmount)} bakiye bu cihaza taşındı.
+        </InlineNotice>
+      ) : null}
 
       {newRefunds.length > 0 && (
         <View style={styles.refundCard}>

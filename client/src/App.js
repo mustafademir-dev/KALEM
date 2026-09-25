@@ -15,6 +15,7 @@ import { colors } from './theme/index.js';
 import { NavigationProvider, useNavigation } from './navigation/Navigator.js';
 import RoleSelectScreen from './screens/RoleSelectScreen.js';
 import CustomerDashboardScreen from './screens/CustomerDashboardScreen.js';
+import CustomerAuthScreen from './screens/CustomerAuthScreen.js';
 import CustomerTopUpScreen from './screens/CustomerTopUpScreen.js';
 import CustomerReceiptScreen from './screens/CustomerReceiptScreen.js';
 import PaymentScreen from './screens/PaymentScreen.js';
@@ -28,6 +29,7 @@ import EsnafRefundScreen from './screens/EsnafRefundScreen.js';
 
 const SCREENS = {
   RoleSelect: RoleSelectScreen,
+  CustomerAuth: CustomerAuthScreen,
   CustomerDashboard: CustomerDashboardScreen,
   CustomerTopUp: CustomerTopUpScreen,
   CustomerReceipt: CustomerReceiptScreen,

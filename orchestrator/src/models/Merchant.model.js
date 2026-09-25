@@ -36,6 +36,19 @@ const merchantSchema = new mongoose.Schema(
       select: false,
     },
 
+    /** Giriş şifresinin scrypt özeti (VKN + şifre ile giriş; bkz. POST /merchants/login). */
+    passwordHash: { type: String, select: false },
+
+    /**
+     * Girişte verilen oturum anahtarlarının SHA-256 özetleri (en fazla 10).
+     * Birden fazla cihaz aynı anda açık kalabilsin diye liste; `apiKeyHash`
+     * (kayıtta verilen anahtar) da geçerliliğini korur.
+     */
+    sessionKeyHashes: { type: [String], default: [], select: false },
+
+    failedLoginCount: { type: Number, default: 0 },
+    lockedUntil: { type: Date, default: null },
+
     /** KYC/KYB doğrulama durumu. 'verified' = admin onaylı (approve-merchant.mjs). */
     kycStatus: {
       type: String,

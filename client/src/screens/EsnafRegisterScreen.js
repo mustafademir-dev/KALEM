@@ -25,6 +25,8 @@ export default function EsnafRegisterScreen() {
   const [taxId, setTaxId] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [password2, setPassword2] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null); // { merchantId, apiKey, stellarAddress, businessName }
@@ -33,6 +35,14 @@ export default function EsnafRegisterScreen() {
     setError(null);
     if (!businessName.trim() || !taxId.trim()) {
       setError('İşletme adı ve vergi kimlik numarası zorunludur.');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Şifre en az 6 karakter olmalıdır.');
+      return;
+    }
+    if (password !== password2) {
+      setError('Şifreler aynı değil.');
       return;
     }
     setLoading(true);
@@ -48,6 +58,7 @@ export default function EsnafRegisterScreen() {
         signature: bytesToBase64(signature),
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
+        password,
       });
 
       setResult({
@@ -67,7 +78,7 @@ export default function EsnafRegisterScreen() {
     } finally {
       setLoading(false);
     }
-  }, [businessName, taxId, email, phone]);
+  }, [businessName, taxId, email, phone, password, password2]);
 
   const handleGoToDashboard = useCallback(async () => {
     const session = {
@@ -98,18 +109,12 @@ export default function EsnafRegisterScreen() {
         <ScrollView contentContainerStyle={styles.scroll}>
           <Text style={[type.h1, { color: colors.textPrimary }]}>Kayıt Tamamlandı</Text>
           <Text style={[type.body, { color: colors.textSecondary, marginTop: 4, marginBottom: spacing.lg }]}>
-            Bu bilgiler yalnızca ŞİMDİ gösteriliyor — kaydedin.
+            Bundan sonra vergi numaranız ve şifrenizle giriş yapabilirsiniz.
           </Text>
 
-          <View style={styles.card}>
-            <InfoRow label="İşyeri ID" value={result.merchantId} />
-            <InfoRow label="API Anahtarı" value={result.apiKey} mono />
-            <InfoRow label="Stellar Adresi" value={shortenMiddle(result.stellarAddress, 8, 8)} />
-          </View>
-
           <Text style={[type.caption, { color: colors.textMuted, marginTop: spacing.md }]}>
-            On-chain onay (esnafın ödeme alabilmesi için) arka planda, ayrı bir admin adımıyla
-            yapılır — birkaç dakika sürebilir. Onaylanana kadar panelde "Beklemede" rozeti görünür.
+            İşletmeniz onaylandığında ödeme almaya başlayabilirsiniz. Onaylanana kadar panelde "Beklemede"
+            rozeti görünür.
           </Text>
 
           <Button label="Panele Git" onPress={handleGoToDashboard} style={{ marginTop: spacing.xl }} />
@@ -156,6 +161,24 @@ export default function EsnafRegisterScreen() {
           onChangeText={setPhone}
           placeholder="5551112233"
           keyboardType="phone-pad"
+          style={{ marginBottom: spacing.md }}
+        />
+        <TextField
+          label="Şifre"
+          value={password}
+          onChangeText={setPassword}
+          placeholder="En az 6 karakter"
+          secureTextEntry
+          autoCapitalize="none"
+          style={{ marginBottom: spacing.md }}
+        />
+        <TextField
+          label="Şifre (tekrar)"
+          value={password2}
+          onChangeText={setPassword2}
+          placeholder="Şifrenizi tekrar girin"
+          secureTextEntry
+          autoCapitalize="none"
           style={{ marginBottom: spacing.lg }}
         />
 

@@ -58,7 +58,7 @@ export function validateTransactionSubmit(req, res, next) {
  * @param {import('express').NextFunction} next
  */
 export function validateMerchantRegister(req, res, next) {
-  const { businessName, taxId, stellarAddress, email, phone, signature } = req.body || {};
+  const { businessName, taxId, stellarAddress, email, phone, signature, password } = req.body || {};
 
   if (!businessName || typeof businessName !== 'string' || !businessName.trim()) {
     return res
@@ -92,6 +92,10 @@ export function validateMerchantRegister(req, res, next) {
       error: 'VALIDATION_ERROR',
       message: 'signature zorunludur — stellarAddress sahipliğini kanıtlayan Ed25519 imzası (base64).',
     });
+  }
+
+  if (typeof password !== 'string' || password.length < 6 || password.length > 128) {
+    return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Şifre en az 6 karakter olmalıdır.' });
   }
 
   next();

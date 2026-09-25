@@ -1,7 +1,12 @@
 /**
  * Müşteri Route'ları
  *
- * POST /api/v1/customers/refunds — müşterinin KENDİ iadeleri.
+ * POST /api/v1/customers/register — TC + 6 haneli PIN ile hesap açma
+ * POST /api/v1/customers/login    — giriş; yeni cihazdaysa bakiye taşınır
+ * POST /api/v1/customers/refunds  — müşterinin KENDİ iadeleri.
+ *
+ * Kayıt/girişte cihazdaki cüzdanın sahipliği de imzayla kanıtlanır
+ * (bkz. services/customer-account.service.js).
  *
  * Müşterinin API anahtarı yoktur; adres sahipliğini faucet ile aynı desenle,
  * `KALEM-CUSTOMER-REFUNDS:{address}:{timestamp}` mesajını cüzdan anahtarıyla
@@ -14,7 +19,8 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import Transaction from '../../models/Transaction.model.js';
 import GibDocument from '../../models/GibDocument.model.js';
 import { buildCustomerRefundsChallenge } from '../../utils/crypto.js';
-import { gibReadRateLimiter } from '../middleware/rate-limit.middleware.js';
+import { gibReadRateLimiter, accountAuthRateLimiter } from '../middleware/rate-limit.middleware.js';
+import { registerCustomer, loginCustomer, AccountError } from '../../services/customer-account.service.js';
 import logger from '../../utils/logger.js';
 
 const router = Router();
@@ -66,6 +72,29 @@ export async function listCustomerRefundsHandler(req, res) {
   }
 }
 
+function accountHandler(action, successStatus) {
+  return async (req, res) => {
+    try {
+      const { tc, pin, address, timestamp, signature } = req.body || {};
+      const result = await action({ tc: String(tc ?? '').trim(), pin, address, timestamp, signature });
+      res.status(successStatus).json(result);
+    } catch (error) {
+      if (error instanceof AccountError) {
+        return res.status(error.httpStatus).json({ error: error.code, message: error.message });
+      }
+      logger.error(`[Customer] hesap işlemi hatası: ${error.message}`);
+      res.status(500).json({ error: 'INTERNAL_ERROR', message: 'İşlem tamamlanamadı, tekrar deneyin.' });
+    }
+  };
+}
+
+export const registerCustomerHandler = accountHandler(registerCustomer, 201);
+export function createLoginHandler(deps) {
+  return accountHandler((input) => loginCustomer(input, deps), 200);
+}
+
+router.post('/register', accountAuthRateLimiter, registerCustomerHandler);
+router.post('/login', accountAuthRateLimiter, createLoginHandler());
 router.post('/refunds', gibReadRateLimiter, listCustomerRefundsHandler);
 
 export default router;

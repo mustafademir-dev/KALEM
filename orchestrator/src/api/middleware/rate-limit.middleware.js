@@ -258,3 +258,10 @@ export const flowReadRateLimiter = createLimiter({
   limits: config.rateLimit.flowRead,
   keyGenerator: ipKey,
 });
+
+/** Esnaf/müşteri giriş ve kayıt uçları — IP bazlı (şifre/PIN tahminini yavaşlatır). */
+export const accountAuthRateLimiter = createLimiter({
+  name: 'account:auth',
+  limits: config.rateLimit.accountAuth,
+  keyGenerator: ipKey,
+});

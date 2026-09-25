@@ -119,7 +119,10 @@ describe('Auth Middleware Unit Tests', () => {
       assert.equal(res.statusCode, null, 'Başarılı doğrulamada response yazılmamalıdır');
       assert.equal(req.merchant, fakeMerchant);
       assert.equal(req.merchantId, '507f1f77bcf86cd799439011');
-      assert.equal(capturedFilter.apiKeyHash, hashApiKey(apiKey));
+      // Kayıt anahtarı YA DA girişte verilen oturum anahtarı kabul edilir.
+      assert.deepEqual(capturedFilter, {
+        $or: [{ apiKeyHash: hashApiKey(apiKey) }, { sessionKeyHashes: hashApiKey(apiKey) }],
+      });
     } finally {
       Merchant.findOne = originalFindOne;
     }
