@@ -8,7 +8,7 @@ import { colors, radii, spacing, type } from '../../theme/index.js';
 import { shortenMiddle } from '../../utils/format.js';
 
 /** Hesap: işletme bilgileri, zincir onay durumu ve çıkış. */
-export default function AccountTab({ session, stellarAddress, onChainRegistered, onLogout }) {
+export default function AccountTab({ session, stellarAddress, onChainRegistered, onRefund, onLogout }) {
   return (
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
       <View style={styles.hero}>
@@ -35,6 +35,16 @@ export default function AccountTab({ session, stellarAddress, onChainRegistered,
         <View style={styles.hairline} />
         <Row label="Ağ" value="Stellar Testnet" />
       </View>
+
+      {onRefund ? (
+        <Button
+          label="İade Yap"
+          variant="secondary"
+          icon="refresh"
+          onPress={onRefund}
+          style={{ marginTop: spacing.lg }}
+        />
+      ) : null}
 
       <Button
         label="Çıkış Yap"

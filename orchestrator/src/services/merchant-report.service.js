@@ -76,6 +76,7 @@ export function toRow(tx, gibInfo) {
     hasBreakdown: breakdown,
     hasGibDocument: Boolean(tx.gibDocumentId),
     gibDocumentNo: gibInfo?.get(String(tx.gibDocumentId)) ?? null,
+    refunded: tx.refund?.status === 'completed',
   };
 }
 
@@ -121,11 +122,15 @@ export function summarize(transactions) {
   };
 }
 
-/** Esnafın bir günlük (Türkiye saati) onaylı işlemleri, yeniden eskiye. */
+/** İadesi tamamlanmış işlemler ciro/komisyon/Sosyal Fon toplamlarına girmez (bkz. refund.service.js). */
+const NOT_REFUNDED = Object.freeze({ 'refund.status': { $ne: 'completed' } });
+
+/** Esnafın bir günlük (Türkiye saati) onaylı ve iade EDİLMEMİŞ işlemleri, yeniden eskiye. */
 export async function findConfirmedInRange(merchantId, from, to, { limit = 2000 } = {}) {
   return Transaction.find({
     merchantId,
     status: 'confirmed',
+    ...NOT_REFUNDED,
     createdAt: { $gte: from, $lt: to },
   })
     .sort({ createdAt: -1, _id: -1 })
@@ -168,6 +173,7 @@ async function lifetimeSocialContribution(merchantId) {
   const docs = await Transaction.find({
     merchantId,
     status: 'confirmed',
+    ...NOT_REFUNDED,
     pool3Amount: { $exists: true, $ne: null },
   })
     .select('pool3Amount')

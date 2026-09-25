@@ -149,6 +149,32 @@ const transactionSchema = new mongoose.Schema(
 
     /** Ödemenin baştan sona zaman çizelgesi (bkz. FLOW_STEPS). */
     flowEvents: { type: [flowEventSchema], default: [] },
+
+    // --- İade (bkz. services/refund.service.js) ---
+
+    /**
+     * Tam iade durumu. `status` zincir onayını anlatır ve iadede DEĞİŞMEZ;
+     * iade ayrı tutulur ki mutabakat/SSE yolları onaylı işlemi yeniden
+     * "onaylamaya" çalışmasın. Raporlar `refund.status === 'completed'`
+     * olanları ciro/komisyon toplamlarından düşer.
+     */
+    refund: {
+      type: new mongoose.Schema(
+        {
+          status: { type: String, enum: ['processing', 'completed', 'failed'], required: true },
+          requestedAt: { type: Date },
+          completedAt: { type: Date },
+          /** Tamamlanan zincir adımları — yarıda kalan iade kaldığı yerden sürer. */
+          steps: {
+            type: [new mongoose.Schema({ name: String, txHash: String, at: Date }, { _id: false })],
+            default: [],
+          },
+          error: { type: String },
+        },
+        { _id: false }
+      ),
+      default: undefined,
+    },
   },
   {
     timestamps: true, // createdAt, updatedAt

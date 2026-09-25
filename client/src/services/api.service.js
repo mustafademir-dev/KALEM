@@ -229,3 +229,21 @@ export async function getMerchantTransactions(merchantId, apiKey, { limit, curso
     headers: { Authorization: `Bearer ${apiKey}` },
   });
 }
+
+/**
+ * Esnafın kendi fişini fiş numarasıyla (`Invoice.ID`) TAM iade etmesi (prototip).
+ * Sunucu dört zincir işlemi yapar (esnaf/havuzlardan yakma, müşteriye basma);
+ * yanıt ~15-25 sn sürebilir. Bkz. orchestrator `refund.service.js`.
+ *
+ * @param {string} merchantId
+ * @param {string} apiKey
+ * @param {string} documentNo
+ * @returns {Promise<{documentNo: string, refundedAmount: string, customerAddress: string, refund: object}>}
+ */
+export async function refundByDocumentNo(merchantId, apiKey, documentNo) {
+  return request(`/api/v1/merchants/${merchantId}/refunds`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: { documentNo },
+  });
+}

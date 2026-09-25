@@ -8,6 +8,7 @@ import ReceiptActions from '../components/ReceiptActions.js';
 import { EmptyState, InlineNotice, Skeleton } from '../components/StateViews.js';
 import { colors, spacing, type } from '../theme/index.js';
 import { getGibDocument, ApiError } from '../services/api.service.js';
+import { useNavigation } from '../navigation/Navigator.js';
 import { formatTl, stroopsToFixed2 } from '../utils/format.js';
 
 /**
@@ -15,7 +16,8 @@ import { formatTl, stroopsToFixed2 } from '../utils/format.js';
  * ile alınır (esnaf kendi anahtarıyla, yalnızca kendi işlemini görür).
  */
 export default function EsnafReceiptScreen({ params }) {
-  const { session, txHash, totalAmount } = params;
+  const { session, txHash, totalAmount, refunded } = params;
+  const { navigate } = useNavigation();
   const [state, setState] = useState({ status: 'loading', document: null, error: null });
   const aliveRef = useRef(true);
 
@@ -94,6 +96,21 @@ export default function EsnafReceiptScreen({ params }) {
               )}
               <GibReceiptCard document={state.document} />
               <ReceiptActions document={state.document} txHash={txHash} warning={legacyWarning} />
+              {refunded ? (
+                <InlineNotice tone="info" style={{ alignSelf: 'stretch', marginTop: spacing.md }}>
+                  Bu ödeme iade edildi.
+                </InlineNotice>
+              ) : state.document?.ublContent?.Invoice?.ID ? (
+                <Button
+                  label="Bu fişi iade et"
+                  variant="secondary"
+                  icon="refresh"
+                  onPress={() =>
+                    navigate('MerchantRefund', { session, documentNo: state.document.ublContent.Invoice.ID })
+                  }
+                  style={{ alignSelf: 'stretch', marginTop: spacing.md }}
+                />
+              ) : null}
             </>
           )}
         </View>

@@ -27,7 +27,9 @@ export default function TransactionRow({ item, onOpenReceipt }) {
       <View style={{ flex: 1 }}>
         <Text style={[type.h2, { color: colors.textPrimary }]}>{formatTl(item.totalAmount)}</Text>
         <Text style={[type.caption, { color: colors.textMuted, marginTop: 1 }]}>{formatTrDateTime(item.createdAt)}</Text>
-        {item.hasBreakdown ? (
+        {item.refunded ? (
+          <Text style={[type.captionMedium, { color: colors.warning, marginTop: 2 }]}>İade edildi</Text>
+        ) : item.hasBreakdown ? (
           <View style={{ marginTop: 2 }}>
             <Text style={[type.caption, { color: colors.textMuted }]}>Komisyon {formatTl(item.commission)}</Text>
             <Text style={[type.captionMedium, { color: colors.success }]}>Net {formatTl(item.net)}</Text>
