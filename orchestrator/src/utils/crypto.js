@@ -100,3 +100,11 @@ export function buildMerchantOwnershipChallenge(taxId, stellarAddress) {
 export function buildFaucetMintChallenge(address, timestamp) {
   return `KALEM-FAUCET-MINT:${address}:${timestamp}`;
 }
+
+/**
+ * Müşterinin kendi iadelerini sorgularken adres sahipliğini kanıtlamak için
+ * imzalayacağı mesaj (bkz. customer.routes.js). Faucet ile aynı desen.
+ */
+export function buildCustomerRefundsChallenge(address, timestamp) {
+  return `KALEM-CUSTOMER-REFUNDS:${address}:${timestamp}`;
+}

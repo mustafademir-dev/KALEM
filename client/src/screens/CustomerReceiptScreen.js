@@ -67,7 +67,7 @@ export default function CustomerReceiptScreen({ params }) {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <BackButton style={{ marginBottom: spacing.sm }} />
         <Text style={[type.h1, { color: colors.textPrimary }]}>Fiş</Text>
-        <Text style={[type.body, { color: colors.textSecondary, marginTop: 4 }]}>e-Belge / ÖKC fişi (simülasyon)</Text>
+        <Text style={[type.body, { color: colors.textSecondary, marginTop: 4 }]}>e-Belge</Text>
 
         <View style={{ marginTop: spacing.lg, alignItems: 'center' }}>
           {state.status === 'loading' && (
@@ -96,6 +96,11 @@ export default function CustomerReceiptScreen({ params }) {
                   {legacyWarning}
                 </InlineNotice>
               )}
+              {state.document?.refund ? (
+                <InlineNotice tone="success" style={{ alignSelf: 'stretch', marginBottom: spacing.md }}>
+                  Bu ödeme iade edildi; tutar hesabınıza geri yüklendi.
+                </InlineNotice>
+              ) : null}
               <GibReceiptCard document={state.document} />
               <ReceiptActions
                 document={state.document}

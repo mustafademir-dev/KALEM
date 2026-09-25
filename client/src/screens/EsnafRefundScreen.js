@@ -10,7 +10,7 @@ import { refundByDocumentNo, getMerchantTransactions, ApiError } from '../servic
 import { formatTrDateTime } from '../utils/dates.js';
 import { matchReceipts } from '../utils/receiptSearch.js';
 import { useNavigation } from '../navigation/Navigator.js';
-import { formatTl, shortenMiddle } from '../utils/format.js';
+import { formatTl } from '../utils/format.js';
 
 /**
  * İade (prototip): esnaf fişin "Belge No"sunu yazmaya başlar, eşleşen geçmiş fişlerden
@@ -70,9 +70,6 @@ export default function EsnafRefundScreen({ params }) {
             </Text>
             <Text style={[type.body, { color: colors.textSecondary, marginTop: spacing.sm, textAlign: 'center' }]}>
               {result.documentNo} numaralı fişin tutarı, kesintiler dahil müşteriye geri döndü.
-            </Text>
-            <Text style={[type.caption, { color: colors.textMuted, marginTop: spacing.xs }]}>
-              Müşteri: {shortenMiddle(result.customerAddress, 6, 6)}
             </Text>
           </View>
           <Button label="Tamam" onPress={goBack} style={{ marginTop: spacing.xl }} />

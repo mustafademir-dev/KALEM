@@ -182,13 +182,8 @@ export function PaymentReceivedView({ payment, saleAmount, canShowGib, gibState,
           <Amount stroops={saleAmount ?? payment.amount} size={38} align="center" style={{ marginTop: spacing.xs }} />
 
           <View style={styles.detailCard}>
-            <View style={styles.detailRow}>
-              <Text style={[type.caption, { color: colors.textMuted }]}>Gönderen</Text>
-              <Text style={[type.mono, { color: colors.textSecondary }]}>{shortenMiddle(payment.from)}</Text>
-            </View>
             {payment.txHash ? (
               <>
-                <View style={styles.hairline} />
                 <Pressable
                   onPress={() => Linking.openURL(stellarExpertTxUrl(payment.txHash))}
                   style={styles.detailRow}

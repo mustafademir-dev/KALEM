@@ -3,12 +3,11 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Amount from '../Amount.js';
 import Button from '../Button.js';
 import Icon from '../Icon.js';
-import TestnetBadge from '../TestnetBadge.js';
 import ReceiptRow from './ReceiptRow.js';
 import { EmptyState, InlineNotice, Skeleton } from '../StateViews.js';
 import { TAB_BAR_CLEARANCE } from './CustomerTabBar.js';
 import { colors, radii, spacing, type, cardShadow } from '../../theme/index.js';
-import { formatTl, shortenMiddle } from '../../utils/format.js';
+import { formatTl } from '../../utils/format.js';
 
 const RECENT_COUNT = 3;
 
@@ -32,19 +31,41 @@ export default function CustomerHomeTab({
   onSeeAll,
   onOpenReceipt,
   onTopUp,
+  newRefunds = [],
+  onDismissRefunds,
 }) {
   const recent = receipts.slice(0, RECENT_COUNT);
 
   return (
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
-        <Text style={[type.caption, { color: colors.textMuted }]}>{shortenMiddle(stellarAddress, 6, 6)}</Text>
         <Text style={[type.h1, { color: colors.textPrimary }]}>Cüzdanım</Text>
-        <TestnetBadge style={{ marginTop: spacing.xs }} />
       </View>
 
+      {newRefunds.length > 0 && (
+        <View style={styles.refundCard}>
+          <View style={styles.refundHead}>
+            <Icon name="check" size={18} color={colors.success} />
+            <Text style={[type.h2, { color: colors.success, flex: 1 }]}>
+              {newRefunds.length === 1 ? 'İade alındı' : `${newRefunds.length} iade alındı`}
+            </Text>
+            {onDismissRefunds ? (
+              <Pressable onPress={onDismissRefunds} hitSlop={10} accessibilityLabel="Kapat">
+                <Icon name="x" size={18} color={colors.textMuted} />
+              </Pressable>
+            ) : null}
+          </View>
+          {newRefunds.map((r) => (
+            <Text key={r.txHash} style={[type.body, { color: colors.textPrimary, marginTop: 4 }]}>
+              {formatTl(r.totalAmount)} hesabınıza geri yüklendi
+              {r.businessName ? ` · ${r.businessName}` : ''}
+            </Text>
+          ))}
+        </View>
+      )}
+
       <View style={styles.balanceCard}>
-        <Text style={[type.micro, { color: colors.textMuted }]}>BAKİYE (ZİNCİRDEN)</Text>
+        <Text style={[type.micro, { color: colors.textMuted }]}>BAKİYE</Text>
         {balance === undefined ? (
           <Skeleton width={180} height={34} style={{ marginTop: 6 }} />
         ) : balance === null ? (
@@ -125,6 +146,13 @@ export default function CustomerHomeTab({
 }
 
 const styles = StyleSheet.create({
+  refundCard: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    backgroundColor: colors.successBg,
+  },
+  refundHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   scroll: { padding: spacing.lg, paddingBottom: TAB_BAR_CLEARANCE },
   header: { marginBottom: spacing.md },
   balanceCard: {

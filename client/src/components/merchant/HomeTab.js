@@ -2,13 +2,11 @@ import React from 'react';
 import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Icon from '../Icon.js';
 import BrandMark from '../BrandMark.js';
-import TestnetBadge from '../TestnetBadge.js';
 import { EmptyState, InlineNotice, MerchantAvatar, Skeleton, USE_NATIVE_DRIVER } from '../StateViews.js';
 import { BalanceCard, DaySummaryCard, SocialFundCard } from './SummaryCards.js';
 import TransactionRow from './TransactionRow.js';
 import { TAB_BAR_CLEARANCE } from './MerchantTabBar.js';
 import { colors, radii, spacing, type, cardShadow } from '../../theme/index.js';
-import { shortenMiddle } from '../../utils/format.js';
 
 /** Esnaf ana sayfası: büyük Ödeme Al, bugünkü özet, bakiye + Sosyal Fon, son işlemler. */
 export default function HomeTab({
@@ -32,7 +30,6 @@ export default function HomeTab({
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
       <View style={styles.topBar}>
         <BrandMark size={30} wordmark />
-        <TestnetBadge style={{ alignSelf: "center" }} />
         <Pressable
           onPress={onRefresh}
           disabled={refreshing}
@@ -62,7 +59,6 @@ export default function HomeTab({
                 {onChainRegistered ? 'Onaylı' : 'Beklemede'}
               </Text>
             </View>
-            <Text style={[type.mono, { color: colors.textMuted }]}>{shortenMiddle(stellarAddress, 5, 5)}</Text>
           </View>
         </View>
       </View>

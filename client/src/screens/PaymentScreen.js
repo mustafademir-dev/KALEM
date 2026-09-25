@@ -16,7 +16,6 @@ import * as Clipboard from 'expo-clipboard';
 import Screen from '../components/Screen.js';
 import Button from '../components/Button.js';
 import Icon from '../components/Icon.js';
-import TestnetBadge from '../components/TestnetBadge.js';
 import Amount from '../components/Amount.js';
 import { InlineNotice, MerchantAvatar, Skeleton, StatusBadge } from '../components/StateViews.js';
 import StatusStep from '../components/StatusStep.js';
@@ -327,7 +326,7 @@ export function ScanStage({
                     <>
                       <IconCircle name="info" />
                       <Text style={[type.body, styles.centerText, { color: colors.textSecondary, marginTop: spacing.sm }]}>
-                        Bu tarayıcı kamera erişimini desteklemiyor — Demo QR'ı kullanabilirsiniz.
+                        Bu tarayıcı kamera erişimini desteklemiyor. QR kodu okutmak için telefonunuzun tarayıcısını kullanın.
                       </Text>
                     </>
                   )}
@@ -367,12 +366,6 @@ export function ScanStage({
 
       {error ? <InlineNotice tone="danger" style={styles.errorBanner}>{error}</InlineNotice> : null}
 
-      <View style={styles.footer}>
-        <Text style={[type.caption, { color: colors.textMuted, marginBottom: spacing.xs }]}>
-          Kamera kullanamıyor musunuz?
-        </Text>
-        <Button label="Demo QR ile dene" variant="secondary" icon="qr" onPress={onUseSample} style={styles.sampleButton} />
-      </View>
     </View>
   );
 }
@@ -426,7 +419,6 @@ export function ConfirmStage({ qrData, balanceBefore, onConfirm, onCancel }) {
         <Text style={[type.body, { color: colors.textSecondary, marginTop: 4 }]}>
           Bilgileri kontrol edip onaylayın
         </Text>
-        <TestnetBadge note style={{ marginTop: spacing.xs }} />
       </View>
 
       <View style={[styles.card, insufficientFunds && styles.cardDanger]}>
@@ -637,27 +629,12 @@ export function ResultStage({ result, qrData, onDone, onHome, onRecheck, recheck
 
         {result?.txHash && (
           <View style={styles.hashCard}>
-            <Pressable onPress={handleCopyHash} style={styles.hashRow} accessibilityRole="button" accessibilityLabel="İşlem numarasını kopyala">
-              <View style={{ flex: 1 }}>
-                <Text style={[type.micro, { color: colors.textMuted }]}>İŞLEM NO</Text>
-                <Text style={[type.mono, { color: colors.textSecondary, marginTop: 2 }]}>
-                  {shortenMiddle(result.txHash, 10, 10)}
-                </Text>
-              </View>
-              <View style={styles.copyPill}>
-                <Icon name={copied ? 'check' : 'copy'} size={14} color={copied ? colors.success : colors.accentStrong} />
-                <Text style={[type.micro, { color: copied ? colors.success : colors.accentStrong }]}>
-                  {copied ? 'KOPYALANDI' : 'KOPYALA'}
-                </Text>
-              </View>
-            </Pressable>
-            <View style={styles.hairline} />
             <Pressable
               onPress={() => Linking.openURL(stellarExpertTxUrl(result.txHash))}
               style={styles.linkRow}
               accessibilityRole="link"
             >
-              <Text style={[type.captionMedium, { color: colors.accent }]}>Stellar Expert'te görüntüle</Text>
+              <Text style={[type.captionMedium, { color: colors.accent }]}>İşlemi zincirde görüntüle</Text>
               <Icon name="external" size={14} color={colors.accent} />
             </Pressable>
           </View>

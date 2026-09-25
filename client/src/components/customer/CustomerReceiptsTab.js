@@ -17,7 +17,7 @@ export default function CustomerReceiptsTab({ receipts, loading, onOpenReceipt }
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
       <Text style={[type.h1, { color: colors.textPrimary }]}>Fişlerim</Text>
       <Text style={[type.body, { color: colors.textSecondary, marginTop: 4 }]}>
-        Yaptığınız ödemelerin e-Belge fişleri (simülasyon)
+        Yaptığınız ödemelerin fişleri
       </Text>
 
       {loading && (

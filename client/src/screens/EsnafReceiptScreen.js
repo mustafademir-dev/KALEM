@@ -65,7 +65,7 @@ export default function EsnafReceiptScreen({ params }) {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <BackButton style={{ marginBottom: spacing.sm }} />
         <Text style={[type.h1, { color: colors.textPrimary }]}>Fiş</Text>
-        <Text style={[type.body, { color: colors.textSecondary, marginTop: 4 }]}>e-Belge / ÖKC fişi (simülasyon)</Text>
+        <Text style={[type.body, { color: colors.textSecondary, marginTop: 4 }]}>e-Belge</Text>
 
         <View style={{ marginTop: spacing.lg, alignItems: 'center' }}>
           {state.status === 'loading' && (

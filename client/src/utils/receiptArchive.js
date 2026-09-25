@@ -143,6 +143,7 @@ export function summarizeArchive(list, { now = new Date() } = {}) {
     if (lastPaidAt === null || when > new Date(lastPaidAt)) lastPaidAt = item.paidAt;
 
     if (istanbulToday(when).slice(0, 7) !== monthPrefix) continue;
+    if (item.refundedAt) continue; // iade edilen ödeme harcama sayılmaz
     monthCount += 1;
     try {
       monthTotal += BigInt(item.totalAmount ?? 0);
@@ -152,6 +153,28 @@ export function summarizeArchive(list, { now = new Date() } = {}) {
   }
 
   return { monthTotal: monthTotal.toString(), monthCount, totalCount: entries.length, lastPaidAt };
+}
+
+/**
+ * Sunucudan gelen iadeleri arşive işler. Yalnızca arşivde OLAN ve henüz iade
+ * işareti taşımayan kayıtlar değişir; `newly` bu çağrıda ilk kez görülen
+ * iadelerdir (müşteriye "iade alındı" bildirimi bunlar için gösterilir).
+ *
+ * @param {Array} list - Arşiv listesi.
+ * @param {Array<{txHash: string, amount?: string, documentNo?: string, refundedAt?: string}>} refunds
+ * @returns {{list: Array, newly: Array}}
+ */
+export function applyRefunds(list, refunds) {
+  const byHash = new Map((Array.isArray(refunds) ? refunds : []).filter((r) => r?.txHash).map((r) => [r.txHash, r]));
+  const newly = [];
+  const next = (Array.isArray(list) ? list : []).map((item) => {
+    const refund = byHash.get(item.txHash);
+    if (!refund || item.refundedAt) return item;
+    const refundedAt = refund.refundedAt ?? new Date().toISOString();
+    newly.push({ ...item, refundedAt, documentNo: refund.documentNo ?? null });
+    return { ...item, refundedAt };
+  });
+  return { list: next, newly };
 }
 
 /**

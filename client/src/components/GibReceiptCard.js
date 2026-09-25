@@ -37,12 +37,9 @@ export default function GibReceiptCard({ document }) {
       <View style={styles.card}>
         <View style={styles.head}>
           <BrandMark size={26} wordmark />
-          <View style={styles.simPill}>
-            <Text style={[type.micro, { color: colors.warning }]}>SİMÜLASYON</Text>
-          </View>
         </View>
         <Text style={[type.micro, { color: colors.textMuted, marginTop: spacing.sm }]}>
-          e-BELGE · ÖKC FİŞ (PoC)
+          e-BELGE · FİŞ
         </Text>
 
         <View style={styles.dashedDivider} />

@@ -13,7 +13,7 @@
  */
 
 import storage from '../utils/storage.js';
-import { archiveKey, packArchive, parseArchive, upsertEntry } from '../utils/receiptArchive.js';
+import { applyRefunds, archiveKey, packArchive, parseArchive, upsertEntry } from '../utils/receiptArchive.js';
 
 /**
  * Cüzdana ait fiş listesini okur (yeniden eskiye sıralı).
@@ -57,6 +57,22 @@ export async function recordReceipt({ stellarAddress, txHash, totalAmount, busin
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Sunucudan gelen iadeleri arşive işler ve kaydeder.
+ *
+ * @returns {Promise<{items: Array, newly: Array}>} Güncel liste ve ilk kez görülen iadeler.
+ */
+export async function syncRefunds(stellarAddress, refunds) {
+  try {
+    const key = archiveKey(stellarAddress);
+    const { list, newly } = applyRefunds(parseArchive(await storage.getItemAsync(key)), refunds);
+    if (newly.length > 0) await storage.setItemAsync(key, packArchive(list).json);
+    return { items: list, newly };
+  } catch {
+    return { items: await listReceipts(stellarAddress), newly: [] };
   }
 }
 

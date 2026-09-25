@@ -2,7 +2,6 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Screen from '../components/Screen.js';
 import BrandMark from '../components/BrandMark.js';
-import TestnetBadge from '../components/TestnetBadge.js';
 import Icon from '../components/Icon.js';
 import { colors, radii, spacing, type, cardShadow } from '../theme/index.js';
 import { useNavigation } from '../navigation/Navigator.js';
@@ -19,7 +18,6 @@ export default function RoleSelectScreen() {
           <Text style={[type.body, { color: colors.textSecondary, marginTop: spacing.xs }]}>
             Devam etmek için bir rol seçin
           </Text>
-          <TestnetBadge note style={{ marginTop: spacing.sm }} />
         </View>
 
         <View style={styles.cards}>

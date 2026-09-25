@@ -242,3 +242,35 @@ describe('receiptToText', () => {
     assert.ok(receiptToText(single).includes('Tek Ürün'));
   });
 });
+
+describe('applyRefunds (müşteriye iade bildirimi)', () => {
+  const base = [
+    { txHash: 'a', totalAmount: '5000000000', businessName: 'Kırtasiye', paidAt: '2026-09-25T10:00:00.000Z' },
+    { txHash: 'b', totalAmount: '100000000', businessName: 'Fırın', paidAt: '2026-09-25T09:00:00.000Z' },
+  ];
+
+  it('arşivdeki ödemeyi iade edildi işaretler ve ilk kez görüleni bildirir', async () => {
+    const { applyRefunds } = await import('../src/utils/receiptArchive.js');
+    const { list, newly } = applyRefunds(base, [{ txHash: 'a', documentNo: 'K1', refundedAt: '2026-09-25T11:00:00.000Z' }]);
+    assert.equal(list[0].refundedAt, '2026-09-25T11:00:00.000Z');
+    assert.equal(list[1].refundedAt, undefined);
+    assert.equal(newly.length, 1);
+    assert.equal(newly[0].businessName, 'Kırtasiye');
+  });
+
+  it('daha önce işaretlenmiş iade tekrar bildirilmez; arşivde olmayan iade yok sayılır', async () => {
+    const { applyRefunds } = await import('../src/utils/receiptArchive.js');
+    const first = applyRefunds(base, [{ txHash: 'a' }]).list;
+    const again = applyRefunds(first, [{ txHash: 'a' }, { txHash: 'zzz' }]);
+    assert.equal(again.newly.length, 0);
+    assert.equal(again.list.length, 2);
+  });
+
+  it('iade edilen ödeme aylık harcamaya girmez', async () => {
+    const { applyRefunds, summarizeArchive } = await import('../src/utils/receiptArchive.js');
+    const { list } = applyRefunds(base, [{ txHash: 'a' }]);
+    const s = summarizeArchive(list, { now: new Date('2026-09-25T12:00:00.000Z') });
+    assert.equal(s.monthCount, 1);
+    assert.equal(s.monthTotal, '100000000');
+  });
+});

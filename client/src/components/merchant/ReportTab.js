@@ -115,11 +115,6 @@ export default function ReportTab({ session }) {
         </InlineNotice>
       )}
 
-      {/* ZORUNLU damga: rapor bir simülasyondur, mali değeri yoktur */}
-      <InlineNotice tone="warning" icon="info" style={{ marginTop: spacing.md }}>
-        SİMÜLASYON — mali değeri yoktur. GİB ile gerçek bir entegrasyon yoktur; bu rapor resmi bir Z raporu ya da
-        fatura değildir.
-      </InlineNotice>
 
       <Button
         label="CSV İndir"

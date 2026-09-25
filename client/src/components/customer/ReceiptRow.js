@@ -23,11 +23,16 @@ export default function ReceiptRow({ item, onPress }) {
       </View>
 
       <View style={{ flex: 1 }}>
-        <Text style={[type.h2, { color: colors.textPrimary }]}>{formatTl(item.totalAmount)}</Text>
+        <Text style={[type.h2, { color: item.refundedAt ? colors.textMuted : colors.textPrimary }]}>
+          {formatTl(item.totalAmount)}
+        </Text>
         <Text style={[type.caption, { color: colors.textSecondary, marginTop: 1 }]} numberOfLines={1}>
           {item.businessName ?? 'İşyeri bilgisi yok'}
         </Text>
         <Text style={[type.caption, { color: colors.textMuted, marginTop: 1 }]}>{formatTrDateTime(item.paidAt)}</Text>
+        {item.refundedAt ? (
+          <Text style={[type.captionMedium, { color: colors.success, marginTop: 2 }]}>İade edildi</Text>
+        ) : null}
       </View>
 
       <View style={styles.pill}>

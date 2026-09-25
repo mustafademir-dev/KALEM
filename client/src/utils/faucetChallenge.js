@@ -8,3 +8,8 @@
 export function buildFaucetMintChallenge(address, timestamp) {
   return `KALEM-FAUCET-MINT:${address}:${timestamp}`;
 }
+
+/** `orchestrator/src/utils/crypto.js` → `buildCustomerRefundsChallenge` ile BİREBİR aynı olmalı. */
+export function buildCustomerRefundsChallenge(address, timestamp) {
+  return `KALEM-CUSTOMER-REFUNDS:${address}:${timestamp}`;
+}

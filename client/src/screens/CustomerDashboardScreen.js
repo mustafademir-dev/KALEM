@@ -8,9 +8,11 @@ import CustomerBalanceTab from '../components/customer/CustomerBalanceTab.js';
 import CustomerAccountTab from '../components/customer/CustomerAccountTab.js';
 import { colors, spacing, type } from '../theme/index.js';
 import { useNavigation } from '../navigation/Navigator.js';
-import { createWallet, loadWallet } from '../services/wallet.service.js';
+import { createWallet, loadWallet, signData, bytesToBase64 } from '../services/wallet.service.js';
 import { readDtlBalance } from '../services/stellar-read.service.js';
-import { listReceipts } from '../services/receipt-archive.service.js';
+import { listReceipts, syncRefunds } from '../services/receipt-archive.service.js';
+import { getMyRefunds } from '../services/api.service.js';
+import { buildCustomerRefundsChallenge } from '../utils/faucetChallenge.js';
 import { summarizeArchive } from '../utils/receiptArchive.js';
 
 /**
@@ -26,6 +28,22 @@ import { summarizeArchive } from '../utils/receiptArchive.js';
  * dönüldüğünde bu ekran yeniden kurulur ve arşiv kendiliğinden tazelenir —
  * ayrıca bir yenileme mekanizması gerekmez.
  */
+/**
+ * Esnafın yaptığı iadeleri sunucudan (imzalı) alıp cihazdaki arşive işler.
+ * Best-effort: hata olursa `null` döner, ekran etkilenmez.
+ */
+async function checkRefunds(address) {
+  try {
+    const timestamp = Date.now();
+    const challenge = buildCustomerRefundsChallenge(address, timestamp);
+    const signature = bytesToBase64(await signData(Buffer.from(challenge, 'utf8')));
+    const { refunds } = await getMyRefunds({ address, timestamp, signature });
+    return await syncRefunds(address, refunds ?? []);
+  } catch {
+    return null;
+  }
+}
+
 export default function CustomerDashboardScreen() {
   const { navigate, reset } = useNavigation();
   const [tab, setTab] = useState('home');
@@ -34,6 +52,14 @@ export default function CustomerDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState(false);
   const [archive, setArchive] = useState({ loading: true, items: [] });
+  const [newRefunds, setNewRefunds] = useState([]);
+
+  const applyRefundCheck = useCallback(async (address) => {
+    const result = await checkRefunds(address);
+    if (!result) return;
+    setArchive({ loading: false, items: result.items });
+    if (result.newly.length > 0) setNewRefunds((prev) => [...result.newly, ...prev]);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -50,13 +76,16 @@ export default function CustomerDashboardScreen() {
       } catch {
         setBalance(null);
       }
+
+      applyRefundCheck(w.stellarAddress);
     })();
-  }, []);
+  }, [applyRefundCheck]);
 
   const handleRefresh = useCallback(async () => {
     if (!wallet) return;
     setRefreshing(true);
     setRefreshError(false);
+    applyRefundCheck(wallet.stellarAddress);
     try {
       const bal = await readDtlBalance(wallet.stellarAddress);
       setBalance(bal);
@@ -67,7 +96,7 @@ export default function CustomerDashboardScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [wallet]);
+  }, [wallet, applyRefundCheck]);
 
   const summary = useMemo(() => summarizeArchive(archive.items), [archive.items]);
 
@@ -116,6 +145,8 @@ export default function CustomerDashboardScreen() {
               onSeeAll={() => setTab('receipts')}
               onOpenReceipt={handleOpenReceipt}
               onTopUp={handleTopUp}
+              newRefunds={newRefunds}
+              onDismissRefunds={() => setNewRefunds([])}
             />
           )}
           {tab === 'receipts' && (

@@ -247,3 +247,13 @@ export async function refundByDocumentNo(merchantId, apiKey, documentNo) {
     body: { documentNo },
   });
 }
+
+/**
+ * Müşterinin kendi iadeleri. Adres sahipliği imzayla kanıtlanır
+ * (`KALEM-CUSTOMER-REFUNDS:{address}:{timestamp}`).
+ *
+ * @returns {Promise<{refunds: Array<{txHash: string, amount: string, documentNo: string|null, refundedAt: string}>}>}
+ */
+export async function getMyRefunds({ address, timestamp, signature }) {
+  return request('/api/v1/customers/refunds', { method: 'POST', body: { address, timestamp, signature } });
+}

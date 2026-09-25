@@ -2,10 +2,9 @@ import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Button from '../Button.js';
 import Icon from '../Icon.js';
-import TestnetBadge from '../TestnetBadge.js';
+import TechnicalDetails from '../TechnicalDetails.js';
 import { TAB_BAR_CLEARANCE } from './CustomerTabBar.js';
 import { colors, radii, spacing, type } from '../../theme/index.js';
-import { shortenMiddle } from '../../utils/format.js';
 
 /**
  * Hesap: cüzdan bilgileri, ağ ve çıkış.
@@ -22,17 +21,20 @@ export default function CustomerAccountTab({ stellarAddress, receiptCount, onLog
         <View style={styles.avatar}>
           <Icon name="user" size={32} color={colors.accentStrong} />
         </View>
-        <Text style={[type.h1, { color: colors.textPrimary, marginTop: spacing.sm }]}>Müşteri</Text>
-        <TestnetBadge style={{ marginTop: spacing.xs }} />
+        <Text style={[type.h1, { color: colors.textPrimary, marginTop: spacing.sm }]}>Hesabım</Text>
       </View>
 
       <View style={styles.card}>
-        <Row label="Cüzdan adresi" value={shortenMiddle(stellarAddress, 6, 6)} mono />
-        <View style={styles.hairline} />
-        <Row label="Ağ" value="Stellar Testnet" />
-        <View style={styles.hairline} />
         <Row label="Kayıtlı fiş" value={`${receiptCount} adet`} />
       </View>
+
+      <TechnicalDetails
+        style={{ marginTop: spacing.md }}
+        rows={[
+          { label: 'Cüzdan adresi', value: stellarAddress, mono: true },
+          { label: 'Ağ', value: 'Stellar' },
+        ]}
+      />
 
       <View style={styles.noteCard}>
         <Icon name="shield" size={16} color={colors.textMuted} />

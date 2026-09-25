@@ -81,6 +81,10 @@ export async function getGibDocumentHandler(req, res) {
       totalAmountTL: gibDoc.totalAmountTL,
       ublContent: gibDoc.ublContent,
       createdAt: gibDoc.createdAt,
+      refund:
+        transaction.refund?.status === 'completed'
+          ? { status: 'completed', completedAt: transaction.refund.completedAt }
+          : null,
     });
   } catch (error) {
     logger.error(`[GİB] getGibDocumentHandler hatası: ${error.message}`);

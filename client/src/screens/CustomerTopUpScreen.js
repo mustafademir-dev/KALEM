@@ -75,7 +75,7 @@ export default function CustomerTopUpScreen({ params }) {
         <BackButton />
         <Text style={[type.h1, { color: colors.textPrimary, marginTop: spacing.sm }]}>Bakiye Yükle</Text>
         <Text style={[type.body, { color: colors.textSecondary, marginTop: 4 }]}>
-          Demo — testnet hesabınızı fonlar ve TL bakiyesi yükler
+          Hesabınıza TL yükleyin
         </Text>
       </View>
 
@@ -83,8 +83,7 @@ export default function CustomerTopUpScreen({ params }) {
         {stage === 'idle' && (
           <View style={styles.card}>
             <Text style={[type.body, { color: colors.textSecondary, textAlign: 'center' }]}>
-              Testnet hesabınız gerekirse fonlanacak, ardından hesabınıza sabit bir demo TL tutarı
-              yüklenecektir.
+              Hesabınıza 1.000 TL yüklenecek.
             </Text>
             <Button label="Bakiye Yükle" onPress={handleTopUp} style={{ marginTop: spacing.lg }} />
           </View>
@@ -92,8 +91,8 @@ export default function CustomerTopUpScreen({ params }) {
 
         {(stage === 'running' || stage === 'error') && (
           <View style={styles.card}>
-            <StatusStep label="Testnet hesabı fonlanıyor (gerekirse)" state={steps.fund} />
-            <StatusStep label="Demo TL bakiyesi yükleniyor" state={steps.mint} />
+            <StatusStep label="Hesabınız hazırlanıyor" state={steps.fund} />
+            <StatusStep label="Bakiye yükleniyor" state={steps.mint} />
             {stage === 'error' && (
               <>
                 <Text style={[type.captionMedium, { color: colors.danger, marginTop: spacing.md }]}>
@@ -135,7 +134,7 @@ export default function CustomerTopUpScreen({ params }) {
 
 function describeError(err) {
   if (err instanceof ApiError) {
-    if (err.code === 'FORBIDDEN') return 'Demo musluk yalnızca testnet ortamında etkin.';
+    if (err.code === 'FORBIDDEN') return 'Bakiye yükleme şu an kullanılamıyor.';
     return err.message ?? 'Bakiye yüklenirken bir hata oluştu.';
   }
   return err?.message ?? 'Beklenmeyen bir hata oluştu.';

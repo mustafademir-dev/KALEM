@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Button from '../Button.js';
 import Icon from '../Icon.js';
 import { MerchantAvatar } from '../StateViews.js';
+import TechnicalDetails from '../TechnicalDetails.js';
 import { TAB_BAR_CLEARANCE } from './MerchantTabBar.js';
 import { colors, radii, spacing, type } from '../../theme/index.js';
 import { shortenMiddle } from '../../utils/format.js';
@@ -30,11 +31,16 @@ export default function AccountTab({ session, stellarAddress, onChainRegistered,
 
       <View style={styles.card}>
         <Row label="İşyeri No" value={shortenMiddle(session.merchantId, 6, 6)} mono />
-        <View style={styles.hairline} />
-        <Row label="Zincir adresi" value={shortenMiddle(stellarAddress, 6, 6)} mono />
-        <View style={styles.hairline} />
-        <Row label="Ağ" value="Stellar Testnet" />
       </View>
+
+      <TechnicalDetails
+        style={{ marginTop: spacing.md }}
+        rows={[
+          { label: 'İşyeri No (tam)', value: session.merchantId, mono: true },
+          { label: 'Zincir adresi', value: stellarAddress, mono: true },
+          { label: 'Ağ', value: 'Stellar' },
+        ]}
+      />
 
       <Button
         label="Çıkış Yap"
