@@ -904,3 +904,16 @@ geçerliliğini korur.
 ### 10.6. Demo hesapları
 Repo dışında `KALEM_Demo_Hesaplari.docx` (VKN/şifre, test TC/PIN). Demo esnaf VKN
 `9990000001`, zincirde onaylı. Test TC `10000000146` (sağlaması geçerli, yaygın test numarası).
+
+### 10.7. Departman (kısım) + KDV (26 Eylül)
+- `GET/PUT /merchants/:id/departments` (`api/routes/departments.routes.js`). Tanımsız esnaf:
+  varsayılan "Genel %20 / Gıda %10 / Temel Gıda %1". Esnaf adları düzenler; oran yalnızca
+  `Merchant.allowedVatRates`'ten (tanımsızsa %1/%10/%20). Gerçekte GİB yazar kasalarda KDV
+  oranını faaliyet (NACE) koduna göre sabitler — `allowedVatRates` bunun karşılığı, operatör
+  belirler. İzinsiz oran fişe yansımaz (`utils/vat.js#clampToAllowed`, QR yolda değişse bile).
+- Tutar ekranı yazar kasa düzeninde; seçilen departman QR'a tek satırlık sepet
+  `{name, quantity:1, price:total, vatRate}` olarak girer. Mevcut sepet/QR şeması değişmedi.
+- KDV tek yerde: `utils/vat.js#vatBreakdown` (fiş + gün sonu CSV). `money.js#kurusExcludingVat(k, oran)`
+  = round(k×100/(100+oran)); %20'de eski formülle birebir. Fiş `TaxSubtotal` artık DİZİ (oran
+  başına); istemci eski tek-nesne belgeleri de okur (`client/src/utils/vat.js#vatLines`).
+- Tuzak: Mongoose alt belgesini `{...item}` ile kopyalamak alanları taşımaz — alanlar tek tek.
