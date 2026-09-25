@@ -20,6 +20,7 @@ import merchantRoutes from './api/routes/merchant.routes.js';
 import merchantReportRoutes from './api/routes/merchant-reports.routes.js';
 import refundRoutes from './api/routes/refund.routes.js';
 import customerRoutes from './api/routes/customer.routes.js';
+import departmentRoutes from './api/routes/departments.routes.js';
 import healthRoutes from './api/routes/health.routes.js';
 import faucetRoutes from './api/routes/faucet.routes.js';
 import gibRoutes from './api/routes/gib.routes.js';
@@ -85,6 +86,7 @@ app.use('/api/v1/transactions', gibRoutes); // /:txHash/gib-document — ayrı d
 app.use('/api/v1/merchants', merchantRoutes);
 app.use('/api/v1/merchants', merchantReportRoutes); // /:id/dashboard, /transactions, /reports/daily — okuma uçları
 app.use('/api/v1/merchants', refundRoutes); // /:id/refunds — esnafın başlattığı tam iade (prototip)
+app.use('/api/v1/merchants', departmentRoutes); // /:id/departments — satış departmanları (KDV)
 app.use('/api/v1/customers', customerRoutes); // /refunds — müşterinin kendi iadeleri (imzalı)
 app.use('/api/v1/faucet', faucetRoutes);
 app.use('/api/v1/flow', flowRoutes);

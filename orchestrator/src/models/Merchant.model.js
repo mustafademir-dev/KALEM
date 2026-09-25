@@ -46,6 +46,21 @@ const merchantSchema = new mongoose.Schema(
      */
     sessionKeyHashes: { type: [String], default: [], select: false },
 
+    /**
+     * Satış departmanları (yazar kasalardaki "kısım" tuşları): ad + KDV oranı.
+     * Esnaf adları düzenler; oran yalnızca `allowedVatRates` içinden seçilebilir.
+     */
+    departments: {
+      type: [new mongoose.Schema({ name: String, vatRate: Number }, { _id: false })],
+      default: undefined,
+    },
+
+    /**
+     * Esnafın kullanabileceği KDV oranları. Gerçekte GİB, yazar kasalarda oranı
+     * esnafın faaliyet (NACE) koduna göre sabitler; burada operatör belirler.
+     */
+    allowedVatRates: { type: [Number], default: undefined },
+
     failedLoginCount: { type: Number, default: 0 },
     lockedUntil: { type: Date, default: null },
 

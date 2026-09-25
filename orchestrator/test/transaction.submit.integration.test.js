@@ -451,10 +451,10 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
     assert.deepEqual(
       txDoc.cartItems,
       [
-        { name: 'A4 Kağıdı', quantity: 1, price: '7500000' },
-        { name: 'Jel Kalem', quantity: 1, price: '2500000' },
+        { name: 'A4 Kağıdı', quantity: 1, price: '7500000', vatRate: 20 },
+        { name: 'Jel Kalem', quantity: 1, price: '2500000', vatRate: 20 },
       ],
-      'sepet temizlenmiş halde saklanmalı (vatRate gibi bilinmeyen alanlar atılır)'
+      'sepet temizlenmiş halde saklanmalı (geçerli KDV oranı departmandan gelir ve korunur)'
     );
 
     assert.ok(gibDoc, 'GİB belgesi üretilmiş olmalı');

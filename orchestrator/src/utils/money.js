@@ -41,12 +41,15 @@ export function kurusToFixed2(kurus) {
 }
 
 /**
- * KDV DAHİL tutardan (kuruş) KDV HARİÇ matrahı (kuruş) çıkarır: matrah = toplam / 1,20,
- * kuruşa yuvarlanmış. KDV oranı simülasyonda sabit %20'dir. GİB belgesi ve gün sonu
- * raporu AYNI hesabı kullanır — böylece rakamlar birbirini tutar.
+ * KDV DAHİL tutardan (kuruş) KDV HARİÇ matrahı (kuruş) çıkarır:
+ * matrah = toplam × 100 / (100 + oran), kuruşa yuvarlanmış (yarım yukarı).
+ * Oran verilmezse %20. GİB belgesi ve gün sonu raporu AYNI hesabı kullanır
+ * (bkz. utils/vat.js) — böylece rakamlar birbirini tutar.
  */
-export function kurusExcludingVat(kurus) {
-  return (kurus * 5n + 3n) / 6n;
+export function kurusExcludingVat(kurus, rate = 20) {
+  const k = typeof kurus === 'bigint' ? kurus : BigInt(kurus);
+  const d = BigInt(100 + rate);
+  return (k * 200n + d) / (2n * d);
 }
 
 /** Stroop → "12.35" (kuruşa yuvarlanmış, tam 2 ondalık). GİB belgeleri için. */

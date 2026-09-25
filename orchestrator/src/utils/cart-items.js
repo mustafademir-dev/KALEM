@@ -7,8 +7,9 @@
  * fırlatmaz: geçersiz girdi boş listeye/reddedilmiş kaleme dönüşür, ödeme
  * yolunu hiçbir koşulda etkilemez.
  *
- * Kalem biçimi (QR şeması KALEM-PAY-V1): { name, quantity, price } — `price`
- * BİRİM fiyat, stroop, string.
+ * Kalem biçimi (QR şeması KALEM-PAY-V1): { name, quantity, price, vatRate? } —
+ * `price` BİRİM fiyat, stroop, string; `vatRate` %1/%10/%20 (esnafın departmanı).
+ * Geçersiz oran atılır (hesapta %20 varsayılır).
  */
 
 import { isStroops } from './money.js';
@@ -33,7 +34,9 @@ export function sanitizeCartItems(raw) {
     if (!name) continue;
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY) continue;
     if (!isStroops(price) || BigInt(price) <= 0n) continue;
-    items.push({ name, quantity, price });
+    const item = { name, quantity, price };
+    if ([1, 10, 20].includes(entry.vatRate)) item.vatRate = entry.vatRate;
+    items.push(item);
   }
   return items;
 }

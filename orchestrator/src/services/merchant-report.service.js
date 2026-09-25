@@ -27,7 +27,8 @@ import GibDocument from '../models/GibDocument.model.js';
 import config from '../config/index.js';
 import logger from '../utils/logger.js';
 import { readContractBalance } from './stellar-tx.service.js';
-import { isStroops, stroopsToKurus, kurusToFixed2, kurusExcludingVat, stroopsToTl } from '../utils/money.js';
+import { isStroops, kurusToFixed2, stroopsToTl } from '../utils/money.js';
+import { vatBreakdown } from '../utils/vat.js';
 
 const ISTANBUL_OFFSET_MS = 3 * 60 * 60 * 1000;
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -323,13 +324,15 @@ export async function buildDailyReportCsv(merchant, dateStr, now = new Date()) {
   row('Oluşturulma', now.toISOString());
   row();
   row(
-    'Belge No', 'Saat', 'Brüt Tutar (TL)', 'Matrah (TL)', 'KDV %20 (TL)',
+    'Belge No', 'Saat', 'Brüt Tutar (TL)', 'Matrah (TL)', 'KDV (TL)',
     'Sosyal Fon %0,1 (TL)', 'Hizmet Bedeli %0,3 (TL)', 'Toplam Komisyon (TL)', 'Net Kazanç (TL)', 'İşlem No (Stellar)'
   );
 
   for (const tx of txs) {
-    const totalKurus = stroopsToKurus(tx.totalAmount);
-    const exclKurus = kurusExcludingVat(totalKurus);
+    // Fişle AYNI KDV hesabı (departman oranları; bkz. utils/vat.js).
+    const vat = vatBreakdown(tx.totalAmount, tx.cartItems ?? []);
+    const totalKurus = vat.totalKurus;
+    const exclKurus = vat.exclKurus;
     vatTotal += totalKurus - exclKurus;
     netExclTotal += exclKurus;
     const br = hasBreakdown(tx);

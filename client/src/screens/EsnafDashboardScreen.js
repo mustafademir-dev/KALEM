@@ -82,6 +82,7 @@ export default function EsnafDashboardScreen({ params }) {
   );
 
   const handleRefund = useCallback(() => navigate('MerchantRefund', { session }), [navigate, session]);
+  const handleDepartments = useCallback(() => navigate('MerchantDepartments', { session }), [navigate, session]);
 
   const handleLogout = useCallback(async () => {
     await clearMerchantSession();
@@ -117,6 +118,7 @@ export default function EsnafDashboardScreen({ params }) {
             session={session}
             stellarAddress={stellarAddress}
             onChainRegistered={onChainRegistered}
+            onDepartments={handleDepartments}
             onLogout={handleLogout}
           />
         )}

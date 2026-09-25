@@ -4,6 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 import BrandMark from './BrandMark.js';
 import { colors, radii, spacing, type, cardShadow } from '../theme/index.js';
 import { shortenMiddle } from '../utils/format.js';
+import { vatLines } from '../utils/vat.js';
 
 /**
  * ÖKC fiş simülasyonu — `GET /transactions/:txHash/gib-document`'in
@@ -84,10 +85,12 @@ export default function GibReceiptCard({ document }) {
             {invoice.LegalMonetaryTotal?.TaxExclusiveAmount ?? '—'} TL
           </Text>
         </View>
-        <View style={styles.row}>
-          <Text style={[type.caption, { color: colors.textMuted }]}>KDV (%20)</Text>
-          <Text style={[type.caption, { color: colors.textSecondary }]}>{invoice.TaxTotal?.TaxAmount ?? '—'} TL</Text>
-        </View>
+        {vatLines(invoice).map((v) => (
+          <View key={v.percent} style={styles.row}>
+            <Text style={[type.caption, { color: colors.textMuted }]}>KDV (%{v.percent})</Text>
+            <Text style={[type.caption, { color: colors.textSecondary }]}>{v.amount ?? '—'} TL</Text>
+          </View>
+        ))}
         <View style={styles.totalBox}>
           <Text style={[type.bodyMedium, { color: colors.textPrimary }]}>Toplam</Text>
           <Text style={[type.h2, { color: colors.accent }]}>{invoice.LegalMonetaryTotal?.PayableAmount ?? '—'} TL</Text>

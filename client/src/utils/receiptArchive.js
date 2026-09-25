@@ -21,6 +21,7 @@
  */
 
 import { istanbulToday } from './dates.js';
+import { vatLines } from './vat.js';
 
 /** Arşivde tutulacak en fazla kayıt. */
 export const MAX_ENTRIES = 40;
@@ -265,7 +266,7 @@ export function receiptToText(document, { warning } = {}) {
   lines.push(
     '------------------------------',
     `Matrah    : ${money(invoice.LegalMonetaryTotal?.TaxExclusiveAmount)}`,
-    `KDV (%20) : ${money(invoice.TaxTotal?.TaxAmount)}`,
+    ...vatLines(invoice).map((v) => `KDV (%${v.percent})${' '.repeat(Math.max(0, 3 - String(v.percent).length))}: ${money(v.amount)}`),
     `TOPLAM    : ${money(invoice.LegalMonetaryTotal?.PayableAmount)}`,
     '',
     `İşlem no  : ${document?.txHash ?? '—'}`

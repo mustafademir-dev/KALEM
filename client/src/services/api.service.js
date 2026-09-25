@@ -287,3 +287,17 @@ export async function getMyRefunds({ address, timestamp, signature }) {
 export async function getMyReceipts({ address, timestamp, signature }) {
   return request('/api/v1/customers/receipts', { method: 'POST', body: { address, timestamp, signature } });
 }
+
+/** Esnafın departmanları (kısımlar) ve izinli KDV oranları. */
+export async function getDepartments(merchantId, apiKey) {
+  return request(`/api/v1/merchants/${merchantId}/departments`, { headers: { Authorization: `Bearer ${apiKey}` } });
+}
+
+/** Departman listesini kaydeder: `[{ name, vatRate }]`. */
+export async function saveDepartments(merchantId, apiKey, departments) {
+  return request(`/api/v1/merchants/${merchantId}/departments`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: { departments },
+  });
+}

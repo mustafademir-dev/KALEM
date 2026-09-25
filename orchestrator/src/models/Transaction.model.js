@@ -99,7 +99,7 @@ const transactionSchema = new mongoose.Schema(
     cartItems: {
       type: [
         new mongoose.Schema(
-          { name: String, quantity: Number, price: String },
+          { name: String, quantity: Number, price: String, vatRate: Number },
           { _id: false }
         ),
       ],

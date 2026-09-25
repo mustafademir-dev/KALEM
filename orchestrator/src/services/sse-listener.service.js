@@ -120,11 +120,13 @@ export async function handleTransaction(record, { source = 'sse' } = {}) {
       // GİB üretimini asla engellemez.
       let merchantTaxId = 'VKN-SIMULATED';
       let merchantName;
+      let allowedVatRates;
       if (mongoose.connection.readyState === 1) {
         try {
-          const merchant = await Merchant.findById(transaction.merchantId).select('taxId businessName').lean();
+          const merchant = await Merchant.findById(transaction.merchantId).select('taxId businessName allowedVatRates').lean();
           if (merchant?.taxId) merchantTaxId = merchant.taxId;
           if (merchant?.businessName) merchantName = merchant.businessName;
+          if (merchant?.allowedVatRates?.length) allowedVatRates = merchant.allowedVatRates;
         } catch (lookupErr) {
           logger.warn(`[SSE] GİB için esnaf bilgisi okunamadı, varsayılan kullanılacak: ${lookupErr.message}`);
         }
@@ -137,6 +139,7 @@ export async function handleTransaction(record, { source = 'sse' } = {}) {
         merchantName,
         totalAmountStroops: transaction.totalAmount, // stroop — TL'ye servis içinde çevrilir
         cartItems: transaction.cartItems ?? [],
+        allowedVatRates,
       });
 
       if (gibDoc) {
