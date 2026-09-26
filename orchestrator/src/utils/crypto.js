@@ -118,3 +118,8 @@ export function buildCustomerReceiptsChallenge(address, timestamp) {
 export function buildCustomerAuthChallenge(address, timestamp) {
   return `KALEM-CUSTOMER-AUTH:${address}:${timestamp}`;
 }
+
+/** Müşteri profilini (ad soyad) güncellerken adres sahipliğini kanıtlamak için imzalanan mesaj. */
+export function buildCustomerProfileChallenge(address, timestamp) {
+  return `KALEM-CUSTOMER-PROFILE:${address}:${timestamp}`;
+}

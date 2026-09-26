@@ -76,3 +76,14 @@ export async function clearFailedLogins(account) {
     await account.save();
   }
 }
+
+// --- Ad soyad --------------------------------------------------------------------
+
+/**
+ * Ad soyadı temizler: baş/son boşluk atılır, iç boşluklar teke iner. Harfle başlamalı;
+ * yalnızca harf, boşluk, nokta, kesme ve tire; 2–60 karakter. Geçersizse null.
+ */
+export function normalizeFullName(raw) {
+  const s = String(raw ?? '').trim().replace(/\s+/g, ' ');
+  return /^\p{L}[\p{L} .'-]{1,59}$/u.test(s) ? s : null;
+}

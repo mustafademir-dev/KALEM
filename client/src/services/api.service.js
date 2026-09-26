@@ -125,6 +125,14 @@ export async function loginCustomer(body) {
 }
 
 /**
+ * Ad soyad güncelleme — cihazdaki cüzdanın imzasıyla
+ * (`KALEM-CUSTOMER-PROFILE:{address}:{timestamp}`).
+ */
+export async function updateCustomerProfile({ address, timestamp, signature, fullName }) {
+  return request('/api/v1/customers/profile', { method: 'POST', body: { address, timestamp, signature, fullName } });
+}
+
+/**
  * Üye işyerinin dTL bakiyesini sorgular (esnaf tarafı — kendi API anahtarıyla).
  *
  * @param {string} merchantId - Üye işyeri ID.

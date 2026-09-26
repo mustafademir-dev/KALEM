@@ -3,6 +3,7 @@
  *
  * POST /api/v1/customers/register — TC + 6 haneli PIN ile hesap açma
  * POST /api/v1/customers/login    — giriş; yeni cihazdaysa bakiye taşınır
+ * POST /api/v1/customers/profile  — ad soyad güncelleme (cüzdan imzasıyla)
  * POST /api/v1/customers/refunds  — müşterinin KENDİ iadeleri.
  * POST /api/v1/customers/receipts — müşterinin fiş geçmişi (önceki cihazlar dahil).
  *
@@ -25,6 +26,7 @@ import { gibReadRateLimiter, accountAuthRateLimiter } from '../middleware/rate-l
 import {
   registerCustomer,
   loginCustomer,
+  updateCustomerProfile,
   customerAddresses,
   AccountError,
 } from '../../services/customer-account.service.js';
@@ -95,8 +97,8 @@ export async function listCustomerRefundsHandler(req, res) {
 function accountHandler(action, successStatus) {
   return async (req, res) => {
     try {
-      const { tc, pin, address, timestamp, signature } = req.body || {};
-      const result = await action({ tc: String(tc ?? '').trim(), pin, address, timestamp, signature });
+      const { tc, pin, address, timestamp, signature, fullName } = req.body || {};
+      const result = await action({ tc: String(tc ?? '').trim(), pin, address, timestamp, signature, fullName });
       res.status(successStatus).json(result);
     } catch (error) {
       if (error instanceof AccountError) {
@@ -115,6 +117,8 @@ export function createLoginHandler(deps) {
 
 router.post('/register', accountAuthRateLimiter, registerCustomerHandler);
 router.post('/login', accountAuthRateLimiter, createLoginHandler());
+export const updateProfileHandler = accountHandler(updateCustomerProfile, 200);
+router.post('/profile', accountAuthRateLimiter, updateProfileHandler);
 /**
  * Fiş geçmişi: hesabın şu anki ve önceki cüzdanlarından yapılan onaylı ödemeler
  * (en yeni 40). Yeni telefonda eski fişler de görünsün diye.

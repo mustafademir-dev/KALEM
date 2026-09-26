@@ -11,8 +11,13 @@ import { useNavigation } from '../navigation/Navigator.js';
 import { createWallet, loadWallet, signData, bytesToBase64 } from '../services/wallet.service.js';
 import { readDtlBalance } from '../services/stellar-read.service.js';
 import { listReceipts, syncRefunds, syncServerReceipts } from '../services/receipt-archive.service.js';
-import { getMyRefunds, getMyReceipts } from '../services/api.service.js';
-import { buildCustomerRefundsChallenge, buildCustomerReceiptsChallenge } from '../utils/faucetChallenge.js';
+import { getMyRefunds, getMyReceipts, updateCustomerProfile } from '../services/api.service.js';
+import {
+  buildCustomerRefundsChallenge,
+  buildCustomerReceiptsChallenge,
+  buildCustomerProfileChallenge,
+} from '../utils/faucetChallenge.js';
+import { loadCustomerName, saveCustomerName } from '../utils/customerProfile.js';
 import { summarizeArchive } from '../utils/receiptArchive.js';
 
 /**
@@ -68,6 +73,24 @@ export default function CustomerDashboardScreen({ params = {} }) {
   const [archive, setArchive] = useState({ loading: true, items: [] });
   const [newRefunds, setNewRefunds] = useState([]);
   const [migratedAmount, setMigratedAmount] = useState(params.migratedAmount ?? null);
+  const [fullName, setFullName] = useState(null);
+
+  useEffect(() => {
+    loadCustomerName().then(setFullName);
+  }, []);
+
+  // Adı olmayan (eski) hesaplar için: cüzdan imzasıyla sunucuya yazılır, sonra cihaza.
+  const handleSaveName = useCallback(
+    async (name) => {
+      const result = await updateCustomerProfile({
+        ...(await signed(wallet.stellarAddress, buildCustomerProfileChallenge)),
+        fullName: name,
+      });
+      await saveCustomerName(result.fullName);
+      setFullName(result.fullName);
+    },
+    [wallet]
+  );
 
   const applyRefundCheck = useCallback(async (address) => {
     const result = await checkRefunds(address);
@@ -150,6 +173,7 @@ export default function CustomerDashboardScreen({ params = {} }) {
         <View style={{ flex: 1 }}>
           {tab === 'home' && (
             <CustomerHomeTab
+              fullName={fullName}
               stellarAddress={wallet.stellarAddress}
               balance={balance}
               refreshing={refreshing}
@@ -186,6 +210,8 @@ export default function CustomerDashboardScreen({ params = {} }) {
           )}
           {tab === 'account' && (
             <CustomerAccountTab
+              fullName={fullName}
+              onSaveName={handleSaveName}
               stellarAddress={wallet.stellarAddress}
               receiptCount={archive.items.length}
               onLogout={() => reset('RoleSelect')}

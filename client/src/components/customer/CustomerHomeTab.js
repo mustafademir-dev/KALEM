@@ -8,6 +8,7 @@ import { EmptyState, InlineNotice, Skeleton } from '../StateViews.js';
 import { TAB_BAR_CLEARANCE } from './CustomerTabBar.js';
 import { colors, radii, spacing, type, cardShadow } from '../../theme/index.js';
 import { formatTl } from '../../utils/format.js';
+import { firstName } from '../../utils/customerProfile.js';
 
 const RECENT_COUNT = 3;
 
@@ -20,6 +21,7 @@ const RECENT_COUNT = 3;
  * ekranda böyle anlatılır; "tüm harcamanız" gibi bir iddiada BULUNULMAZ.
  */
 export default function CustomerHomeTab({
+  fullName = null,
   stellarAddress,
   balance,
   refreshing,
@@ -41,6 +43,9 @@ export default function CustomerHomeTab({
   return (
     <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
+        {fullName ? (
+          <Text style={[type.body, { color: colors.textSecondary }]}>Merhaba, {firstName(fullName)}</Text>
+        ) : null}
         <Text style={[type.h1, { color: colors.textPrimary }]}>Cüzdanım</Text>
       </View>
 

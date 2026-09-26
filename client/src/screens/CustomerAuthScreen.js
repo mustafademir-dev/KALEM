@@ -12,6 +12,7 @@ import storage from '../utils/storage.js';
 import { createWallet, loadWallet, signData, bytesToBase64 } from '../services/wallet.service.js';
 import { registerCustomer, loginCustomer, ApiError } from '../services/api.service.js';
 import { buildCustomerAuthChallenge } from '../utils/faucetChallenge.js';
+import { firstName, loadCustomerName, saveCustomerName } from '../utils/customerProfile.js';
 
 /** Bu cihazda en son giriş yapan müşterinin TC'si (yalnızca PIN'le hızlı giriş için, cihazda). */
 const PROFILE_KEY = 'kalem_customer_tc_v1';
@@ -31,6 +32,8 @@ export default function CustomerAuthScreen() {
   const [savedTc, setSavedTc] = useState(undefined); // undefined = okunuyor
   const [mode, setMode] = useState('login'); // 'login' | 'register'
   const [tc, setTc] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [savedName, setSavedName] = useState(null);
   const [pin, setPin] = useState('');
   const [pin2, setPin2] = useState('');
   const [loading, setLoading] = useState(false);
@@ -40,6 +43,7 @@ export default function CustomerAuthScreen() {
     (async () => {
       try {
         setSavedTc((await storage.getItemAsync(PROFILE_KEY)) || null);
+        setSavedName(await loadCustomerName());
       } catch {
         setSavedTc(null);
       }
@@ -53,6 +57,8 @@ export default function CustomerAuthScreen() {
     const idNo = quickLogin ? savedTc : tc.trim();
     if (!/^\d{11}$/.test(idNo)) return setError('TC kimlik numarası 11 haneli olmalıdır.');
     if (!/^\d{6}$/.test(pin)) return setError('PIN 6 haneli olmalıdır.');
+    const cleanName = fullName.trim().replace(/\s+/g, ' ');
+    if (mode === 'register' && cleanName.length < 2) return setError('Adınızı ve soyadınızı girin.');
     if (mode === 'register' && pin !== pin2) return setError('PIN\'ler aynı değil.');
 
     setLoading(true);
@@ -63,6 +69,7 @@ export default function CustomerAuthScreen() {
       const challenge = buildCustomerAuthChallenge(wallet.stellarAddress, timestamp);
       const signature = bytesToBase64(await signData(Buffer.from(challenge, 'utf8')));
       const body = { tc: idNo, pin, address: wallet.stellarAddress, timestamp, signature };
+      if (mode === 'register') body.fullName = cleanName;
 
       const result = mode === 'register' ? await registerCustomer(body) : await loginCustomer(body);
       try {
@@ -70,6 +77,7 @@ export default function CustomerAuthScreen() {
       } catch {
         // Hatırlanmasa da giriş geçerli; bir sonraki açılışta TC tekrar sorulur.
       }
+      await saveCustomerName(result.fullName ?? null);
       reset('CustomerDashboard', { migratedAmount: result.migratedAmount ?? null });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'İşlem tamamlanamadı, tekrar deneyin.');
@@ -78,7 +86,7 @@ export default function CustomerAuthScreen() {
     } finally {
       setLoading(false);
     }
-  }, [quickLogin, savedTc, tc, pin, pin2, mode, reset]);
+  }, [quickLogin, savedTc, tc, fullName, pin, pin2, mode, reset]);
 
   const switchAccount = useCallback(async () => {
     try {
@@ -86,6 +94,8 @@ export default function CustomerAuthScreen() {
     } catch {
       // yok say
     }
+    await saveCustomerName(null);
+    setSavedName(null);
     setSavedTc(null);
     setPin('');
     setError(null);
@@ -110,7 +120,13 @@ export default function CustomerAuthScreen() {
           <View style={styles.header}>
             <BrandMark size={48} />
             <Text style={[type.h1, { color: colors.textPrimary, marginTop: spacing.md }]}>
-              {quickLogin ? 'Hoş geldiniz' : mode === 'register' ? 'Hesap Aç' : 'Giriş Yap'}
+              {quickLogin
+                ? savedName
+                  ? `Hoş geldiniz, ${firstName(savedName)}`
+                  : 'Hoş geldiniz'
+                : mode === 'register'
+                  ? 'Hesap Aç'
+                  : 'Giriş Yap'}
             </Text>
             <Text style={[type.body, { color: colors.textSecondary, marginTop: 4, textAlign: 'center' }]}>
               {quickLogin
@@ -144,6 +160,17 @@ export default function CustomerAuthScreen() {
           )}
 
           <View style={styles.card}>
+            {mode === 'register' && !quickLogin && (
+              <TextField
+                label="Ad Soyad"
+                value={fullName}
+                onChangeText={(v) => setFullName(v.slice(0, 60))}
+                placeholder="Adınız ve soyadınız"
+                autoCapitalize="words"
+                maxLength={60}
+                style={{ marginBottom: spacing.md }}
+              />
+            )}
             {!quickLogin && (
               <TextField
                 label="TC Kimlik No"

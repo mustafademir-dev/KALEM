@@ -23,3 +23,8 @@ export function buildCustomerAuthChallenge(address, timestamp) {
 export function buildCustomerReceiptsChallenge(address, timestamp) {
   return `KALEM-CUSTOMER-RECEIPTS:${address}:${timestamp}`;
 }
+
+/** `orchestrator/src/utils/crypto.js` → `buildCustomerProfileChallenge` ile BİREBİR aynı olmalı. */
+export function buildCustomerProfileChallenge(address, timestamp) {
+  return `KALEM-CUSTOMER-PROFILE:${address}:${timestamp}`;
+}

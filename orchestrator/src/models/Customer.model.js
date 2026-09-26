@@ -16,6 +16,9 @@ const customerSchema = new mongoose.Schema(
     pinHash: { type: String, required: true, select: false },
     stellarAddress: { type: String, required: true, unique: true },
 
+    /** Uygulamada gösterilen ad soyad (bankacılık uygulamasındaki gibi). Eski hesaplarda yok. */
+    fullName: { type: String, trim: true, maxlength: 60 },
+
     /** Önceki cihazların cüzdan adresleri — fiş geçmişi yeni cihazda da görünsün diye. */
     addressHistory: { type: [String], default: [] },
 

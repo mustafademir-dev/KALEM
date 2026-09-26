@@ -14,19 +14,28 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import config from '../src/config/index.js';
 import Customer from '../src/models/Customer.model.js';
 import Merchant from '../src/models/Merchant.model.js';
-import { buildCustomerAuthChallenge, hashApiKey } from '../src/utils/crypto.js';
-import { isValidTcKimlik, hashSecret, verifySecret, MAX_FAILED_LOGINS } from '../src/utils/credentials.js';
-import { registerCustomerHandler, createLoginHandler } from '../src/api/routes/customer.routes.js';
+import { buildCustomerAuthChallenge, buildCustomerProfileChallenge, hashApiKey } from '../src/utils/crypto.js';
+import { isValidTcKimlik, hashSecret, verifySecret, normalizeFullName, MAX_FAILED_LOGINS } from '../src/utils/credentials.js';
+import { registerCustomerHandler, createLoginHandler, updateProfileHandler } from '../src/api/routes/customer.routes.js';
 import { loginMerchant } from '../src/api/routes/merchant.routes.js';
 import { authMiddleware } from '../src/api/middleware/auth.middleware.js';
 
 const TEST_TC = '10000000146'; // yazılım testlerinde yaygın kullanılan, sağlaması geçerli test numarası
 const PIN = '123456';
+const NAME = 'Mustafa Demir';
 
 function authBody(kp, extra = {}) {
   const timestamp = Date.now();
   const signature = kp.sign(Buffer.from(buildCustomerAuthChallenge(kp.publicKey(), timestamp), 'utf8')).toString('base64');
-  return { tc: TEST_TC, pin: PIN, address: kp.publicKey(), timestamp, signature, ...extra };
+  return { tc: TEST_TC, pin: PIN, fullName: NAME, address: kp.publicKey(), timestamp, signature, ...extra };
+}
+
+function profileBody(kp, fullName, signer = kp) {
+  const timestamp = Date.now();
+  const signature = signer
+    .sign(Buffer.from(buildCustomerProfileChallenge(kp.publicKey(), timestamp), 'utf8'))
+    .toString('base64');
+  return { address: kp.publicKey(), timestamp, signature, fullName };
 }
 
 describe('TC kimlik ve şifre yardımcıları', () => {
@@ -73,6 +82,7 @@ describe('Hesap uçları', () => {
     const app = express();
     app.use(express.json());
     app.post('/customers/register', registerCustomerHandler);
+    app.post('/customers/profile', updateProfileHandler);
     app.post('/customers/login', (req, res) => createLoginHandler(chain.deps)(req, res));
     app.post('/merchants/login', loginMerchant);
     app.get('/whoami', authMiddleware, (req, res) => res.json({ merchantId: req.merchantId }));
@@ -112,12 +122,45 @@ describe('Hesap uçları', () => {
       assert.equal((await post('/customers/register', { ...authBody(kp), address: other.publicKey() })).status, 403);
     });
 
+    it('kayıt: ad soyad zorunlu ve temizlenerek saklanır', async () => {
+      const kp = StellarSdk.Keypair.random();
+      assert.equal((await post('/customers/register', authBody(kp, { fullName: '' }))).status, 400);
+      assert.equal((await post('/customers/register', authBody(kp, { fullName: '12345' }))).status, 400);
+      const res = await post('/customers/register', authBody(kp, { fullName: '  Ayşe   Nur  Yılmaz ' }));
+      assert.equal(res.status, 201);
+      assert.equal((await res.json()).fullName, 'Ayşe Nur Yılmaz');
+      assert.equal((await Customer.findOne({})).fullName, 'Ayşe Nur Yılmaz');
+    });
+
+    it('profil: adı olmayan eski hesap cüzdan imzasıyla ad ekler; başkasının imzası ve kayıtsız cihaz reddedilir', async () => {
+      const kp = StellarSdk.Keypair.random();
+      await Customer.create({ tcHash: 'eski-hesap', pinHash: hashSecret(PIN), stellarAddress: kp.publicKey() });
+
+      const other = StellarSdk.Keypair.random();
+      assert.equal((await post('/customers/profile', profileBody(kp, 'Mustafa Demir', other))).status, 403);
+      assert.equal((await post('/customers/profile', profileBody(kp, '!'))).status, 400);
+      assert.equal((await post('/customers/profile', profileBody(other, 'Mustafa Demir'))).status, 404);
+
+      const res = await post('/customers/profile', profileBody(kp, 'Mustafa Demir'));
+      assert.equal(res.status, 200);
+      assert.deepEqual(await res.json(), { fullName: 'Mustafa Demir' });
+      assert.equal((await Customer.findOne({})).fullName, 'Mustafa Demir');
+    });
+
+    it('ad soyad biçimi: Türkçe harfler, tire ve kesme kabul; rakam ve tek harf reddedilir', () => {
+      assert.equal(normalizeFullName('Çağrı Öztürk-Şahin'), 'Çağrı Öztürk-Şahin');
+      assert.equal(normalizeFullName("D'Souza"), "D'Souza");
+      assert.equal(normalizeFullName('A'), null);
+      assert.equal(normalizeFullName('Ali 2'), null);
+      assert.equal(normalizeFullName(undefined), null);
+    });
+
     it('aynı cihazdan giriş: taşıma yok', async () => {
       const kp = StellarSdk.Keypair.random();
       await post('/customers/register', authBody(kp));
       const res = await post('/customers/login', authBody(kp));
       assert.equal(res.status, 200);
-      assert.deepEqual(await res.json(), { address: kp.publicKey(), migratedAmount: null });
+      assert.deepEqual(await res.json(), { address: kp.publicKey(), migratedAmount: null, fullName: NAME });
       assert.equal(chain.calls.length, 0);
     });
 

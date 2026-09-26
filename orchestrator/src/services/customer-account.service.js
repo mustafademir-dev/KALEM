@@ -15,7 +15,7 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import config from '../config/index.js';
 import Customer from '../models/Customer.model.js';
 import logger from '../utils/logger.js';
-import { buildCustomerAuthChallenge } from '../utils/crypto.js';
+import { buildCustomerAuthChallenge, buildCustomerProfileChallenge } from '../utils/crypto.js';
 import {
   hashSecret,
   verifySecret,
@@ -24,6 +24,7 @@ import {
   lockedMinutesLeft,
   registerFailedLogin,
   clearFailedLogins,
+  normalizeFullName,
 } from '../utils/credentials.js';
 import { readContractBalance } from './stellar-tx.service.js';
 import { issuerTokenCall, issuerBatchCall } from './refund.service.js';
@@ -82,6 +83,8 @@ function validateInput({ tc, pin, address, timestamp, signature }) {
 /** Yeni müşteri hesabı. */
 export async function registerCustomer(input) {
   validateInput(input);
+  const fullName = normalizeFullName(input.fullName);
+  if (!fullName) throw new AccountError('VALIDATION_ERROR', 'Adınızı ve soyadınızı girin.', 400);
   const tcHash = hashTcKimlik(input.tc);
   if (await Customer.exists({ tcHash })) {
     throw new AccountError('ALREADY_REGISTERED', 'Bu TC kimlik numarasıyla bir hesap zaten var. Giriş yapın.', 409);
@@ -90,7 +93,7 @@ export async function registerCustomer(input) {
     throw new AccountError('ALREADY_REGISTERED', 'Bu cihazdaki cüzdan başka bir hesaba bağlı.', 409);
   }
   try {
-    await Customer.create({ tcHash, pinHash: hashSecret(input.pin), stellarAddress: input.address });
+    await Customer.create({ tcHash, pinHash: hashSecret(input.pin), stellarAddress: input.address, fullName });
   } catch (error) {
     if (error.code === 11000) {
       throw new AccountError('ALREADY_REGISTERED', 'Bu TC kimlik numarasıyla bir hesap zaten var. Giriş yapın.', 409);
@@ -98,7 +101,7 @@ export async function registerCustomer(input) {
     throw error;
   }
   logger.info('[Customer] Yeni müşteri hesabı açıldı.');
-  return { address: input.address };
+  return { address: input.address, fullName };
 }
 
 /**
@@ -121,10 +124,41 @@ export async function loginCustomer(input, deps = defaultDeps) {
   }
   await clearFailedLogins(customer);
 
+  const fullName = customer.fullName ?? null;
   if (customer.stellarAddress === input.address && !customer.pendingMigration) {
-    return { address: customer.stellarAddress, migratedAmount: null };
+    return { address: customer.stellarAddress, migratedAmount: null, fullName };
   }
-  return migrateToNewDevice(customer, input.address, deps);
+  return { ...(await migrateToNewDevice(customer, input.address, deps)), fullName };
+}
+
+/**
+ * Ad soyad güncelleme (adı olmayan eski hesaplar ya da düzeltme için). Yetki: cihazdaki
+ * cüzdanın imzası — yalnızca hesabın ŞU ANKİ cüzdanı kendi adını değiştirebilir.
+ */
+export async function updateCustomerProfile({ address, timestamp, signature, fullName }) {
+  if (!address || !StellarSdk.StrKey.isValidEd25519PublicKey(address)) {
+    throw new AccountError('VALIDATION_ERROR', 'Geçersiz cüzdan adresi.', 400);
+  }
+  if (typeof timestamp !== 'number' || Math.abs(Date.now() - timestamp) > CHALLENGE_MAX_AGE_MS) {
+    throw new AccountError('VALIDATION_ERROR', 'İstek zaman aşımına uğradı, tekrar deneyin.', 400);
+  }
+  let ok = false;
+  try {
+    ok = StellarSdk.Keypair.fromPublicKey(address).verify(
+      Buffer.from(buildCustomerProfileChallenge(address, timestamp), 'utf8'),
+      Buffer.from(String(signature ?? ''), 'base64')
+    );
+  } catch {
+    ok = false;
+  }
+  if (!ok) throw new AccountError('OWNERSHIP_PROOF_FAILED', 'Cüzdan doğrulanamadı.', 403);
+
+  const name = normalizeFullName(fullName);
+  if (!name) throw new AccountError('VALIDATION_ERROR', 'Adınızı ve soyadınızı girin.', 400);
+
+  const updated = await Customer.findOneAndUpdate({ stellarAddress: address }, { $set: { fullName: name } }, { new: true });
+  if (!updated) throw new AccountError('NOT_FOUND', 'Bu cihaz bir hesaba bağlı değil. Önce giriş yapın.', 404);
+  return { fullName: updated.fullName };
 }
 
 /**
