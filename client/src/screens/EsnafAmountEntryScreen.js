@@ -21,7 +21,7 @@ const KEYS = [
 // Kısım tuşu renkleri — fiziksel yazar kasalardaki renkli departman tuşlarını andırır.
 const DEPT_TINTS = ['#E8F1FB', '#E6F4EC', '#FDF3E2', '#F3E8FB', '#FBEAEA', '#E9F7F7', '#F1F3F6', '#FFF8D6'];
 
-const LCD = { bg: '#14231C', text: '#E6FFF0', dim: '#7FC6A0', line: '#23392E' };
+const LCD = { bg: '#14231C', text: '#E6FFF0', dim: '#7FC6A0', line: '#23392E', warn: '#FFB4A8' };
 
 /**
  * Ödeme Al — yazar kasa POS düzeninde tutar + departman (kısım) girişi.
@@ -35,13 +35,20 @@ export default function EsnafAmountEntryScreen({ params }) {
   const { navigate } = useNavigation();
   const [text, setText] = useState('');
   const [departments, setDepartments] = useState(DEFAULT_DEPARTMENTS);
-  const [deptIndex, setDeptIndex] = useState(0);
+  // Varsayılan seçim YOK: her ödemede kısım bilerek seçilir. Unutulursa gıda
+  // satışına sessizce %20 KDV'li fiş kesilmesin diye ödeme alınamaz. Ekrandan
+  // çıkıp dönünce (yeni ödeme) seçim sıfırlanır — ekran yeniden kurulur.
+  const [deptIndex, setDeptIndex] = useState(null);
 
   useEffect(() => {
     let alive = true;
     getDepartments(session.merchantId, session.apiKey)
       .then((res) => {
-        if (alive && Array.isArray(res.departments) && res.departments.length > 0) setDepartments(res.departments);
+        if (alive && Array.isArray(res.departments) && res.departments.length > 0) {
+          setDepartments(res.departments);
+          // Liste değişti: eski sıra numarası artık başka bir kısmı gösterebilir.
+          setDeptIndex(null);
+        }
       })
       .catch(() => {}); // çevrimdışıysa varsayılanlarla devam
     return () => {
@@ -49,15 +56,19 @@ export default function EsnafAmountEntryScreen({ params }) {
     };
   }, [session]);
 
-  const department = departments[Math.min(deptIndex, departments.length - 1)];
+  const department = deptIndex === null ? null : departments[deptIndex] ?? null;
   const totalAmount = useMemo(() => toStroops(text), [text]);
-  const split = useMemo(() => vatSplit(totalAmount, department.vatRate), [totalAmount, department]);
+  const split = useMemo(
+    () => (department ? vatSplit(totalAmount, department.vatRate) : null),
+    [totalAmount, department]
+  );
   const { whole, fraction, hasComma } = displayParts(text);
+  const canCharge = Boolean(totalAmount && department);
 
   const press = useCallback((key) => setText((current) => pressKey(current, key)), []);
 
   const handleGenerate = useCallback(() => {
-    if (!totalAmount) return;
+    if (!totalAmount || !department) return;
     const payload = buildQrPayload({
       merchantId: session.merchantId,
       stellarAddress,
@@ -96,10 +107,19 @@ export default function EsnafAmountEntryScreen({ params }) {
         </View>
 
         {/* Ekran (LCD) */}
-        <View style={styles.lcd} accessibilityLabel={`${department.name}, yüzde ${department.vatRate} KDV, ${text || '0'} TL`}>
+        <View
+          style={styles.lcd}
+          accessibilityLabel={
+            department
+              ? `${department.name}, yüzde ${department.vatRate} KDV, ${text || '0'} TL`
+              : `Kısım seçilmedi, ${text || '0'} TL`
+          }
+        >
           <View style={styles.lcdTop}>
-            <Text style={styles.lcdSmall} numberOfLines={1}>
-              {department.name.toLocaleUpperCase('tr')} · %{department.vatRate} KDV
+            <Text style={[styles.lcdSmall, !department && { color: LCD.warn }]} numberOfLines={1}>
+              {department
+                ? `${department.name.toLocaleUpperCase('tr')} · %${department.vatRate} KDV`
+                : 'KISIM SEÇİN'}
             </Text>
             <Text style={styles.lcdSmall}>KDV DAHİL</Text>
           </View>
@@ -117,14 +137,16 @@ export default function EsnafAmountEntryScreen({ params }) {
 
         {/* Kısım / departman tuşları */}
         <View style={styles.sectionHead}>
-          <Text style={[type.micro, { color: colors.textMuted }]}>KISIM / DEPARTMAN</Text>
+          <Text style={[type.micro, { color: department ? colors.textMuted : colors.danger }]}>
+            {department ? 'KISIM / DEPARTMAN' : 'KISIM / DEPARTMAN — SEÇMEDEN ÖDEME ALINAMAZ'}
+          </Text>
           <Pressable onPress={() => navigate('MerchantDepartments', { session })} hitSlop={8}>
             <Text style={[type.captionMedium, { color: colors.accent }]}>Düzenle</Text>
           </Pressable>
         </View>
         <View style={styles.deptGrid}>
           {departments.map((d, i) => {
-            const selected = i === Math.min(deptIndex, departments.length - 1);
+            const selected = i === deptIndex;
             return (
               <Pressable
                 key={`${d.name}-${i}`}
@@ -168,13 +190,13 @@ export default function EsnafAmountEntryScreen({ params }) {
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Ödeme al, QR oluştur"
-              disabled={!totalAmount}
+              accessibilityLabel={department ? 'Ödeme al, QR oluştur' : 'Önce kısım seçin'}
+              disabled={!canCharge}
               onPress={handleGenerate}
               style={({ pressed }) => [
                 styles.key,
                 styles.okKey,
-                !totalAmount && { opacity: 0.45 },
+                !canCharge && { opacity: 0.45 },
                 pressed && styles.keyPressed,
               ]}
             >
