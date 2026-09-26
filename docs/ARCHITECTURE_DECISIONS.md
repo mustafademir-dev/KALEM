@@ -933,3 +933,19 @@ Repo dışında `KALEM_Demo_Hesaplari.docx` (VKN/şifre, test TC/PIN). Demo esna
   ölçüm (testnet, `issuerBatchCall`): 4,5–5,0 sn/işlem. İade artık atomik.
 - **Departman:** `EsnafAmountEntryScreen` varsayılan seçimle gelmez; kısım seçilmeden
   "ÖDEME AL" pasif. Unutulan seçimle gıdaya %20 KDV'li fiş kesilmesi engellendi.
+
+### 10.9. Ödeme içeriği = fiş, e-Arşiv Fatura, belge düzeltmeleri (26 Eylül)
+- **Kesinti atlatma kapandı:** `/transactions/submit` yalnızca `pay_merchant` kabul eder
+  (`transaction.routes.js#checkPaymentCall`); varsayılan fee-bump izin listesi yalnızca
+  pool-manager. Çıplak `dtl-token.transfer(müşteri → esnaf)` → 400 `PAYMENT_MISMATCH`, ağa
+  gidilmez. Sınır: müşteri ücreti kendisi ödeyip KALEM'i hiç kullanmazsa kontrat buna izin
+  verir (redeploy gerektirir, yapılmadı); o ödemenin fişi de kesilmez.
+- **Fiş zincirle birebir:** gönderen = imzalayan, tutar = `totalAmount`, alıcı =
+  `merchantId`'nin zincir adresi; uyuşmazsa kayıt yazılmaz. Esnaf adresi okuması
+  ön-simülasyonla paralel.
+- **Belge türü:** yeni GİB belgeleri `e_arsiv` / `EARSIVFATURA`, alıcı "NİHAİ TÜKETİCİ"
+  (GMÖEBYS, 507 Sıra No'lu VUK GT md. 4/3, 5/3). Eski `okc_fis` belgeler değişmedi.
+- **Bilinçli olarak yapılmayan:** QR imzalama/sunucu doğrulaması (esnaf cihazı anahtar
+  saklamıyor; adres eşleşmesi yukarıdaki kontrolle sağlanıyor, yalnızca görünen ad
+  doğrulanmıyor), SMS doğrulaması.
+- **Hukuki çerçeve:** `GERCEK_VS_SIMULASYON.md` §3.3 (GMÖEBYS) ve §3.7 (para tarafı).

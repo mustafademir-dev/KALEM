@@ -107,9 +107,11 @@ Bunlar PoC kapsamında **bilinçli olarak** simüle edilmiştir; hepsi lisans, k
 
 ### 3.3. GİB e-Belge entegrasyonu — tamamen simüle
 
-Canlı GİB API'lerine erişim yoktur. `gib-simulator.service.js`, ÖKC protokolüne ve **UBL-TR 2.1** standardına uygun bir JSON/XML belge taslağı üretip MongoDB'ye yazar (`status: 'generated'`).
+Canlı GİB API'lerine erişim yoktur. `gib-simulator.service.js`, **UBL-TR 2.1** standardına uygun bir **e-Arşiv Fatura** taslağı (esnafın gerçek VKN'si ve adıyla, alıcı "NİHAİ TÜKETİCİ") üretip MongoDB'ye yazar (`status: 'generated'`). 26 Eylül 2026 öncesi belgeler `okc_fis` türündedir ve değiştirilmemiştir.
 
-**Format doğrudur, ancak hiçbir belge gerçekten GİB'e iletilmez.** Üretilen fiş client'ta gerçek bir belge gibi görüntülenebildiği için, sunumda bunun bir taslak olduğu açıkça belirtilmelidir.
+**Format doğrudur, ancak hiçbir belge gerçekten GİB'e iletilmez.**
+
+**Gerçek hayat karşılığı — GMÖEBYS (507 Sıra No'lu VUK Genel Tebliği, yürürlükte):** md. 5/3 "Sisteme dahil olan mükelleflerin, faaliyetlerinde ödeme kaydedici cihaz kullanma mecburiyetleri bulunmamaktadır." md. 4/3: ödeme, özel entegratör aracılığıyla anlık olarak, esnafın mükellefiyetine uygun e-belgeye dönüştürülür. md. 3/ç: bankalar yanında e-para ve ödeme kuruluşları da "finans kuruluşu" sayılır; sistemi esnafa yalnızca finans kuruluşu ya da ÖKC üreticisi sunabilir (md. 4/2), yani KALEM ancak lisanslı ortağın GİB izni altında teknoloji sağlayıcısıdır. md. 6/1: tahsilat/belge bilgilerinin gizliliği sistemi sunanın sorumluluğundadır — herkese açık zincirle gerilim yaratır, izinli ağ gerekçesidir. **Bu yalnızca vergi (ÖKC) tarafını çözer; para tarafı için bkz. §3.7.**
 
 ### 3.4. KYC/KYB kimlik doğrulaması — yok
 
@@ -128,6 +130,12 @@ Bu bir eksiklik değil, **bilinçli bir dürüstlük kararıdır** (§5.2): olma
 
 **Sonuç:** ekonomik döngü şu an kendi kendine kapanmıyor; kapanması için elle bir operasyonel adım gerekiyor.
 
+### 3.5a. İade ve müşteri hesapları — gerçek (26 Eylül 2026)
+
+- **İade** yapılabiliyor: esnaf fiş numarasıyla başlatır; esnaftan %99,6, Havuz 3'ten %0,1, Havuz 4'ten %0,3 yakılır, müşteriye %100 basılır — `issuer-batch` kontratıyla **tek işlemde, atomik**. İhraççı yetkisiyle çalışır (kontratlarda iade fonksiyonu yok).
+- **Müşteri hesabı** TC + 6 haneli PIN + ad soyad ile. TC açık hâlde saklanmaz (HMAC), PIN scrypt. Yeni cihazda giriş bakiyeyi ihraççı yetkisiyle taşır — bu yüzden "tamamen gözetimsiz" denmez; doğrusu "ödemeyi yalnızca kullanıcı imzalar; hesap kurtarma kimlik doğrulamayla". SMS doğrulaması yok (bilinçli).
+- Sistem artık **ad soyad ve TC (özet) tutar**; "hiç kişisel veri toplamıyoruz" denmez.
+
 ### 3.6. Sistem internette — ama testnet üzerinde
 
 > **Düzeltme (26 Eylül 2026):** Bu bölüm eskiden "backend yalnızca localhost'ta" diyordu; artık doğru değil.
@@ -136,6 +144,12 @@ Bu bir eksiklik değil, **bilinçli bir dürüstlük kararıdır** (§5.2): olma
 - **Uygulama (web):** Render static site olarak yayında — <https://kalem-app.onrender.com>. Telefondan tarayıcıyla açılır, kamera HTTPS gerektirdiği için yerel ağ adresi yerine bu adres kullanılır.
 - Her ikisi de **Stellar testnet** üzerinde çalışır; §3.1'deki "gerçek para değildir" kısıtı aynen geçerlidir.
 - GitHub'a her push iki servisi de yeniden derler (autoDeploy).
+
+### 3.7. Para tarafının hukuki durumu (26 Eylül 2026 araştırması)
+
+- TCMB "Ödemelerde Kripto Varlıkların Kullanılmamasına Dair Yönetmelik" (RG 16.4.2021/31456) yalnızca kripto ile ödemeyi değil, **ödeme ve e-para kuruluşlarının kripto içeren iş modeli geliştirmesini de** yasaklar. Stellar'da ücret XLM olduğundan lisanslı bir ortak bugünkü yapımızı işletemez.
+- 7518 sayılı Kanun'un (2024) kripto varlık tanımında ("DLT ile oluşturulan, değer veya hak ifade edebilen gayri maddi varlıklar") **e-para istisnası yoktur**.
+- Sonuç: **"lisanslı e-para ortağı çıkarırsa bugün yasalız" DENMEZ.** Proje raporunun özeti de bunu baştan kabul eder. Doğru çerçeve: "tedavül kararı verildiğinde Dijital TL ekosisteminde hizmet sağlayıcı." Geçiş seçeneği ("para EPK defterinde, zincir yalnızca kural + kanıt") ana tez değildir.
 
 ---
 
@@ -160,7 +174,10 @@ Aşağıdaki ifadeler teknik olarak yanlış olur; sağ sütundaki karşılıkla
 | ❌ Söylenmemeli | ✅ Doğrusu |
 | :--- | :--- |
 | "Gerçek para transfer ediyoruz" | "Gerçek blokzincir üzerinde, testnet değeriyle transfer ediyoruz" |
-| "GİB'e fiş kesiyoruz" | "GİB'in UBL-TR formatına uygun belge üretiyoruz; canlı API entegrasyonu PoC kapsamı dışında" |
+| "GİB'e fiş kesiyoruz" | "Esnafın VKN'siyle e-Arşiv Fatura üretiyoruz; üründe GMÖEBYS kapsamında özel entegratör üzerinden GİB'e gider" |
+| "Lisanslı partnerle bugün yasalız" / "e-para olduğu için kripto değil" | "Tedavül kararı verildiğinde Dijital TL ekosisteminde çalışacağız; bugünkü mevzuatın DLT üzerinde değer taşıyan token'la ödemeyi kısıtladığını biliyoruz" |
+| "Hiç kişisel veri toplamıyoruz" | "Ad ve TC'yi hesap için tutuyoruz, TC açık hâlde saklanmıyor; hak ediş verisi hiç toplamıyoruz" |
+| "Tamamen gözetimsiz" | "Ödemeyi yalnızca kullanıcı kendi cihazındaki anahtarla imzalar; hesap kurtarma kimlik doğrulamayla" |
 | "Esnafları KYC'den geçiriyoruz" | "Esnafın cüzdan adresi sahipliğini kriptografik olarak doğruluyoruz; kurumsal KYC/KYB süreci kapsam dışı" |
 | "Sistem canlıda çalışıyor" | "Sistem uçtan uca çalışıyor ve testnet'te doğrulandı; bulut dağıtımı sıradaki adım" |
 | "Havuz 1'deki parayı biz saklıyoruz" / Havuz 1'i ortak bir kurum hesabı gibi anlatmak | "Havuz 1 esnafın kendi kasasıdır: %99,6 doğrudan esnafın adresine gider; %0,1 Sosyal Fon'a, %0,3 Operasyonel havuza — tek işlemde, atomik" |

@@ -17,8 +17,10 @@ iddia hiçbir zaman kurulmadı.
 Dağıtım yapabilmek için kimin hak ettiğini bilmek gerekir. Bunu bilmenin
 klasik yolu, insanlardan gelir belgesi, hane bilgisi, öğrenci belgesi
 toplamaktır — yani KALEM'in bugüne kadar bilinçli olarak kaçındığı her şeyi
-yapmak. Sistem müşteriden **hiçbir kişisel veri toplamıyor**: ad yok, e-posta
-yok, telefon yok, TCKN yok.
+yapmak. KALEM hesap için yalnızca ad soyad ve TC kimlik numarasını tutar (TC açık
+hâlde değil, sunucu anahtarlı HMAC özeti olarak); gelir, hane, öğrenci belgesi gibi
+**hak ediş verisi hiç toplamaz** ve toplamak istemez. (26 Eylül 2026 düzeltmesi:
+önceki metin "TCKN yok" diyordu; müşteri hesapları eklenince geçersiz oldu.)
 
 Sıfır bilgi ispatı bu ikilemi çözen bilinen tek yoldur: **doğrulama yapılır,
 veri toplanmaz.**

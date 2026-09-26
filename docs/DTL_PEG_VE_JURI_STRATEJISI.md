@@ -5,6 +5,14 @@
 > İçeriği bir plan değil, **üzerine geri dönülecek bir tartışma zemini**. Buradaki hiçbir
 > cümle sunuma "onaylanmış metin" olarak girmedi; kullanıcı tek tek gözden geçirecek.
 >
+> ⚠ **DÜZELTME (26 Eylül 2026) — bu belgedeki "tam rezerv + lisanslı e-para kuruluşu"
+> yolu BUGÜNKÜ mevzuatta yasallık sağlamaz.** TCMB 2021 kripto yönetmeliği ödeme ve
+> e-para kuruluşlarının kripto içeren iş modeli geliştirmesini de yasaklar (Stellar'da
+> ücret XLM); 7518 sayılı Kanun'un kripto varlık tanımında e-para istisnası yoktur.
+> Sunum çerçevesi: "tedavül kararı verildiğinde Dijital TL ekosisteminde hizmet
+> sağlayıcı." Ayrıntı: `GERCEK_VS_SIMULASYON.md` §3.7. §4, §5 ve §8'deki EPK/peg
+> anlatımı yalnızca "Dijital TL öncesi tasarım" olarak okunmalı, "bugün yasal" diye değil.
+>
 > Burada yazılanların hiçbiri koda dokunmaz. Kod tarafında iş çıkarsa
 > `ARCHITECTURE_DECISIONS.md` §8.2'deki kalan işler listesine ayrıca eklenmelidir.
 
