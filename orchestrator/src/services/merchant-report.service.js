@@ -139,36 +139,6 @@ export async function findConfirmedInRange(merchantId, from, to, { limit = 2000 
     .lean();
 }
 
-// --- Sosyal Fon (Havuz 3) bakiyesi: kısa süreli önbellek ---------------------------
-
-const FUND_CACHE_MS = 30_000;
-let fundCache = { at: 0, value: null };
-
-/** Test için önbelleği temizler. */
-export function resetSocialFundCache() {
-  fundCache = { at: 0, value: null };
-}
-
-/**
- * Sosyal Fon'un (Havuz 3) güncel toplam bakiyesini zincirden okur (stroop). 30 sn önbellek —
- * her esnaf ana ekranı açılışında RPC'ye gitmemek için. Adres yapılandırılmamışsa ya da
- * okuma başarısızsa `null` döner (ana ekran yine de çalışır).
- */
-export async function getSocialFundBalance() {
-  const address = config.pools.pool3Address;
-  if (!address) return null;
-
-  if (Date.now() - fundCache.at < FUND_CACHE_MS && fundCache.value !== null) return fundCache.value;
-  try {
-    const balance = await readContractBalance(config.contracts.dtlTokenId, address);
-    fundCache = { at: Date.now(), value: balance };
-    return balance;
-  } catch (error) {
-    logger.warn(`[Report] Sosyal Fon bakiyesi okunamadı: ${error.message}`);
-    return fundCache.value; // varsa eski (bayat) değer, yoksa null
-  }
-}
-
 /** Esnafın kendi işlemlerinden Sosyal Fon'a giden tüm zamanların toplamı. */
 async function lifetimeSocialContribution(merchantId) {
   const docs = await Transaction.find({
@@ -193,19 +163,21 @@ async function lifetimeSocialContribution(merchantId) {
 /**
  * Esnaf ana ekranı için TEK çağrıda tüm veri. (Atlas ile uygulama farklı bölgelerde
  * olabildiği için her Mongo/RPC gidiş-dönüşü pahalıdır; ekran tek istekle açılır.)
- * Bakiye ve Sosyal Fon bakiyesi best-effort'tur — okunamazsa `null` döner, istek başarısız olmaz.
+ * Bakiye best-effort'tur — okunamazsa `null` döner, istek başarısız olmaz.
+ *
+ * Fonun (Havuz 3) TOPLAM bakiyesi bilinçli olarak döndürülmez: toplam = tüm satışların
+ * %0,1'i olduğundan, ondan sistemin toplam cirosu geriye hesaplanabilirdi.
  */
 export async function buildDashboard(merchant, now = new Date()) {
   const today = istanbulDayRange(istanbulToday(now));
 
-  const [todayTxs, recentTxs, contribution, fundTotal, balance] = await Promise.all([
+  const [todayTxs, recentTxs, contribution, balance] = await Promise.all([
     findConfirmedInRange(merchant._id, today.from, today.to),
     Transaction.find({ merchantId: merchant._id, status: 'confirmed' })
       .sort({ createdAt: -1, _id: -1 })
       .limit(5)
       .lean(),
     lifetimeSocialContribution(merchant._id),
-    getSocialFundBalance(),
     readContractBalance(config.contracts.dtlTokenId, merchant.stellarAddress).catch((err) => {
       logger.warn(`[Report] Esnaf bakiyesi okunamadı: ${err.message}`);
       return null;
@@ -228,7 +200,6 @@ export async function buildDashboard(merchant, now = new Date()) {
     socialFund: {
       yourContribution: contribution.total,
       contributionTxCount: contribution.count,
-      total: fundTotal,
     },
     generatedAt: now.toISOString(),
   };

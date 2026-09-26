@@ -21,7 +21,6 @@ import {
   istanbulDayRange,
   istanbulToday,
   csvText,
-  resetSocialFundCache,
 } from '../src/services/merchant-report.service.js';
 
 const HASH = (n) => String(n).padStart(64, '0');
@@ -110,7 +109,6 @@ describe('Esnaf raporlama uçları', () => {
 
   beforeEach(async () => {
     await Promise.all([Merchant.deleteMany({}), Transaction.deleteMany({}), GibDocument.deleteMany({})]);
-    resetSocialFundCache();
     stellarConfig.sorobanServer = {
       simulateTransaction: async () => ({
         transactionData: {},
@@ -157,10 +155,11 @@ describe('Esnaf raporlama uçları', () => {
       assert.equal(body.today.breakdownCount, 1);
       assert.equal(body.today.missingBreakdownCount, 1);
 
-      // Sosyal Fon: esnafın tüm zamanlardaki katkısı (bugünkü + dünkü, dağılımlı) ve zincirdeki toplam
+      // Sosyal Fon: esnafın tüm zamanlardaki katkısı (bugünkü + dünkü, dağılımlı). Fonun
+      // toplamı DÖNMEZ — ondan sistemin toplam cirosu hesaplanabilirdi.
       assert.equal(body.socialFund.yourContribution, '2000000');
       assert.equal(body.socialFund.contributionTxCount, 2);
-      assert.equal(body.socialFund.total, '777000000');
+      assert.equal('total' in body.socialFund, false);
       assert.equal(body.balance, '777000000');
     });
 
@@ -190,7 +189,7 @@ describe('Esnaf raporlama uçları', () => {
       assert.equal(full.gibDocumentNo, 'KALEM2026091912345');
     });
 
-    it('zincir okuması başarısız olsa da 200 döner: bakiye ve Sosyal Fon toplamı null', async () => {
+    it('zincir okuması başarısız olsa da 200 döner: bakiye null', async () => {
       const { merchant, apiKey } = await createMerchant();
       await createTx(merchant, HUNDRED);
       stellarConfig.sorobanServer = { simulateTransaction: async () => ({ error: 'HostError' }) };
@@ -199,7 +198,6 @@ describe('Esnaf raporlama uçları', () => {
       assert.equal(res.status, 200);
       const body = await res.json();
       assert.equal(body.balance, null);
-      assert.equal(body.socialFund.total, null);
       assert.equal(body.today.count, 1, 'veritabanı verisi yine de gelir');
       assert.equal(body.socialFund.yourContribution, '1000000');
     });

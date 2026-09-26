@@ -85,9 +85,9 @@ export function BalanceCard({ balance, loading }) {
 }
 
 /**
- * Sosyal Fon: esnafın kendi işlemlerinden fona giden pay (dürüst anlatım: "katkınız") ve
- * fonun zincirdeki toplam bakiyesi. Fondan yapılan bir DAĞITIM olduğu iddia EDİLMEZ —
- * sistemde şu an yalnızca birikim vardır.
+ * Sosyal Fon: esnafın kendi işlemlerinden fona giden pay (dürüst anlatım: "katkınız").
+ * Fonun toplam bakiyesi gösterilmez — tüm satışların %0,1'i olduğundan ondan sistemin
+ * toplam cirosu hesaplanabilirdi. Fondan DAĞITIM yapıldığı iddia EDİLMEZ.
  */
 export function SocialFundCard({ fund, loading }) {
   return (
@@ -104,9 +104,7 @@ export function SocialFundCard({ fund, loading }) {
         <Text style={[type.h2, { color: colors.textMuted, marginTop: 2 }]}>—</Text>
       )}
       <Text style={[type.caption, { color: colors.textMuted, marginTop: 2 }]} numberOfLines={2}>
-        {!loading && fund && fund.total !== null && fund.total !== undefined
-          ? `Fonun toplamı: ${formatTl(fund.total)}`
-          : 'Her satışın %0,1\'i fona aktarılır'}
+        Her satışın %0,1'i fona aktarılır
       </Text>
     </View>
   );
