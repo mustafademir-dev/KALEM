@@ -104,6 +104,32 @@ export function calculateFeeBumpBaseFee(innerTx) {
 }
 
 /**
+ * Tek operasyonlu bir kontrat çağrısının hedefini, fonksiyon adını ve argümanlarını
+ * (yerel JS değerlerine çevrilmiş: Address → "G…"/"C…", i128 → bigint) okur.
+ *
+ * @param {StellarSdk.Transaction} innerTx
+ * @returns {{contractId: string, functionName: string, args: Array} | null}
+ *   Tek bir `invokeContract` operasyonu değilse ya da çözülemezse null.
+ */
+export function readContractCall(innerTx) {
+  try {
+    if (!(innerTx instanceof StellarSdk.Transaction) || innerTx.operations.length !== 1) return null;
+    const op = innerTx.operations[0];
+    if (op.type !== 'invokeHostFunction' || op.func.switch().name !== 'hostFunctionTypeInvokeContract') {
+      return null;
+    }
+    const call = op.func.invokeContract();
+    return {
+      contractId: StellarSdk.Address.fromScAddress(call.contractAddress()).toString(),
+      functionName: call.functionName().toString(),
+      args: call.args().map((arg) => StellarSdk.scValToNative(arg)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * İç zarfın Ed25519 imzasının gerçekten `innerTx.source` hesabına ait
  * olduğunu yerel olarak (ağa gitmeden) doğrular.
  *

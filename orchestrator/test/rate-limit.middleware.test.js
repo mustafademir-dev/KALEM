@@ -86,8 +86,8 @@ async function startAppWith(...middlewares) {
   };
 }
 
-/** `transaction.routes.test.js` ile AYNI kalıp — imzalı, tek operasyonlu iç zarf. */
-function buildSignedInnerXdr(signerKeypair) {
+/** İmzalı `pay_merchant(from, merchant, amount)` iç zarfı — gerçek müşteri ödemesinin biçimi. */
+function buildSignedInnerXdr(signerKeypair, merchantAddress, amount = '10000000') {
   const source = signerKeypair.publicKey();
   const account = new StellarSdk.Account(source, '100');
   const contract = new StellarSdk.Contract(DUMMY_CONTRACT_ID);
@@ -95,7 +95,14 @@ function buildSignedInnerXdr(signerKeypair) {
     fee: '100',
     networkPassphrase: stellarConfig.networkPassphrase,
   })
-    .addOperation(contract.call('balance', StellarSdk.Address.fromString(source).toScVal()))
+    .addOperation(
+      contract.call(
+        'pay_merchant',
+        StellarSdk.Address.fromString(source).toScVal(),
+        StellarSdk.Address.fromString(merchantAddress).toScVal(),
+        StellarSdk.nativeToScVal(BigInt(amount), { type: 'i128' })
+      )
+    )
     .setTimeout(300)
     .build();
   tx.sign(signerKeypair);
@@ -306,7 +313,7 @@ describe('POST /transactions/submit — rate limit, DB yazmasından ÖNCE devrey
           'Idempotency-Key': randomUUID(),
         },
         body: JSON.stringify({
-          signedXdr: buildSignedInnerXdr(customerKp),
+          signedXdr: buildSignedInnerXdr(customerKp, merchant.stellarAddress),
           merchantId: merchant._id.toString(),
           totalAmount: '10000000',
         }),
@@ -344,7 +351,7 @@ describe('POST /transactions/submit — rate limit, DB yazmasından ÖNCE devrey
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': randomUUID() },
         body: JSON.stringify({
-          signedXdr: buildSignedInnerXdr(kp),
+          signedXdr: buildSignedInnerXdr(kp, merchant.stellarAddress),
           merchantId: merchant._id.toString(),
           totalAmount: '10000000',
         }),

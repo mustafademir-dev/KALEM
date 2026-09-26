@@ -4,6 +4,7 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import config from '../src/config/index.js';
 import stellarConfig from '../src/config/stellar.js';
 import Transaction from '../src/models/Transaction.model.js';
+import Merchant from '../src/models/Merchant.model.js';
 import IdempotencyKey from '../src/models/IdempotencyKey.model.js';
 import { submitTransactionHandler, getTransactionStatus } from '../src/api/routes/transaction.routes.js';
 
@@ -23,7 +24,9 @@ function createMockRes() {
 describe('Transaction Routes Unit Tests', () => {
   const dummyContractId = 'CC4ME5GZASQP456TPFEEADRK4NOFVV4KWX5TJGHJBO7SGK34IMIPWTX4';
 
-  /** İmzalı, tek operasyonlu bir iç zarf üretir (fee-bump.service.test.js ile aynı kalıp). */
+  const merchantAddress = StellarSdk.Keypair.random().publicKey();
+
+  /** İmzalı `pay_merchant(from, merchantAddress, 10000000)` iç zarfı — gerçek ödemenin biçimi. */
   const buildSignedInnerXdr = (keypair, contractId = dummyContractId) => {
     const account = new StellarSdk.Account(keypair.publicKey(), '100');
     const contract = new StellarSdk.Contract(contractId);
@@ -31,7 +34,14 @@ describe('Transaction Routes Unit Tests', () => {
       fee: '100',
       networkPassphrase: stellarConfig.networkPassphrase,
     })
-      .addOperation(contract.call('balance', StellarSdk.Address.fromString(keypair.publicKey()).toScVal()))
+      .addOperation(
+        contract.call(
+          'pay_merchant',
+          StellarSdk.Address.fromString(keypair.publicKey()).toScVal(),
+          StellarSdk.Address.fromString(merchantAddress).toScVal(),
+          StellarSdk.nativeToScVal(10000000n, { type: 'i128' })
+        )
+      )
       .setTimeout(300)
       .build();
     tx.sign(keypair);
@@ -96,6 +106,8 @@ describe('Transaction Routes Unit Tests', () => {
       const originalAllowed = config.feeBump.allowedContractIds;
       const originalCreate = Transaction.create;
       const originalUpdateOne = IdempotencyKey.updateOne;
+      const originalFindById = Merchant.findById;
+      Merchant.findById = () => ({ select: () => ({ lean: async () => ({ stellarAddress: merchantAddress }) }) });
 
       stellarConfig.sorobanServer = { simulateTransaction: async () => ({ transactionData: {} }) };
       stellarConfig.horizonServer = {
@@ -146,6 +158,7 @@ describe('Transaction Routes Unit Tests', () => {
         config.feeBump.allowedContractIds = originalAllowed;
         Transaction.create = originalCreate;
         IdempotencyKey.updateOne = originalUpdateOne;
+        Merchant.findById = originalFindById;
       }
     });
 
@@ -158,6 +171,8 @@ describe('Transaction Routes Unit Tests', () => {
       const originalAllowed = config.feeBump.allowedContractIds;
       const originalCreate = Transaction.create;
       const originalUpdateOne = IdempotencyKey.updateOne;
+      const originalFindById = Merchant.findById;
+      Merchant.findById = () => ({ select: () => ({ lean: async () => ({ stellarAddress: merchantAddress }) }) });
 
       // Ön-simülasyon başarısız -> wrapAndSubmitFeeBump içeride fırlatır, Havuz 2 hiç imzalamaz.
       stellarConfig.sorobanServer = { simulateTransaction: async () => ({ error: 'HostError' }) };
@@ -199,6 +214,7 @@ describe('Transaction Routes Unit Tests', () => {
         config.feeBump.allowedContractIds = originalAllowed;
         Transaction.create = originalCreate;
         IdempotencyKey.updateOne = originalUpdateOne;
+        Merchant.findById = originalFindById;
       }
     });
   });

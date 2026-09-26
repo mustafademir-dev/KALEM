@@ -121,7 +121,7 @@ const config = {
     // İç zarfta izin verilen maksimum operasyon sayısı.
     maxInnerOperations: parseInt(requireEnv('FEE_BUMP_MAX_INNER_OPERATIONS', '1'), 10),
     // Sponsorlanabilecek kontrat ID'leri (virgülle ayrılmış). Boşsa aşağıda
-    // dtlTokenId + poolManagerId ile doldurulur.
+    // yalnızca poolManagerId ile doldurulur (müşteri ödemesi = pay_merchant).
     allowedContractIds: requireEnv('FEE_BUMP_ALLOWED_CONTRACT_IDS', '')
       .split(',')
       .map((s) => s.trim())
@@ -243,11 +243,11 @@ const config = {
   },
 };
 
-// allowedContractIds boşsa (env tanımsızsa) KALEM'in kendi kontratlarıyla doldur.
+// allowedContractIds boşsa (env tanımsızsa) yalnızca pool-manager: müşteri ödemesi her
+// zaman `pay_merchant`. dtl-token'a sponsorlu çağrı (ör. çıplak `transfer`) kesintiyi
+// atlatırdı — bkz. transaction.routes.js `checkPaymentCall`.
 if (config.feeBump.allowedContractIds.length === 0) {
-  config.feeBump.allowedContractIds = [config.contracts.dtlTokenId, config.contracts.poolManagerId].filter(
-    Boolean
-  );
+  config.feeBump.allowedContractIds = [config.contracts.poolManagerId].filter(Boolean);
 }
 
 export default config;

@@ -10,10 +10,12 @@ import { Router } from 'express';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import stellarConfig from '../../config/stellar.js';
 import Transaction from '../../models/Transaction.model.js';
+import Merchant from '../../models/Merchant.model.js';
 import {
   wrapAndSubmitFeeBump,
   verifySignedBySource,
   extractHorizonResultCodes,
+  readContractCall,
 } from '../../services/fee-bump.service.js';
 import { finalizeIdempotencyKey } from '../../services/idempotency.service.js';
 import { recordFlowEvent } from '../../services/flow-events.service.js';
@@ -30,6 +32,39 @@ import {
 import logger from '../../utils/logger.js';
 
 const router = Router();
+
+/** İmzalı işlemin içeriği, istekteki ödeme bilgisiyle (esnaf/tutar) uyuşmuyor. */
+class PaymentMismatchError extends Error {}
+
+/**
+ * Sponsorlu yol YALNIZCA `pay_merchant` taşır ve fiş, zincire gidecek olan işlemin
+ * GERÇEK içeriğiyle birebir aynı olmalıdır. Aksi hâlde:
+ * - çıplak `dtl-token.transfer(müşteri → esnaf)` ile %0,1 + %0,3 kesinti atlatılır
+ *   (üstelik ücretini Havuz 2 öderdi);
+ * - fiş tutarı/esnafı istek gövdesinden geldiği için 1 TL ödeyip 1.000 TL'lik ya da
+ *   başka esnafın VKN'siyle fiş ürettirilebilirdi.
+ * Bu kontroller senkron ve ücretsizdir (ağa/DB'ye gitmez). Esnaf adresi eşleşmesi DB
+ * okuması gerektirdiği için ön-simülasyonla paralel yapılır (bkz. handler).
+ *
+ * @returns {{merchantAddress: string} | {error: string}}
+ */
+export function checkPaymentCall(innerTx, senderAddress, totalAmount) {
+  const call = readContractCall(innerTx);
+  if (!call || call.functionName !== 'pay_merchant' || call.args.length !== 3) {
+    return { error: 'Yalnızca esnafa ödeme (pay_merchant) işlemi kabul edilir.' };
+  }
+  const [from, merchantAddress, amount] = call.args;
+  if (from !== senderAddress) {
+    return { error: 'Ödemeyi yapan hesap, işlemi imzalayan hesapla aynı olmalıdır.' };
+  }
+  if (typeof amount !== 'bigint' || amount !== BigInt(totalAmount)) {
+    return { error: 'İşlemdeki tutar, ödeme tutarıyla uyuşmuyor.' };
+  }
+  if (typeof merchantAddress !== 'string') {
+    return { error: 'İşlemdeki esnaf adresi okunamadı.' };
+  }
+  return { merchantAddress };
+}
 
 /**
  * POST /submit
@@ -78,6 +113,7 @@ export async function submitTransactionHandler(req, res) {
   let senderAddress;
   let innerTxHash = null;
   let signatureCheck = null;
+  let paymentCheck = null;
   try {
     const innerTx = StellarSdk.TransactionBuilder.fromXDR(signedXdr, stellarConfig.networkPassphrase);
     senderAddress = innerTx.source;
@@ -93,11 +129,19 @@ export async function submitTransactionHandler(req, res) {
         at: req.signatureVerifiedAt ?? new Date(),
       };
     }
+    paymentCheck = checkPaymentCall(innerTx, senderAddress, totalAmount);
   } catch {
     await finalizeIdempotencyKey(idempotencyKey, 'failed', { error: 'VALIDATION_ERROR' }).catch((err) => {
       logger.error(`[Transaction] finalize (parse) hatası: ${err.message}`);
     });
     return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'signedXdr ayrıştırılamadı.' });
+  }
+
+  if (paymentCheck.error) {
+    await finalizeIdempotencyKey(idempotencyKey, 'failed', { error: 'PAYMENT_MISMATCH' }).catch((err) => {
+      logger.error(`[Transaction] finalize (payment mismatch) hatası: ${err.message}`);
+    });
+    return res.status(400).json({ error: 'PAYMENT_MISMATCH', message: paymentCheck.error });
   }
 
   let transaction;
@@ -112,16 +156,26 @@ export async function submitTransactionHandler(req, res) {
     // yazılır — ikisi birbirine bağlı değil.
     // Horizon'a göndermeden önce (`beforeSend`) kaydın yazıldığı GARANTİ
     // edilir: kaydı olmayan bir işlem asla zincire gitmez.
-    creation = Transaction.create({
-      idempotencyKey,
-      senderAddress,
-      innerTxHash,
-      merchantId,
-      totalAmount,
-      // Sepet GİB fişi içindir; temizleyici asla hata fırlatmaz (geçersiz → []).
-      cartItems: sanitizeCartItems(cartItems),
-      status: 'pending',
-    });
+    // Önce esnaf: işlemdeki alıcı adres, fişin kesileceği esnafın (merchantId) zincir
+    // adresi olmalı. Uyuşmazsa kayıt yazılmaz ve `beforeSend` kapısı ağa gidişi keser.
+    creation = Merchant.findById(merchantId)
+      .select('stellarAddress')
+      .lean()
+      .then((merchant) => {
+        if (!merchant || merchant.stellarAddress !== paymentCheck.merchantAddress) {
+          throw new PaymentMismatchError('İşlemdeki esnaf adresi, ödeme yapılan işletmeyle uyuşmuyor.');
+        }
+        return Transaction.create({
+          idempotencyKey,
+          senderAddress,
+          innerTxHash,
+          merchantId,
+          totalAmount,
+          // Sepet GİB fişi içindir; temizleyici asla hata fırlatmaz (geçersiz → []).
+          cartItems: sanitizeCartItems(cartItems),
+          status: 'pending',
+        });
+      });
     creation.catch(() => {}); // hata aşağıda `await creation` ile ele alınır; işlenmemiş ret olmasın
 
     // Akış olayları beklenmez (await yok): kayıt, ödemeyi yavaşlatmamalı. Olaylar
@@ -253,6 +307,9 @@ export async function submitTransactionHandler(req, res) {
       logger.error(`[Idempotency] finalize (failed) hatası: ${finalizeErr.message}`);
     });
 
+    if (error instanceof PaymentMismatchError) {
+      return res.status(400).json({ error: 'PAYMENT_MISMATCH', message: error.message });
+    }
     res.status(502).json({ error: 'SUBMIT_FAILED', message: 'İşlem Stellar ağına iletilemedi.' });
   }
 }

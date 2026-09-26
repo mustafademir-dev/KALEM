@@ -48,15 +48,29 @@ import { flushFlowEvents } from '../src/services/flow-events.service.js';
 
 const DUMMY_CONTRACT_ID = 'CC4ME5GZASQP456TPFEEADRK4NOFVV4KWX5TJGHJBO7SGK34IMIPWTX4';
 
-/** `transaction.routes.test.js` ile AYNI kalıp — imzalı, tek operasyonlu bir iç zarf. */
-function buildSignedInnerXdr(signerKeypair, sourceAddress = signerKeypair.publicKey()) {
-  const account = new StellarSdk.Account(sourceAddress, '100');
+/**
+ * İmzalı, tek operasyonlu bir `pay_merchant(from, merchant, amount)` iç zarfı — gerçek
+ * müşteri ödemesiyle aynı biçim. Handler, `merchant`'ın body'deki esnafın adresi ve
+ * `amount`'un body'deki tutar olmasını zorunlu tutar.
+ */
+function buildSignedInnerXdr(
+  signerKeypair,
+  { source = signerKeypair.publicKey(), merchant = StellarSdk.Keypair.random().publicKey(), amount = '10000000' } = {}
+) {
+  const account = new StellarSdk.Account(source, '100');
   const contract = new StellarSdk.Contract(DUMMY_CONTRACT_ID);
   const tx = new StellarSdk.TransactionBuilder(account, {
     fee: '100',
     networkPassphrase: stellarConfig.networkPassphrase,
   })
-    .addOperation(contract.call('balance', StellarSdk.Address.fromString(sourceAddress).toScVal()))
+    .addOperation(
+      contract.call(
+        'pay_merchant',
+        StellarSdk.Address.fromString(source).toScVal(),
+        StellarSdk.Address.fromString(merchant).toScVal(),
+        StellarSdk.nativeToScVal(BigInt(amount), { type: 'i128' })
+      )
+    )
     .setTimeout(300)
     .build();
   tx.sign(signerKeypair);
@@ -139,7 +153,7 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
   it('esnaf-Bearer yolu: gerçek zincirden (validate→auth→idempotency→handler) geçip 201 dönmeli ve gerçek Mongo kayıtları oluşturmalı', async () => {
     const { merchant, apiKey } = await createRealMerchant();
     const senderKp = StellarSdk.Keypair.random();
-    const signedXdr = buildSignedInnerXdr(senderKp);
+    const signedXdr = buildSignedInnerXdr(senderKp, { merchant: merchant.stellarAddress, amount: '10000000' });
     const idempotencyKey = randomUUID();
 
     const response = await fetch(`${baseUrl}/api/v1/transactions/submit`, {
@@ -181,7 +195,7 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
     const { apiKey } = await createRealMerchant(); // kimliği doğrulanan esnaf
     const { merchant: otherMerchant } = await createRealMerchant(); // body'deki (başka) esnaf
     const senderKp = StellarSdk.Keypair.random();
-    const signedXdr = buildSignedInnerXdr(senderKp);
+    const signedXdr = buildSignedInnerXdr(senderKp, { merchant: otherMerchant.stellarAddress, amount: '10000000' });
     const idempotencyKey = randomUUID();
 
     const response = await fetch(`${baseUrl}/api/v1/transactions/submit`, {
@@ -209,7 +223,7 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
   it('müşteri-imza yolu: Authorization başlığı OLMADAN, signedXdr kendi kaynağınca imzalıysa zincirden geçip 201 dönmeli', async () => {
     const { merchant } = await createRealMerchant(); // yalnızca geçerli bir merchantId için
     const customerKp = StellarSdk.Keypair.random();
-    const signedXdr = buildSignedInnerXdr(customerKp);
+    const signedXdr = buildSignedInnerXdr(customerKp, { merchant: merchant.stellarAddress, amount: '5000000' });
     const idempotencyKey = randomUUID();
 
     const response = await fetch(`${baseUrl}/api/v1/transactions/submit`, {
@@ -242,7 +256,11 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
     const { merchant } = await createRealMerchant();
     const claimedSourceKp = StellarSdk.Keypair.random(); // iddia edilen kaynak
     const wrongSignerKp = StellarSdk.Keypair.random(); // gerçekte imzalayan (başka anahtar)
-    const spoofedXdr = buildSignedInnerXdr(wrongSignerKp, claimedSourceKp.publicKey());
+    const spoofedXdr = buildSignedInnerXdr(wrongSignerKp, {
+      source: claimedSourceKp.publicKey(),
+      merchant: merchant.stellarAddress,
+      amount: '5000000',
+    });
     const idempotencyKey = randomUUID();
 
     const response = await fetch(`${baseUrl}/api/v1/transactions/submit`, {
@@ -259,6 +277,79 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
     // ÖNCE çalışır — reddedilen bir istek hiçbir kilit/DB kaydı bırakmamalı.
     const idemDoc = await IdempotencyKey.findOne({ key: idempotencyKey });
     assert.equal(idemDoc, null, 'idempotencyMiddleware çalışmamış olmalı — auth ondan önce reddetti');
+  });
+
+  describe('ödeme içeriği = fiş (kesinti atlatma ve sahte fiş koruması)', () => {
+    /** Horizon'a gidiş sayılır; hiçbir senaryoda ağa gidilmemeli. */
+    async function submitExpectingMismatch({ signedXdr, merchant, totalAmount }) {
+      const previousHorizon = stellarConfig.horizonServer;
+      let horizonCalled = false;
+      stellarConfig.horizonServer = {
+        submitTransaction: async () => {
+          horizonCalled = true;
+          return { hash: 'olmamali', ledger: 1 };
+        },
+      };
+      try {
+        const idempotencyKey = randomUUID();
+        const response = await fetch(`${baseUrl}/api/v1/transactions/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+          body: JSON.stringify({ signedXdr, merchantId: merchant._id.toString(), totalAmount }),
+        });
+        const body = await response.json();
+        assert.equal(response.status, 400);
+        assert.equal(body.error, 'PAYMENT_MISMATCH');
+        assert.equal(horizonCalled, false, 'uyuşmayan işlem zincire GÖNDERİLMEMELİ');
+        assert.equal(await Transaction.countDocuments({ idempotencyKey }), 0, 'fiş için kayıt yazılmamalı');
+        assert.equal((await IdempotencyKey.findOne({ key: idempotencyKey })).status, 'failed');
+        return body;
+      } finally {
+        stellarConfig.horizonServer = previousHorizon;
+      }
+    }
+
+    it('çıplak dtl-token.transfer(müşteri → esnaf) reddedilir — %0,1 + %0,3 kesinti atlatılamaz', async () => {
+      const { merchant } = await createRealMerchant();
+      const customerKp = StellarSdk.Keypair.random();
+      const tx = new StellarSdk.TransactionBuilder(new StellarSdk.Account(customerKp.publicKey(), '100'), {
+        fee: '100',
+        networkPassphrase: stellarConfig.networkPassphrase,
+      })
+        .addOperation(
+          new StellarSdk.Contract(DUMMY_CONTRACT_ID).call(
+            'transfer',
+            StellarSdk.Address.fromString(customerKp.publicKey()).toScVal(),
+            StellarSdk.Address.fromString(merchant.stellarAddress).toScVal(),
+            StellarSdk.nativeToScVal(10000000n, { type: 'i128' })
+          )
+        )
+        .setTimeout(300)
+        .build();
+      tx.sign(customerKp);
+
+      const body = await submitExpectingMismatch({ signedXdr: tx.toXDR(), merchant, totalAmount: '10000000' });
+      assert.match(body.message, /pay_merchant/);
+    });
+
+    it('işlemdeki tutar istekteki tutardan farklıysa reddedilir (1 TL ödeyip 1.000 TL fiş olmaz)', async () => {
+      const { merchant } = await createRealMerchant();
+      const signedXdr = buildSignedInnerXdr(StellarSdk.Keypair.random(), {
+        merchant: merchant.stellarAddress,
+        amount: '10000000', // zincirde 1 TL
+      });
+      await submitExpectingMismatch({ signedXdr, merchant, totalAmount: '10000000000' }); // fişte 1.000 TL
+    });
+
+    it('para başka bir esnafa gidiyorsa reddedilir (fiş başkasının VKN\'siyle kesilemez)', async () => {
+      const { merchant } = await createRealMerchant();
+      const { merchant: other } = await createRealMerchant();
+      const signedXdr = buildSignedInnerXdr(StellarSdk.Keypair.random(), {
+        merchant: other.stellarAddress,
+        amount: '10000000',
+      });
+      await submitExpectingMismatch({ signedXdr, merchant, totalAmount: '10000000' });
+    });
   });
 
   it('validateTransactionSubmit zincirde İLK çalışır: eksik merchantId, Authorization/imza olmadan bile kendi VALIDATION_ERROR\'ıyla 400 döner', async () => {
@@ -283,7 +374,7 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
   it('idempotency replay: aynı key ile ikinci müşteri-yolu isteği, işlemi TEKRAR göndermeden önbellekteki sonucu 200 ile döndürmeli', async () => {
     const { merchant } = await createRealMerchant();
     const customerKp = StellarSdk.Keypair.random();
-    const signedXdr = buildSignedInnerXdr(customerKp);
+    const signedXdr = buildSignedInnerXdr(customerKp, { merchant: merchant.stellarAddress, amount: '5000000' });
     const idempotencyKey = randomUUID();
     const requestBody = JSON.stringify({ signedXdr, merchantId: merchant._id.toString(), totalAmount: '5000000' });
     const headers = { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey };
@@ -330,7 +421,7 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
     try {
       const { merchant } = await createRealMerchant();
       const customerKp = StellarSdk.Keypair.random();
-      const signedXdr = buildSignedInnerXdr(customerKp);
+      const signedXdr = buildSignedInnerXdr(customerKp, { merchant: merchant.stellarAddress, amount: '25000000' });
       const idempotencyKey = randomUUID();
 
       const response = await fetch(`${baseUrl}/api/v1/transactions/submit`, {
@@ -419,7 +510,7 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify({
-        signedXdr: buildSignedInnerXdr(StellarSdk.Keypair.random()),
+        signedXdr: buildSignedInnerXdr(StellarSdk.Keypair.random(), { merchant: merchant.stellarAddress, amount: totalAmount }),
         merchantId: merchant._id.toString(),
         totalAmount,
         cartItems,
@@ -566,7 +657,10 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
-          signedXdr: buildSignedInnerXdr(StellarSdk.Keypair.random()),
+          signedXdr: buildSignedInnerXdr(StellarSdk.Keypair.random(), {
+            merchant: merchant.stellarAddress,
+            amount: '25000000',
+          }),
           merchantId: merchant._id.toString(),
           totalAmount: '25000000',
         }),
@@ -603,7 +697,7 @@ describe('POST /transactions/submit — Gerçek Middleware Zinciri', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
-          signedXdr: buildSignedInnerXdr(customerKp),
+          signedXdr: buildSignedInnerXdr(customerKp, { merchant: merchant.stellarAddress, amount: '25000000' }),
           merchantId: merchant._id.toString(),
           totalAmount: '25000000',
         }),
