@@ -152,7 +152,11 @@ describe('GİB Routes Unit Tests', () => {
           assert.equal(res.body.transactionId, '507f1f77bcf86cd799439011');
           assert.equal(res.body.txHash, 'hash-1');
           assert.equal(res.body.ublContent.Invoice.ID, 'KALEM123');
-          assert.equal(capturedFilter.apiKeyHash, hashApiKey(plainApiKey));
+          // Kayıt anahtarı VE şifreyle girişte verilen oturum anahtarı kabul edilir
+          // (authMiddleware ile aynı kural; aksi halde VKN+şifreyle giren esnaf 401 alıyordu).
+          assert.deepEqual(capturedFilter, {
+            $or: [{ apiKeyHash: hashApiKey(plainApiKey) }, { sessionKeyHashes: hashApiKey(plainApiKey) }],
+          });
         } finally {
           Transaction.findOne = originalTx;
           Merchant.findOne = originalMerchant;

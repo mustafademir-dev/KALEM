@@ -45,8 +45,14 @@ export async function getGibDocumentHandler(req, res) {
     if (authHeader.startsWith('Bearer ')) {
       // --- Esnaf yolu ---
       const token = authHeader.split(' ')[1];
-      const merchant = token
-        ? await Merchant.findOne({ apiKeyHash: hashApiKey(token) }).select('+apiKeyHash')
+      // authMiddleware ile aynı kural: kayıt anahtarı YA DA şifreyle girişte verilen
+      // oturum anahtarı. (Yalnızca apiKeyHash'e bakmak, VKN+şifreyle giren esnafı
+      // 401 ile reddediyordu.)
+      const keyHash = token ? hashApiKey(token) : null;
+      const merchant = keyHash
+        ? await Merchant.findOne({ $or: [{ apiKeyHash: keyHash }, { sessionKeyHashes: keyHash }] }).select(
+            '+apiKeyHash'
+          )
         : null;
 
       if (!merchant || !merchant.isActive) {
