@@ -35,10 +35,22 @@ describe('GİB Simulator Service Unit Tests', () => {
 
     const invoice = doc.ublContent.Invoice;
     assert.equal(invoice.UBLVersionID, '2.1');
-    assert.equal(invoice.ProfileID, 'TICARIFATURA');
     assert.equal(invoice.InvoiceTypeCode, 'SATIS');
     assert.equal(invoice.AdditionalDocumentReference.ID, dummyTxHash);
     assert.ok(doc.xmlContent.includes('<StellarTxHash>' + dummyTxHash + '</StellarTxHash>'));
+  });
+
+  it('GMÖEBYS: belge ÖKC fişi değil, esnaf VKN\'siyle ve NİHAİ TÜKETİCİ alıcılı e-Arşiv Fatura', async () => {
+    const doc = await generate({ merchantTaxId: '9876543210', merchantName: 'Kadıköy Simit', totalAmountStroops: '50000000' });
+    const invoice = doc.ublContent.Invoice;
+
+    assert.equal(doc.documentType, 'e_arsiv');
+    assert.equal(invoice.ProfileID, 'EARSIVFATURA');
+    assert.equal(invoice.AccountingSupplierParty.Party.PartyIdentification[0].ID.value, '9876543210');
+    assert.equal(invoice.AccountingSupplierParty.Party.PartyName.Name, 'Kadıköy Simit');
+    assert.equal(invoice.AccountingCustomerParty.Party.PartyName.Name, 'NİHAİ TÜKETİCİ');
+    assert.match(invoice.Note[0], /507 Sıra No/);
+    assert.match(doc.xmlContent, /<ProfileID>EARSIVFATURA<\/ProfileID>/);
   });
 
   it('DÜZELTME A: stroop TL sayılmaz — 5 TL (50.000.000 stroop) fişte 5,00 TL olmalı, 50.000.000 değil', async () => {

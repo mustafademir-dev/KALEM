@@ -5,9 +5,10 @@ import BrandMark from './BrandMark.js';
 import { colors, radii, spacing, type, cardShadow } from '../theme/index.js';
 import { shortenMiddle } from '../utils/format.js';
 import { vatLines } from '../utils/vat.js';
+import { buyerName, documentTitle } from '../utils/receiptArchive.js';
 
 /**
- * ÖKC fiş simülasyonu — `GET /transactions/:txHash/gib-document`'in
+ * e-Arşiv Fatura (eski belgelerde ÖKC fişi) simülasyonu — `GET /transactions/:txHash/gib-document`'in
  * döndürdüğü UBL-TR JSON'unu (`document.ublContent`) okunabilir bir
  * fiş görünümünde gösterir. Termal fiş hissi: marka başlığı, kesik çizgiler,
  * altta pürüzlü (kopuk) kenar.
@@ -32,6 +33,7 @@ export default function GibReceiptCard({ document }) {
 
   const lines = Array.isArray(invoice.InvoiceLine) ? invoice.InvoiceLine : [invoice.InvoiceLine].filter(Boolean);
   const merchantName = invoice.AccountingSupplierParty?.Party?.PartyName?.Name ?? '—';
+  const buyer = buyerName(invoice);
 
   return (
     <View style={styles.wrap}>
@@ -40,7 +42,7 @@ export default function GibReceiptCard({ document }) {
           <BrandMark size={26} wordmark />
         </View>
         <Text style={[type.micro, { color: colors.textMuted, marginTop: spacing.sm }]}>
-          e-BELGE · FİŞ
+          {documentTitle(document) === 'e-Arşiv Fatura' ? 'e-ARŞİV FATURA' : 'e-BELGE · FİŞ'}
         </Text>
 
         <View style={styles.dashedDivider} />
@@ -52,6 +54,12 @@ export default function GibReceiptCard({ document }) {
 
         <View style={styles.dashedDivider} />
 
+        {buyer ? (
+          <View style={styles.row}>
+            <Text style={[type.caption, { color: colors.textMuted }]}>Alıcı</Text>
+            <Text style={[type.captionMedium, { color: colors.textPrimary }]}>{buyer}</Text>
+          </View>
+        ) : null}
         <View style={styles.row}>
           <Text style={[type.caption, { color: colors.textMuted }]}>Belge No</Text>
           <Text style={[type.mono, { color: colors.textPrimary }]}>{invoice.ID ?? '—'}</Text>

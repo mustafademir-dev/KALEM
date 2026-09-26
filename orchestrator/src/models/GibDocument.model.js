@@ -26,7 +26,7 @@ const gibDocumentSchema = new mongoose.Schema(
     documentType: {
       type: String,
       enum: ['okc_fis', 'e_arsiv', 'e_fatura'],
-      default: 'okc_fis',
+      default: 'e_arsiv', // GMÖEBYS; 'okc_fis' yalnızca 26 Eylül 2026 öncesi belgelerde
     },
 
     /** UBL-TR formatında belge içeriği (JSON). */

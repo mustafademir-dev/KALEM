@@ -227,6 +227,19 @@ function money(value) {
  * @param {{warning?: string}} [options] - Ör. eski (hatalı tutarlı) belge uyarısı.
  * @returns {string}
  */
+/**
+ * Belgenin görünen türü. 26 Eylül 2026'dan itibaren belgeler GMÖEBYS'ye uygun
+ * e-Arşiv Fatura (`e_arsiv`) olarak üretilir; eski belgeler (`okc_fis`) "e-Belge" kalır.
+ */
+export function documentTitle(document) {
+  return document?.documentType === 'e_arsiv' ? 'e-Arşiv Fatura' : 'e-Belge';
+}
+
+/** Alıcı adı (e-Arşiv'de "NİHAİ TÜKETİCİ"); eski belgelerde yok → null. */
+export function buyerName(invoice) {
+  return invoice?.AccountingCustomerParty?.Party?.PartyName?.Name ?? null;
+}
+
 export function receiptToText(document, { warning } = {}) {
   const invoice = document?.ublContent?.Invoice;
   const lines = [];
@@ -241,11 +254,13 @@ export function receiptToText(document, { warning } = {}) {
   const items = Array.isArray(invoice.InvoiceLine) ? invoice.InvoiceLine : [invoice.InvoiceLine].filter(Boolean);
   const merchantName = invoice.AccountingSupplierParty?.Party?.PartyName?.Name ?? '—';
 
+  const buyer = buyerName(invoice);
   lines.push(
-    'KALEM — e-Belge',
+    `KALEM — ${documentTitle(document)}`,
     '',
     `İşyeri   : ${merchantName}`,
     `VKN      : ${document?.merchantTaxId ?? '—'}`,
+    ...(buyer ? [`Alıcı    : ${buyer}`] : []),
     `Belge No : ${invoice.ID ?? '—'}`,
     `Tarih    : ${invoice.IssueDate ?? '—'} ${invoice.IssueTime ?? ''}`.trimEnd(),
     '',

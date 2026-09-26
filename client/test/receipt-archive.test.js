@@ -204,6 +204,23 @@ describe('receiptToText', () => {
     assert.ok(!/SİMÜLASYON|PoC/.test(text));
   });
 
+  it('e-Arşiv belgede başlık "e-Arşiv Fatura" ve alıcı NİHAİ TÜKETİCİ; eski belgede alıcı satırı yok', () => {
+    const earsiv = {
+      ...document,
+      documentType: 'e_arsiv',
+      ublContent: {
+        Invoice: {
+          ...document.ublContent.Invoice,
+          AccountingCustomerParty: { Party: { PartyName: { Name: 'NİHAİ TÜKETİCİ' } } },
+        },
+      },
+    };
+    const text = receiptToText(earsiv);
+    assert.ok(text.startsWith('KALEM — e-Arşiv Fatura'));
+    assert.ok(text.includes('Alıcı    : NİHAİ TÜKETİCİ'));
+    assert.ok(!receiptToText(document).includes('Alıcı'));
+  });
+
   it('işyeri, VKN, kalemler ve toplam metne girer', () => {
     const text = receiptToText(document);
     assert.ok(text.includes('Örnek Market'));

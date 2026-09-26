@@ -2,12 +2,19 @@
  * GİB Simülasyon Servisi
  *
  * Bölüm 5.5.3: PoC'de canlı GİB API'lerine erişim yoktur.
- * Bu servis, ÖKC protokolüne ve UBL-TR standartlarına uygun
- * JSON/XML belge taslağı üretir.
+ * Bu servis, UBL-TR standardına uygun e-Arşiv Fatura taslağı üretir.
+ *
+ * BELGE TÜRÜ (26 Eylül 2026): KALEM'in yasal zemini GMÖEBYS'dir (507 Sıra No'lu VUK
+ * Genel Tebliği) — md. 5/3: sisteme dahil esnafın ÖKC kullanma mecburiyeti yoktur;
+ * md. 4/3: ödeme, özel entegratör aracılığıyla ANLIK olarak, belgeyi düzenleyecek
+ * mükellefin (esnafın) mükellefiyet türüne uygun e-belgeye dönüştürülür. Bu yüzden
+ * yeni belgeler ÖKC fişi (`okc_fis`) değil, esnaf VKN'siyle ve alıcısı "NİHAİ TÜKETİCİ"
+ * olan e-Arşiv Fatura (`e_arsiv`) olarak üretilir. Eski `okc_fis` belgeler DEĞİŞTİRİLMEDİ.
+ * (Nihai tüketici tutar sınırı prototipte uygulanmaz; üründe entegratör uygular.)
  *
  * Akış:
  * 1. SSE listener'dan tx hash ve işlem bilgileri gelir
- * 2. UBL-TR 2.1 standardına uygun e-Fatura / ÖKC Fiş JSON taslağı oluşturulur
+ * 2. UBL-TR 2.1 standardına uygun e-Arşiv Fatura JSON taslağı oluşturulur
  * 3. XML çıktısı simüle edilir
  * 4. GibDocument.create({ ... }) ile MongoDB'ye kaydedilir (status = 'generated')
  *
@@ -25,7 +32,7 @@ import { stroopsToKurus, kurusToFixed2, kurusExcludingVat } from '../utils/money
 import { vatBreakdown, clampToAllowed, DEFAULT_VAT_RATE } from '../utils/vat.js';
 
 /**
- * Onaylanan işlem için simüle ÖKC/e-Belge (UBL-TR) taslağı üretir ve MongoDB'ye kaydeder.
+ * Onaylanan işlem için simüle e-Arşiv Fatura (UBL-TR) taslağı üretir ve MongoDB'ye kaydeder.
  *
  * @param {object} params
  * @param {string} params.txHash - Stellar transaction hash.
@@ -117,7 +124,7 @@ export async function generateGibDocument({
       Invoice: {
         UBLVersionID: '2.1',
         CustomizationID: 'TR1.2',
-        ProfileID: 'TICARIFATURA',
+        ProfileID: 'EARSIVFATURA',
         ID: documentId,
         CopyIndicator: false,
         UUID: `urn:uuid:${transactionId || '00000000-0000-0000-0000-000000000000'}`,
@@ -126,10 +133,20 @@ export async function generateGibDocument({
         InvoiceTypeCode: 'SATIS',
         DocumentCurrencyCode: 'TRY',
         LineCountNumeric: formattedLines.length,
+        Note: [
+          "Güvenli Mobil Ödeme ve Elektronik Belge Yönetim Sistemi (507 Sıra No'lu VUK Genel Tebliği) kapsamında düzenlenmiştir.",
+        ],
         AccountingSupplierParty: {
           Party: {
             PartyIdentification: [{ ID: { schemeID: 'VKN', value: merchantTaxId } }],
             PartyName: { Name: merchantName },
+          },
+        },
+        // Perakende satış: alıcı bilgisi yerine "NİHAİ TÜKETİCİ" (GMÖEBYS uygulaması).
+        AccountingCustomerParty: {
+          Party: {
+            PartyIdentification: [{ ID: { schemeID: 'TCKN', value: '11111111111' } }],
+            PartyName: { Name: 'NİHAİ TÜKETİCİ' },
           },
         },
         TaxTotal: {
@@ -154,11 +171,13 @@ export async function generateGibDocument({
     // XML Çıktısı Simülasyonu
     const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" UBLVersionID="2.1">
+  <ProfileID>EARSIVFATURA</ProfileID>
   <ID>${documentId}</ID>
   <IssueDate>${issueDate}</IssueDate>
   <IssueTime>${issueTime}</IssueTime>
   <InvoiceTypeCode>SATIS</InvoiceTypeCode>
   <SupplierVKN>${merchantTaxId}</SupplierVKN>
+  <CustomerName>NİHAİ TÜKETİCİ</CustomerName>
   <TotalAmount currencyID="TRY">${totalFixed}</TotalAmount>
   <StellarTxHash>${txHash}</StellarTxHash>
 </Invoice>`;
@@ -167,7 +186,7 @@ export async function generateGibDocument({
     const gibDocument = await GibDocument.create({
       transactionId,
       txHash,
-      documentType: 'okc_fis',
+      documentType: 'e_arsiv',
       ublContent,
       xmlContent,
       status: 'generated',
