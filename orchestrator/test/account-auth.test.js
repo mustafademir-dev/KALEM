@@ -137,6 +137,47 @@ describe('Hesap uçları', () => {
       assert.equal((await Customer.findOne({})).stellarAddress, newKp.publicKey());
     });
 
+    it('issuer-batch tanımlıysa yeni cihazda bakiye TEK işlemde taşınır', async () => {
+      const oldKp = StellarSdk.Keypair.random();
+      const newKp = StellarSdk.Keypair.random();
+      await post('/customers/register', authBody(oldKp));
+      chain = fakeChain({ [oldKp.publicKey()]: '7500000000' });
+      const batches = [];
+      chain.deps.issuerBatch = async (ops) => {
+        batches.push(ops);
+        return 'hash-batch';
+      };
+
+      const res = await post('/customers/login', authBody(newKp));
+      assert.equal(res.status, 200);
+      assert.equal((await res.json()).migratedAmount, '7500000000');
+      assert.equal(chain.calls.length, 0, 'ayrı burn/mint gönderilmedi');
+      assert.deepEqual(batches, [
+        {
+          burns: [{ address: oldKp.publicKey(), amount: '7500000000' }],
+          mints: [{ address: newKp.publicKey(), amount: '7500000000' }],
+        },
+      ]);
+      const saved = await Customer.findOne({});
+      assert.equal(saved.stellarAddress, newKp.publicKey());
+      assert.equal(saved.pendingMigration, undefined);
+    });
+
+    it('issuer-batch başarısızsa hesap eski adreste kalır, yarım taşıma kaydı doğmaz', async () => {
+      const oldKp = StellarSdk.Keypair.random();
+      const newKp = StellarSdk.Keypair.random();
+      await post('/customers/register', authBody(oldKp));
+      chain = fakeChain({ [oldKp.publicKey()]: '100' });
+      chain.deps.issuerBatch = async () => {
+        throw new Error('ağ hatası');
+      };
+
+      assert.equal((await post('/customers/login', authBody(newKp))).status, 500);
+      const saved = await Customer.findOne({});
+      assert.equal(saved.stellarAddress, oldKp.publicKey());
+      assert.equal(saved.pendingMigration, undefined);
+    });
+
     it('basma yarıda kalırsa yakılan tutar kaybolmaz: sonraki girişte basılır, tekrar yakılmaz', async () => {
       const oldKp = StellarSdk.Keypair.random();
       const newKp = StellarSdk.Keypair.random();

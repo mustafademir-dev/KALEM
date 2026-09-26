@@ -58,6 +58,9 @@ const config = {
   contracts: {
     dtlTokenId: requireEnv('DTL_TOKEN_CONTRACT_ID', ''),
     poolManagerId: requireEnv('POOL_MANAGER_CONTRACT_ID', ''),
+    // İhraççının burn/mint'lerini tek işlemde toplayan yardımcı kontrat (iade, cihaz
+    // değişimi). Boşsa bu işlemler eskisi gibi ayrı ayrı gönderilir.
+    issuerBatchId: requireEnv('ISSUER_BATCH_CONTRACT_ID', ''),
   },
 
   // --- Havuz Adresleri ---

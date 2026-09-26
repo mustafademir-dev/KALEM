@@ -5,6 +5,7 @@ members = [
     "dtl-token",
     "pool-manager",
     "support-verifier",
+    "issuer-batch",
 ]
 
 [workspace.dependencies]

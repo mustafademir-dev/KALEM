@@ -917,3 +917,19 @@ Repo dışında `KALEM_Demo_Hesaplari.docx` (VKN/şifre, test TC/PIN). Demo esna
   = round(k×100/(100+oran)); %20'de eski formülle birebir. Fiş `TaxSubtotal` artık DİZİ (oran
   başına); istemci eski tek-nesne belgeleri de okur (`client/src/utils/vat.js#vatLines`).
 - Tuzak: Mongoose alt belgesini `{...item}` ile kopyalamak alanları taşımaz — alanlar tek tek.
+
+### 10.8. Toplu ihraççı işlemi (`issuer-batch`) + zorunlu departman (26 Eylül)
+- **Sorun:** iade 4, cihaz değişimi 2 ayrı zincir işlemiydi; her biri bir ledger kapanışı
+  (~5 sn) bekliyordu ve arada yarıda kalabiliyordu.
+- **Çözüm:** yeni, durumsuz yardımcı kontrat `contracts/issuer-batch` — `run(token, admin,
+  burns, mints)` ihraççının burn/mint'lerini TEK işlemde, atomik yapar. Kendi yetkisi yok:
+  token'daki `require_admin` aynen geçerli, başka adresle çağrılırsa token reddeder.
+  **dtl-token / pool-manager değişmedi, redeploy edilmedi** (1:3 kanıtı korunur).
+  Testnet: `CAUBZFZEGYNEKCURNUM6A6JEMOH3RTSUJJDODKRO5BWLHMD7YDUZ3SER`
+  (deploy tx `2970e7a8…`). 4 Rust testi gerçek dtl-token WASM'ına karşı (atomiklik, tek
+  imza + alt çağrı ağacı, sahte admin reddi).
+- **Backend:** `ISSUER_BATCH_CONTRACT_ID` tanımlıysa iade (`refund.service.js`) ve cihaz
+  değişimi (`customer-account.service.js`) tek işlem; tanımsızsa eski sıralı yol. Canlı
+  ölçüm (testnet, `issuerBatchCall`): 4,5–5,0 sn/işlem. İade artık atomik.
+- **Departman:** `EsnafAmountEntryScreen` varsayılan seçimle gelmez; kısım seçilmeden
+  "ÖDEME AL" pasif. Unutulan seçimle gıdaya %20 KDV'li fiş kesilmesi engellendi.

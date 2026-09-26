@@ -145,6 +145,64 @@ describe('Esnaf iade ucu', () => {
     assert.equal(saved.refund.steps.length, 4);
   });
 
+  it('issuer-batch tanımlıysa dört adım TEK işlemde gider (burn\'ler, sonra mint)', async () => {
+    const { merchant, apiKey } = await createMerchant();
+    const tx = await createPaidTx(merchant, 'K-BATCH');
+    const batches = [];
+    chain.deps.issuerBatch = async (ops) => {
+      batches.push(ops);
+      return 'hash-batch';
+    };
+
+    const res = await post(merchant._id, apiKey, { documentNo: 'K-BATCH' });
+    assert.equal(res.status, 200);
+    assert.equal(chain.calls.length, 0, 'tek tek çağrı yapılmadı');
+    assert.deepEqual(batches, [
+      {
+        burns: [
+          { address: merchant.stellarAddress, amount: HUNDRED.pool1 },
+          { address: config.pools.pool3Address, amount: HUNDRED.pool3 },
+          { address: config.pools.pool4Address, amount: HUNDRED.pool4 },
+        ],
+        mints: [{ address: tx.senderAddress, amount: HUNDRED.total }],
+      },
+    ]);
+    const saved = await Transaction.findById(tx._id);
+    assert.equal(saved.refund.status, 'completed');
+    assert.deepEqual(
+      saved.refund.steps.map((s) => [s.name, s.txHash]),
+      [
+        ['burn_merchant', 'hash-batch'],
+        ['burn_pool3', 'hash-batch'],
+        ['burn_pool4', 'hash-batch'],
+        ['mint_customer', 'hash-batch'],
+      ]
+    );
+  });
+
+  it('tek işlem başarısızsa hiçbir adım tamamlanmış sayılmaz, tekrar denenebilir', async () => {
+    const { merchant, apiKey } = await createMerchant();
+    const tx = await createPaidTx(merchant, 'K-BATCH-FAIL');
+    chain.deps.issuerBatch = async () => {
+      throw new Error('ağ hatası (sahte)');
+    };
+
+    assert.equal((await post(merchant._id, apiKey, { documentNo: 'K-BATCH-FAIL' })).status, 502);
+    const failed = await Transaction.findById(tx._id);
+    assert.equal(failed.refund.status, 'failed');
+    assert.equal(failed.refund.steps.length, 0);
+
+    let n = 0;
+    chain.deps.issuerBatch = async (ops) => {
+      n += 1;
+      assert.equal(ops.burns.length, 3);
+      assert.equal(ops.mints.length, 1);
+      return 'hash-retry';
+    };
+    assert.equal((await post(merchant._id, apiKey, { documentNo: 'K-BATCH-FAIL' })).status, 200);
+    assert.equal(n, 1);
+  });
+
   it('aynı fiş ikinci kez iade edilemez', async () => {
     const { merchant, apiKey } = await createMerchant();
     await createPaidTx(merchant, 'KALEM-X');

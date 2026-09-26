@@ -26,7 +26,7 @@ import {
   clearFailedLogins,
 } from '../utils/credentials.js';
 import { readContractBalance } from './stellar-tx.service.js';
-import { issuerTokenCall } from './refund.service.js';
+import { issuerTokenCall, issuerBatchCall } from './refund.service.js';
 
 export class AccountError extends Error {
   constructor(code, message, httpStatus) {
@@ -51,6 +51,10 @@ export async function customerAddresses(address) {
 const defaultDeps = {
   readBalance: (address) => readContractBalance(config.contracts.dtlTokenId, address),
   issuerCall: issuerTokenCall,
+  // Tanımlıysa bakiye taşıma tek atomik işlemdir; değilse burn ve mint ayrı işlemler.
+  get issuerBatch() {
+    return config.contracts.issuerBatchId ? issuerBatchCall : null;
+  },
 };
 
 /** Girdi biçimi + cihazdaki cüzdanın sahiplik imzası. */
@@ -124,7 +128,8 @@ export async function loginCustomer(input, deps = defaultDeps) {
 }
 
 /**
- * Eski cüzdandaki bakiyeyi yeni cüzdana taşır. Önce eskiden YAKILIR ve bu
+ * Eski cüzdandaki bakiyeyi yeni cüzdana taşır. `issuer-batch` tanımlıysa yakma ve
+ * basma TEK atomik işlemdir. Değilse (yedek yol): önce eskiden YAKILIR ve bu
  * kaydedilir; sonra yeniye BASILIR. Basma adımı başarısız olursa yakılan tutar
  * `pendingMigration`'da kalır ve bir sonraki girişte yeni cihaza basılır —
  * para kaybolmaz, iki kez de basılmaz.
@@ -135,7 +140,20 @@ async function migrateToNewDevice(customer, newAddress, deps) {
   }
 
   let pending = customer.pendingMigration;
-  if (!pending && newAddress !== customer.stellarAddress) {
+  let migratedAmount = null;
+  if (!pending && newAddress !== customer.stellarAddress && deps.issuerBatch) {
+    // Tek atomik işlem: eskiden yakma + yeniye basma birlikte olur ya da hiç olmaz;
+    // arada kalma (pendingMigration) durumu doğmaz ve süre bir ledger kapanışına iner.
+    const balance = BigInt(await deps.readBalance(customer.stellarAddress));
+    if (balance > 0n) {
+      const txHash = await deps.issuerBatch({
+        burns: [{ address: customer.stellarAddress, amount: balance.toString() }],
+        mints: [{ address: newAddress, amount: balance.toString() }],
+      });
+      migratedAmount = balance.toString();
+      logger.info(`[Customer] Cihaz değişimi: ${balance} stroop tek işlemde taşındı (${txHash}).`);
+    }
+  } else if (!pending && newAddress !== customer.stellarAddress) {
     const balance = BigInt(await deps.readBalance(customer.stellarAddress));
     if (balance > 0n) {
       const burnTxHash = await deps.issuerCall('burn', customer.stellarAddress, balance.toString());
@@ -148,6 +166,7 @@ async function migrateToNewDevice(customer, newAddress, deps) {
 
   if (pending) {
     await deps.issuerCall('mint', newAddress, pending.amount);
+    migratedAmount = pending.amount;
     logger.info(`[Customer] Cihaz değişimi: yeni cüzdana ${pending.amount} stroop basıldı.`);
   }
 
@@ -157,5 +176,5 @@ async function migrateToNewDevice(customer, newAddress, deps) {
   customer.stellarAddress = newAddress;
   customer.pendingMigration = undefined;
   await customer.save();
-  return { address: newAddress, migratedAmount: pending ? pending.amount : null };
+  return { address: newAddress, migratedAmount };
 }

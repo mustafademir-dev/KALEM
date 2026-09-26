@@ -19,10 +19,13 @@
  * e-para kuruluşu da iadeyi kendi defterinde bir düzeltme işlemi olarak yapar.
  * Ürün aşamasında iade kuralları doğrudan kontrata girmelidir.
  *
- * ATOMİK DEĞİL: Soroban işlemi tek bir kontrat çağrısı taşır, yani dört adım dört
- * ayrı işlemdir. Bu yüzden (a) bakiyeler baştan kontrol edilir, (b) müşteriye
- * basma EN SONDA yapılır — yarıda kalan iade müşteriye fazladan para vermez,
- * (c) tamamlanan adımlar kaydedilir ve yeniden deneme kaldığı yerden sürer.
+ * TEK İŞLEM, ATOMİK: `ISSUER_BATCH_CONTRACT_ID` tanımlıysa dört adım `issuer-batch`
+ * kontratıyla tek işlemde yapılır (~1 ledger kapanışı; ya hepsi ya hiçbiri).
+ *
+ * YEDEK YOL (kontrat tanımsızsa): dört adım dört ayrı işlemdir. Bu yüzden
+ * (a) bakiyeler baştan kontrol edilir, (b) müşteriye basma EN SONDA yapılır —
+ * yarıda kalan iade müşteriye fazladan para vermez, (c) tamamlanan adımlar
+ * kaydedilir ve yeniden deneme kaldığı yerden sürer.
  */
 
 import * as StellarSdk from '@stellar/stellar-sdk';
@@ -62,9 +65,52 @@ export async function issuerTokenCall(method, address, amountStroops) {
   return response.hash;
 }
 
+/**
+ * İhraççının burn/mint'lerini `issuer-batch` kontratıyla TEK işlemde, atomik yapar
+ * (önce tüm burn'ler, sonra tüm mint'ler). Ayrı işlemlerde her adım bir ledger
+ * kapanışı (~5 sn) beklerdi; burada toplam bir kapanış.
+ *
+ * @param {{burns: Array<{address: string, amount: string}>, mints: Array<{address: string, amount: string}>}} ops
+ * @returns {Promise<string>} İşlem hash'i.
+ */
+export async function issuerBatchCall({ burns = [], mints = [] }) {
+  if (!config.secrets.issuerSecretKey) {
+    throw new Error('İhraççı gizli anahtarı yapılandırılmamış (ISSUER_SECRET_KEY).');
+  }
+  const issuerKeypair = StellarSdk.Keypair.fromSecret(config.secrets.issuerSecretKey);
+  const pairs = (list) =>
+    StellarSdk.xdr.ScVal.scvVec(
+      list.map(({ address, amount }) =>
+        StellarSdk.xdr.ScVal.scvVec([
+          StellarSdk.Address.fromString(address).toScVal(),
+          StellarSdk.nativeToScVal(BigInt(amount), { type: 'i128' }),
+        ])
+      )
+    );
+  const preparedXdr = await buildContractCall({
+    sourceAddress: issuerKeypair.publicKey(),
+    contractId: config.contracts.issuerBatchId,
+    method: 'run',
+    args: [
+      StellarSdk.Address.fromString(config.contracts.dtlTokenId).toScVal(),
+      StellarSdk.Address.fromString(issuerKeypair.publicKey()).toScVal(),
+      pairs(burns),
+      pairs(mints),
+    ],
+  });
+  const tx = StellarSdk.TransactionBuilder.fromXDR(preparedXdr, stellarConfig.networkPassphrase);
+  tx.sign(issuerKeypair);
+  const response = await submitTransaction(tx);
+  return response.hash;
+}
+
 const defaultDeps = {
   readBalance: (address) => readContractBalance(config.contracts.dtlTokenId, address),
   issuerCall: issuerTokenCall,
+  // Kontrat adresi tanımlı değilse adımlar eskisi gibi tek tek gönderilir.
+  get issuerBatch() {
+    return config.contracts.issuerBatchId ? issuerBatchCall : null;
+  },
 };
 
 /** Fiş numarasından, bu esnafa ait iade edilebilir işlemi bulur. */
@@ -126,8 +172,10 @@ export async function refundPayment({ merchant, documentNo, deps = defaultDeps }
 
   try {
     // Önce bakiyeler: yetmeyen varsa HİÇBİR işlem gönderilmeden durulur.
-    for (const step of remaining.filter((s) => s.method === 'burn')) {
-      const balance = BigInt(await deps.readBalance(step.address));
+    const burnSteps = remaining.filter((s) => s.method === 'burn');
+    const balances = await Promise.all(burnSteps.map((s) => deps.readBalance(s.address)));
+    for (const [i, step] of burnSteps.entries()) {
+      const balance = BigInt(balances[i]);
       if (balance < BigInt(step.amount)) {
         throw new RefundError(
           'INSUFFICIENT_BALANCE',
@@ -139,13 +187,27 @@ export async function refundPayment({ merchant, documentNo, deps = defaultDeps }
       }
     }
 
-    for (const step of remaining) {
-      const txHash = await deps.issuerCall(step.method, step.address, step.amount);
+    if (deps.issuerBatch && remaining.length > 0) {
+      // Tek atomik işlem: ya tüm adımlar olur ya hiçbiri — yarıda kalan iade yok.
+      const txHash = await deps.issuerBatch({
+        burns: remaining.filter((s) => s.method === 'burn').map(({ address, amount }) => ({ address, amount })),
+        mints: remaining.filter((s) => s.method === 'mint').map(({ address, amount }) => ({ address, amount })),
+      });
+      const at = new Date();
       await Transaction.updateOne(
         { _id: locked._id },
-        { $push: { 'refund.steps': { name: step.name, txHash, at: new Date() } } }
+        { $push: { 'refund.steps': { $each: remaining.map((s) => ({ name: s.name, txHash, at })) } } }
       );
-      logger.info(`[Refund] ${step.name} tamam (${step.amount} stroop, hash: ${txHash})`);
+      logger.info(`[Refund] ${remaining.length} adım tek işlemde tamam (hash: ${txHash})`);
+    } else {
+      for (const step of remaining) {
+        const txHash = await deps.issuerCall(step.method, step.address, step.amount);
+        await Transaction.updateOne(
+          { _id: locked._id },
+          { $push: { 'refund.steps': { name: step.name, txHash, at: new Date() } } }
+        );
+        logger.info(`[Refund] ${step.name} tamam (${step.amount} stroop, hash: ${txHash})`);
+      }
     }
 
     const completed = await Transaction.findOneAndUpdate(
