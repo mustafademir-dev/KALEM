@@ -3,437 +3,361 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KALEM Akış</title>
+<title>KALEM · Canlı Ödeme</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <!--
-  Canlı İşlem Akışı paneli — minimal, "borsa/canlı izleme ekranı" hissi.
-
-  YERLEŞİM MANTIĞI (kullanıcı kuralı):
-  - Sıralı (birbirinin sonucu olan) adımlar → DİKEY, alt alta.
-  - Gerçekten eşzamanlı/paralel adımlar → YATAY, yan yana.
-
-  Tek GERÇEK paralel nokta: Havuz 1/3/4 — üçü de AYNI 'distribution'
-  olayına bağlı, kontratın tek bir invocation'ı içinde atomik olarak
-  gerçekleşiyor (bkz. contracts/pool-manager/src/distribution.rs).
-
-  DİKKAT — GİB paralel DEĞİL: `sse-listener.service.js`da
-  `generateGibDocument()`, 'caught' olayı zaten kaydedildikten SONRA,
-  aynı fonksiyon içinde sırayla çağrılıyor; gib.at her zaman
-  caught.at'ten sonradır. Bu yüzden Onaylandı → GİB Belgesi → Esnaf
-  burada SIRALI (alt alta) çizilir, yan yana DEĞİL — kullanıcının
-  ilk talimatındaki "paralel" varsayımı koddaki gerçek sırayla
-  eşleşmiyordu, düzeltilerek uygulandı (bkz. proje sohbeti, 17 Eylül).
-
-  KURAL: Sayfada düğüm adları DIŞINDA hiçbir metin yok — tutar, yüzde,
-  hash, adres, zaman damgası YAZILMAZ. Bir boru, hedef düğümün GERÇEK
-  backend olayı "done" olduğunda dolar (bkz. computeStatuses).
-
-  Sayfa artık viewport'a ZORLA sığdırılmıyor — doğal boyutunda akar;
-  taşarsa sayfa kendiliğinden, yumuşak kayarak aktif adımı takip eder
-  (bkz. scrollToActive). "Tek ekrana sığsın" kısıtı KASITLI olarak yok.
-
-  Kullanım: https://<backend>/flow?token=<FLOW_PANEL_TOKEN>
-  Harici kaynak yok (font/CDN) — sunum ağı kısıtlıysa da çalışır.
+  Canlı işlem paneli — "para haritası".
+  Her kutu YALNIZCA ilgili backend olayı (Transaction.flowEvents) geldiğinde değişir;
+  zamanlayıcıyla ilerleyen sahte animasyon yoktur (docs/ARCHITECTURE_DECISIONS.md §9.1).
+  Projeksiyonda esnaf ekranının yanında (yarım ekran) okunacak şekilde tasarlandı.
 -->
 <style>
   :root {
-    /* Sıcak ten rengi ↔ beyaz arası, yumuşak krem. */
-    --bg: #F7ECE0;
-    --pipe-empty: #E0C9AF;
-    --pipe-fill: #22A854;
-    --pipe-glow: rgba(34, 168, 84, .4);
-    --pipe-fail: #E2493D;
-    --node-bg: #FFFBF5;
-    --node-stroke: #D8BE9E;
-    --node-active: #E2984A;
-    --text: #3E2E20;
-    --text-dim: #B49A7C;
+    --bg: #F4F6F9; --card: #FFFFFF; --ink: #16213A; --muted: #5B6679; --faint: #98A2B3;
+    --rule: #D6DCE4; --accent: #C2410C; --accent-soft: #FFF1E6; --good: #15803D; --good-soft: #E7F6EC;
+    --bad: #B91C1C; --bad-soft: #FDECEC; --teal: #0F766E; --teal-soft: #E3F4F2;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--bg); }
-  body {
-    display: flex; justify-content: center;
-    min-height: 100vh; padding: 48px 16px;
-    font-family: "Segoe UI", Inter, system-ui, -apple-system, Roboto, sans-serif;
-  }
-  svg#diagram {
-    /* Genişlik sınırlı/ortalı (okunaklı + projektörde dengeli), YÜKSEKLİK
-       DOĞAL — viewBox oranını kendiliğinden korur. Sığmazsa sayfa kaydırılır
-       (KASITLI: "tek ekrana sığsın" kısıtı kaldırıldı). */
-    width: min(92vw, 760px);
-    height: auto;
-    display: block;
-  }
-  .pipe { fill: none; stroke-linecap: round; }
-  .pipe-empty { stroke: var(--pipe-empty); }
-  /* ÇOK YUMUŞAK dolum: yavaş başlayıp yavaş biten kadifemsi bir eğri +
-     yeşil parlama (glow) + gradient dolgu (aşağıya doğru ton geçişi,
-     "sıvı ışığı yakalıyor" hissi) — sert/dijital bir çizgi değil. */
-  .pipe-fill {
-    stroke: url(#liquidGrad);
-    transition: stroke-dashoffset 1.7s cubic-bezier(.33, .0, .18, 1);
-    filter: drop-shadow(0 0 8px var(--pipe-glow));
-  }
-  .pipe-fill.fail { stroke: url(#liquidFailGrad); filter: drop-shadow(0 0 8px rgba(226, 73, 61, .38)); }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+  body { padding: 22px 22px 28px; }
+  .wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 18px; }
 
-  /* Borunun içinde akan, yumuşak bulanık bir ışık noktası — CSS motion-path
-     ile aynı borunun "d"sini izler. Yalnızca YENİ dolan bir boruda bir kez
-     belirir. */
-  .flow-dot { fill: #F1FCF3; opacity: 0; filter: blur(4px) drop-shadow(0 0 12px var(--pipe-fill)); }
-  .flow-dot.run { animation: flowdot var(--dur, 1.7s) cubic-bezier(.33, .0, .18, 1) forwards; }
-  @keyframes flowdot {
-    0%   { offset-distance: 0%;   opacity: 0; }
-    8%   { opacity: .95; }
-    88%  { opacity: .95; }
-    100% { offset-distance: 100%; opacity: 0; }
-  }
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .brand { font-family: var(--mono); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+  .amount { font-size: clamp(34px, 5.2vw, 52px); font-weight: 700; line-height: 1.05; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .who { font-size: 18px; color: var(--muted); margin-top: 4px; }
+  .side { display: grid; gap: 8px; justify-items: end; }
+  .pill { font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 99px; background: var(--card); border: 1px solid var(--rule); display: inline-flex; align-items: center; gap: 7px; }
+  .pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); display: inline-block; }
+  .pill[data-state="live"] i { background: var(--good); }
+  .pill[data-state="retry"] i { background: #D97706; }
+  .pill[data-state="error"] i { background: var(--bad); }
+  .clock { font-family: var(--sans); font-size: 30px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .clock small { font-size: 14px; color: var(--muted); font-family: var(--sans); margin-left: 4px; }
 
-  /* .ring TEMEL durumda görünmez olmalı (yalnızca .active iken belirir) —
-     bu kural eksikti ve SVG varsayılanı (fill:black) her düğümde ince
-     siyah bir halka olarak sızıyordu (gerçek cihazda bulundu). */
-  .ring { fill: none; stroke: none; }
-  .node circle.body { stroke-width: 6; transition: fill .5s ease, stroke .5s ease; filter: drop-shadow(0 3px 10px rgba(80, 60, 40, .16)); }
-  .node.pending circle.body { fill: var(--node-bg); stroke: var(--node-stroke); }
-  .node.active circle.body { fill: var(--node-bg); stroke: var(--node-active); }
-  .node.done circle.body { fill: url(#nodeDoneGrad); stroke: var(--pipe-fill); }
-  .node.failed circle.body { fill: url(#nodeFailGrad); stroke: var(--pipe-fail); }
+  /* Üst sıra: Müşteri → KALEM → Stellar */
+  .chain { display: grid; grid-template-columns: 1fr 44px 1fr 44px 1fr; align-items: stretch; }
+  .arrow { display: flex; align-items: center; justify-content: center; }
+  .arrow svg { width: 40px; height: 18px; }
+  .arrow line, .arrow path { stroke: var(--rule); stroke-width: 3; fill: none; transition: stroke .4s; }
+  .arrow.on line, .arrow.on path { stroke: var(--good); }
 
-  /* Boru tam dolup düğüme ulaştığında YUMUŞAK bir "nefes alma". */
-  .node { transform-box: fill-box; transform-origin: center; }
-  .node.settle { animation: settle 1s cubic-bezier(.22, .7, .3, 1); }
-  @keyframes settle {
-    0%   { transform: scale(1); }
-    45%  { transform: scale(1.13); }
-    100% { transform: scale(1); }
-  }
+  .box { background: var(--card); border: 2px solid var(--rule); border-radius: 14px; padding: 16px 16px 14px; display: grid; gap: 6px; align-content: start; min-height: 150px; transition: border-color .35s, background .35s; }
+  .box .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .box h2 { margin: 0; font-size: 21px; font-weight: 700; }
+  .box .t { font-family: var(--mono); font-size: 13px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .box .line { font-size: 15px; color: var(--muted); line-height: 1.35; }
+  .box .line b { color: var(--ink); font-weight: 600; }
+  .box .mono { font-family: var(--mono); font-size: 13px; color: var(--muted); word-break: break-all; }
+  .mark { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--rule); display: grid; place-items: center; flex: none; }
+  .mark svg { width: 14px; height: 14px; opacity: 0; }
 
-  .node.active .ring {
-    fill: none; stroke: var(--node-active); stroke-width: 4; opacity: .55;
-    animation: pulse 1.8s ease-out infinite;
-  }
-  @keyframes pulse {
-    from { r: var(--r0); opacity: .6; }
-    to   { r: var(--r1); opacity: 0; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .node.active .ring { animation: none; }
-    .node.settle { animation: none; }
-    .flow-dot.run { animation: none; }
-  }
+  .box.active { border-color: var(--accent); background: var(--accent-soft); }
+  .box.active .mark { border-color: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+  .box.done { border-color: var(--good); }
+  .box.done .mark { border-color: var(--good); background: var(--good); }
+  .box.done .mark svg { opacity: 1; stroke: #fff; }
+  .box.failed { border-color: var(--bad); background: var(--bad-soft); }
+  .box.failed .mark { border-color: var(--bad); background: var(--bad); }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(194,65,12,.35); } 50% { box-shadow: 0 0 0 8px rgba(194,65,12,0); } }
 
-  .label {
-    font-size: 30px; font-weight: 700; text-anchor: middle;
-    fill: var(--text-dim); transition: fill .5s ease;
-  }
-  .node.active .label, .node.done .label, .node.failed .label { fill: var(--text); }
+  /* Dağılım */
+  .fan { display: grid; justify-items: center; }
+  .fan svg { width: 100%; height: 46px; }
+  .fan path { stroke: var(--rule); stroke-width: 3; fill: none; transition: stroke .4s; }
+  .fan.on path { stroke: var(--good); }
+  .split { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 14px; }
+  .dest { background: var(--card); border: 2px solid var(--rule); border-radius: 14px; padding: 16px; display: grid; gap: 4px; transition: border-color .35s; }
+  .dest .k { font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .dest .v { font-size: clamp(24px, 3.4vw, 34px); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--faint); transition: color .35s; }
+  .dest .p { font-family: var(--mono); font-size: 14px; color: var(--faint); }
+  .dest .a { font-family: var(--mono); font-size: 12px; color: var(--faint); word-break: break-all; }
+  .dest.on { border-color: var(--good); }
+  .dest.on .v { color: var(--ink); }
+  .dest.on.fund { border-color: var(--teal); background: var(--teal-soft); }
+  .dest.on.fund .v { color: var(--teal); }
+  .splitnote { text-align: center; font-size: 15px; color: var(--muted); min-height: 22px; padding: 10px 0 12px; }
+  .splitnote b { color: var(--good); }
 
-  #conn {
-    position: fixed; top: 18px; right: 18px; width: 11px; height: 11px;
-    border-radius: 50%; background: var(--text-dim);
+  /* Alt sıra: onay, fatura, esnaf */
+  .after { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .after .box { min-height: 0; }
+
+  footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+  footer a { color: var(--accent); font-weight: 600; text-decoration: none; border-bottom: 1px solid currentColor; }
+  footer .mono { font-family: var(--mono); }
+  .empty { text-align: center; padding: 70px 20px; color: var(--muted); font-size: 20px; line-height: 1.5; background: var(--card); border: 2px dashed var(--rule); border-radius: 14px; }
+  .empty b { color: var(--ink); display: block; font-size: 26px; margin-bottom: 6px; }
+
+  @media (max-width: 720px) {
+    .chain { grid-template-columns: 1fr; }
+    .arrow { height: 30px; } .arrow svg { transform: rotate(90deg); }
+    .split, .after { grid-template-columns: 1fr; }
+    .fan { display: none; }
   }
-  #conn[data-state="live"] { background: var(--pipe-fill); }
-  #conn[data-state="retry"] { background: var(--node-active); }
-  #conn[data-state="error"] { background: var(--pipe-fail); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
-<div id="conn" data-state="connecting"></div>
-<svg id="diagram" viewBox="0 0 700 1340" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-  <defs>
-    <!-- "Sıvı" gradyanı: TÜM diyagram boyunca sabit, mutlak (userSpaceOnUse)
-         koordinatlarla — yukarıdan aşağı ton geçişi, akış yönünü hissettirir.
-         DİKKAT: gradientUnits VARSAYILANI (objectBoundingBox) kullanılırsa
-         TAM DÜZ (dikey) borularda sınır kutusu genişliği SIFIR olur ve
-         gradyan bazı tarayıcılarda tamamen GÖRÜNMEZ kalır — gerçek cihazda
-         bulundu (Müşteri→Kontrat ve Onaylandı→GİB→Esnaf boruları yeşile
-         hiç dönmüyordu). userSpaceOnUse + viewBox'ın tam boyu bu hatayı
-         yapısal olarak ortadan kaldırır. -->
-    <linearGradient id="liquidGrad" x1="0" y1="0" x2="0" y2="1340" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#6BDB93" />
-      <stop offset="100%" stop-color="#1C8E48" />
-    </linearGradient>
-    <linearGradient id="liquidFailGrad" x1="0" y1="0" x2="0" y2="1340" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#F0857A" />
-      <stop offset="100%" stop-color="#C73528" />
-    </linearGradient>
-    <radialGradient id="nodeDoneGrad" cx="32%" cy="28%" r="78%">
-      <stop offset="0%" stop-color="#8FE6AC" />
-      <stop offset="100%" stop-color="#1F9B4C" />
-    </radialGradient>
-    <radialGradient id="nodeFailGrad" cx="32%" cy="28%" r="78%">
-      <stop offset="0%" stop-color="#F3A199" />
-      <stop offset="100%" stop-color="#C73528" />
-    </radialGradient>
-  </defs>
-</svg>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="brand">KALEM · Canlı ödeme</div>
+      <div class="amount" id="amount">—</div>
+      <div class="who" id="who">Ödeme bekleniyor</div>
+    </div>
+    <div class="side">
+      <span class="pill" id="conn" data-state="connecting"><i></i><span id="connText">Bağlanıyor</span></span>
+      <div class="clock" id="clock">0,0<small>sn</small></div>
+    </div>
+  </header>
+
+  <div id="empty" class="empty" hidden>
+    <b>Ödeme bekleniyor</b>
+    Müşteri QR'ı okutup onayladığında bu ekranda adım adım görünecek.
+  </div>
+
+  <div id="map">
+    <section class="chain">
+      <div class="box" id="b-customer">
+        <div class="head"><h2>Müşteri</h2><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span></div>
+        <div class="line" id="customer-line">Telefonunda imzalar</div>
+        <div class="mono" id="customer-addr"></div>
+        <div class="t" id="customer-t"></div>
+      </div>
+      <div class="arrow" id="a1"><svg viewBox="0 0 40 18"><line x1="2" y1="9" x2="32" y2="9"/><path d="M26 3l7 6-7 6"/></svg></div>
+      <div class="box" id="b-kalem">
+        <div class="head"><h2>KALEM</h2><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span></div>
+        <div class="line" id="kalem-line1">İçeriği kontrol eder</div>
+        <div class="line" id="kalem-line2">Ağ ücretini üstlenir</div>
+        <div class="t" id="kalem-t"></div>
+      </div>
+      <div class="arrow" id="a2"><svg viewBox="0 0 40 18"><line x1="2" y1="9" x2="32" y2="9"/><path d="M26 3l7 6-7 6"/></svg></div>
+      <div class="box" id="b-chain">
+        <div class="head"><h2>Stellar</h2><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span></div>
+        <div class="line" id="chain-line1">Kontrat parayı böler</div>
+        <div class="line" id="chain-line2"></div>
+        <div class="t" id="chain-t"></div>
+      </div>
+    </section>
+
+    <div class="fan" id="fan"><svg viewBox="0 0 1000 46" preserveAspectRatio="none"><path d="M833 0 C833 24, 201 22, 201 46"/><path d="M833 0 C833 24, 552 22, 552 46"/><path d="M833 0 C833 24, 851 22, 851 46"/></svg></div>
+
+    <section class="split">
+      <div class="dest" id="d-merchant">
+        <div class="k">Esnafın hesabı</div>
+        <div class="v" id="v-merchant">—</div>
+        <div class="p" id="p-merchant">%99,6</div>
+        <div class="a" id="a-merchant"></div>
+      </div>
+      <div class="dest fund" id="d-fund">
+        <div class="k">Sosyal Fon</div>
+        <div class="v" id="v-fund">—</div>
+        <div class="p" id="p-fund">%0,1</div>
+      </div>
+      <div class="dest" id="d-ops">
+        <div class="k">Operasyon</div>
+        <div class="v" id="v-ops">—</div>
+        <div class="p" id="p-ops">%0,3</div>
+      </div>
+    </section>
+    <div class="splitnote" id="splitnote"></div>
+
+    <section class="after">
+      <div class="box" id="b-caught">
+        <div class="head"><h2>Onaylandı</h2><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span></div>
+        <div class="line" id="caught-line">Ağ kesinleştirir</div>
+        <div class="t" id="caught-t"></div>
+      </div>
+      <div class="box" id="b-gib">
+        <div class="head"><h2>e-Arşiv fatura</h2><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span></div>
+        <div class="line" id="gib-line">Esnafın vergi numarasıyla</div>
+        <div class="t" id="gib-t"></div>
+      </div>
+      <div class="box" id="b-seen">
+        <div class="head"><h2>Esnafın ekranında</h2><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span></div>
+        <div class="line" id="seen-line">Ödeme alındı</div>
+        <div class="t" id="seen-t"></div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <span>İşlem: <span class="mono" id="hash">—</span></span>
+    <a id="explorer" href="#" target="_blank" rel="noopener" hidden>Herkese açık kayıtta aç →</a>
+  </footer>
+</div>
 
 <script>
 (() => {
   'use strict';
-
+  const $ = (id) => document.getElementById(id);
   const token = new URLSearchParams(location.search).get('token') || '';
-  const svg = document.getElementById('diagram');
-  const conn = document.getElementById('conn');
-  const NS = 'http://www.w3.org/2000/svg';
-  const R = 62; // düğüm yarıçapı — büyük, uzaktan net
-  const STROKE_W = 32; // boru kalınlığı
+  const EXPLORER = 'https://stellar.expert/explorer/testnet/tx/';
 
-  /**
-   * Düğümler — sabit koordinatlar (viewBox 700×1340).
-   *
-   * DİKEY sıra = backend'de GERÇEKTEN sıralı (birbirinin sonucu) olan
-   * adımlar. Havuz 1/3/4 aynı satırda (YATAY) çünkü GERÇEKTEN paralel/atomik.
-   */
-  const NODES = {
-    customer:  { x: 350, y: 100,  label: ['Müşteri'] },
-    contract:  { x: 350, y: 320,  label: ['Kontrat'] },
-    pool1:     { x: 130, y: 545,  label: ['Havuz 1', '(Esnaf Kasası)'] },
-    pool3:     { x: 350, y: 545,  label: ['Havuz 3', '(Sosyal)'] },
-    pool4:     { x: 570, y: 545,  label: ['Havuz 4', '(Operasyonel)'] },
-    confirmed: { x: 350, y: 770,  label: ['Onaylandı'] },
-    gib:       { x: 350, y: 985,  label: ['GİB Belgesi'] },
-    merchant:  { x: 350, y: 1200, label: ['Esnaf'] },
+  const short = (a) => (a && a.length > 14 ? a.slice(0, 6) + '…' + a.slice(-4) : a || '');
+  const tl = (stroops) => {
+    if (stroops == null) return '—';
+    const n = Number(BigInt(stroops)) / 1e7;
+    const digits = n > 0 && n < 1 ? 4 : 2;
+    return n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: digits }) + ' TL';
   };
-
-  /** Her boru: kaynak/hedef düğüm. Durumu hedef düğümün durumu belirler. */
-  const EDGES = [
-    { from: 'customer', to: 'contract' },
-    { from: 'contract', to: 'pool1' },
-    { from: 'contract', to: 'pool3' },
-    { from: 'contract', to: 'pool4' },
-    { from: 'pool1', to: 'confirmed' },
-    { from: 'pool3', to: 'confirmed' },
-    { from: 'pool4', to: 'confirmed' },
-    { from: 'confirmed', to: 'gib' },
-    { from: 'gib', to: 'merchant' },
-  ];
+  const pct = (part, total) => {
+    if (part == null || !total || total === '0') return null;
+    const p = Number(BigInt(part) * 100000n / BigInt(total)) / 1000;
+    return '%' + p.toLocaleString('tr-TR', { maximumFractionDigits: 1 });
+  };
+  const secs = (ms) => (ms / 1000).toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
   let current = null;
+  let tick = null;
 
-  /**
-   * Backend'in 9 gerçek adımını (FLOW_STEPS) 8 görsel düğüme indirger.
-   * Yalnızca ilgili backend olayı GERÇEKTEN geldiğinde durum değişir.
-   */
-  function computeStatuses(flow) {
-    const byStep = {};
-    for (const e of flow.events) byStep[e.step] = e.status;
-
-    function group(steps) {
-      if (steps.some((s) => byStep[s] === 'failed')) return 'failed';
-      if (steps.every((s) => byStep[s] === 'done')) return 'done';
-      return steps.some((s) => byStep[s] != null) ? 'active' : 'pending';
-    }
-    // Önceki adım 'failed' olsa bile bu adım 'pending' döner — GERÇEKTEN
-    // hiç başlamadı; kırmızı yalnızca GERÇEK hata noktasında olmalı.
-    //
-    // BULUNAN HATA: Onaylandı/GİB/Esnaf/Havuzlar gibi TEK backend adımına
-    // bağlı düğümler `group()`dan hep 'pending' alıyordu (o TEK adımın
-    // olayı henüz gelmemişken) — asla 'active' (nabız atan, "şu an
-    // bekleniyor") olamıyorlardı; sadece 4 alt-adımlı 'contract' checkpoint'i
-    // (received/fee_bump/submitted/contract) bunu gösterebiliyordu. Sonucu:
-    // hem görsel nabız kaybolıyordu hem otomatik kaydırma (.node.active
-    // arayan) hep en alta atlıyordu. Düzeltme: ÖNCEKİ adım bittiyse ama BU
-    // adımın kendi olayı hiç gelmediyse ('pending' dönerse), bu artık
-    // "hiç başlamadı" değil "ŞİMDİ bekleniyor" demektir — 'active' olmalı.
-    function next(prevStatus, steps) {
-      if (prevStatus !== 'done') return 'pending';
-      const g = group(steps);
-      return g === 'pending' ? 'active' : g;
-    }
-
-    const customer = group(['signed']);
-    const contract = next(customer, ['received', 'fee_bump', 'submitted', 'contract']);
-    // Havuz 1/3/4 AYNI 'distribution' olayına bağlı — üçü HER ZAMAN birebir
-    // aynı durumda: gerçekte atomik olduğu için, tahmini eşitleme değil.
-    const poolStatus = next(contract, ['distribution']);
-    const confirmed = next(poolStatus, ['caught']);
-    // SIRALI (yan yana DEĞİL) — bkz. dosya başı notu: gib.at HER ZAMAN caught.at'ten sonra.
-    const gib = next(confirmed, ['gib']);
-    const merchant = next(gib, ['merchant_seen']);
-
-    return {
-      customer, contract,
-      pool1: poolStatus, pool3: poolStatus, pool4: poolStatus,
-      confirmed, gib, merchant,
-    };
+  function statusOf(byStep, steps) {
+    const s = steps.map((k) => byStep[k] && byStep[k].status);
+    if (s.includes('failed')) return 'failed';
+    if (s.every((x) => x === 'done')) return 'done';
+    return s.some(Boolean) ? 'active' : 'pending';
   }
-
-  function edgeStatus(statuses, edge) {
-    return statuses[edge.to];
+  // Önceki kutu bittiyse ve bu kutunun olayı henüz gelmediyse "şu an bekleniyor" (active).
+  function after(prev, own) {
+    if (prev !== 'done') return 'pending';
+    return own === 'pending' ? 'active' : own;
   }
+  function setBox(id, status) { $(id).className = 'box ' + status; }
+  function since(t0, ev) { return ev && ev.at && t0 ? '+' + secs(new Date(ev.at) - t0) + ' sn' : ''; }
 
-  function pathFor(edge) {
-    const a = NODES[edge.from], b = NODES[edge.to];
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len;
-    const x1 = a.x + ux * R, y1 = a.y + uy * R;
-    const x2 = b.x - ux * R, y2 = b.y - uy * R;
-    return `M ${x1} ${y1} L ${x2} ${y2}`;
-  }
-
-  function el(tag, attrs) {
-    const e = document.createElementNS(NS, tag);
-    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-    return e;
-  }
-
-  function buildStaticDiagram() {
-    const frag = document.createDocumentFragment();
-
-    for (const edge of EDGES) {
-      frag.appendChild(el('path', { class: 'pipe pipe-empty', d: pathFor(edge), 'stroke-width': STROKE_W }));
-    }
-    for (const edge of EDGES) {
-      const p = el('path', { class: 'pipe pipe-fill', d: pathFor(edge), 'stroke-width': STROKE_W, 'data-edge': `${edge.from}>${edge.to}` });
-      frag.appendChild(p);
-    }
-    for (const [key, n] of Object.entries(NODES)) {
-      const g = el('g', { class: 'node pending', 'data-node': key });
-      g.appendChild(el('circle', { class: 'ring', cx: n.x, cy: n.y, r: R + 10, style: `--r0:${R + 6}px; --r1:${R + 28}px` }));
-      g.appendChild(el('circle', { class: 'body', cx: n.x, cy: n.y, r: R }));
-      n.label.forEach((line, i) => {
-        const dy = n.label.length === 1 ? R + 42 : R + 38 + i * 34;
-        g.appendChild(el('text', { class: 'label', x: n.x, y: n.y + dy })).textContent = line;
-      });
-      frag.appendChild(g);
-    }
-    svg.appendChild(frag);
-  }
-
-  const FLOW_DURATION_MS = 1700; // .pipe-fill / .flow-dot.run CSS süresiyle BİREBİR eşleşmeli
-  let supportsMotionPath = false;
-  try { supportsMotionPath = CSS.supports('offset-path', "path('M0 0L1 1')"); } catch { /* eski tarayıcı — nokta efekti atlanır */ }
-
-  /** Önceki render'daki durumlar — yalnızca GERÇEKTEN YENİ dolan kenar/düğümde animasyon oynatmak için. */
-  let prevStatuses = null;
-
-  function spawnFlowDot(edge) {
-    if (!supportsMotionPath) return;
-    const dot = el('circle', { class: 'flow-dot', r: 10 });
-    dot.style.offsetPath = `path('${pathFor(edge)}')`;
-    dot.style.setProperty('--dur', `${FLOW_DURATION_MS}ms`);
-    svg.appendChild(dot);
-    requestAnimationFrame(() => dot.classList.add('run'));
-    setTimeout(() => dot.remove(), FLOW_DURATION_MS + 200);
-  }
-
-  /**
-   * `animate=false` ilk anlık görüntüde (sayfa yeni açıldı/yeniden
-   * bağlandı) kullanılır — geçmiş adımlar SIÇRAMADAN anında dolu görünür.
-   * Akış/nefes efekti yalnızca YENİ gelen bir olayda (bu render'da GERÇEKTEN
-   * durum değiştiğinde) oynar — aksi halde her yeni olayda TÜM geçmiş
-   * borular baştan "dolarmış" gibi yeniden animasyon oynardı.
-   */
-  function applyStatuses(statuses, animate) {
-    for (const [key, status] of Object.entries(statuses)) {
-      const g = svg.querySelector(`[data-node="${key}"]`);
-      if (!g) continue;
-      const prevStatus = prevStatuses && prevStatuses[key];
-      g.setAttribute('class', `node ${status}`);
-      const justSettled = animate && prevStatus !== status && (status === 'done' || status === 'failed');
-      if (justSettled) {
-        g.classList.remove('settle');
-        void g.getBoundingClientRect();
-        g.classList.add('settle');
-      }
-    }
-    for (const edge of EDGES) {
-      const status = edgeStatus(statuses, edge);
-      const prevStatus = prevStatuses ? edgeStatus(prevStatuses, edge) : null;
-      const p = svg.querySelector(`[data-edge="${edge.from}>${edge.to}"]`);
-      if (!p) continue;
-      const filled = status === 'done' || status === 'failed';
-      const wasFilled = prevStatus === 'done' || prevStatus === 'failed';
-      p.classList.toggle('fail', status === 'failed');
-      const len = p.getTotalLength();
-      // İKİ DEĞERLİ dasharray (dolu, ÇOK BÜYÜK boşluk) — TEK değerli
-      // dasharray "dolu,dolu" olarak tekrar eder; dashoffset=len ile
-      // gizlemeye çalışınca kayan noktalı yuvarlama, desenin "dolu"
-      // kısmının TAM borunun bittiği ucuna denk gelmesine yol açıp orada
-      // küçük bir nokta/parça sızdırıyordu (gerçek cihazda bulundu — ilk
-      // düzeltme denemesi de yanlış yöne gidip sızıntıyı BÜYÜTTÜ). Boşluğu
-      // yolun kendisinden kat kat büyük tutmak, desenin hiç tekrar
-      // ETMEMESİNİ sağlar — sınırda hiçbir yuvarlama artık "dolu"ya denk
-      // gelemez, sızıntı yapısal olarak imkânsız hale gelir.
-      const GAP = len * 4 + STROKE_W * 4;
-      p.setAttribute('stroke-dasharray', `${len} ${GAP}`);
-      if (!filled) {
-        p.style.transition = 'none';
-        p.setAttribute('stroke-dashoffset', `${len}`);
-        continue;
-      }
-      if (!animate || wasFilled) {
-        p.style.transition = 'none';
-        p.setAttribute('stroke-dashoffset', '0');
-        continue;
-      }
-      p.setAttribute('stroke-dashoffset', `${len}`);
-      p.style.transition = 'none';
-      void p.getBoundingClientRect();
-      p.style.transition = '';
-      p.setAttribute('stroke-dashoffset', '0');
-      spawnFlowDot(edge);
-    }
-    prevStatuses = statuses;
-  }
-
-  function render(flow, animate) {
-    if (!flow) {
-      applyStatuses(
-        { customer: 'pending', contract: 'pending', pool1: 'pending', pool3: 'pending', pool4: 'pending', confirmed: 'pending', gib: 'pending', merchant: 'pending' },
-        false
-      );
+  function render(flow) {
+    const has = Boolean(flow);
+    $('empty').hidden = has;
+    $('map').hidden = !has;
+    if (!has) {
+      $('amount').textContent = '—'; $('who').textContent = 'Ödeme bekleniyor';
+      $('hash').textContent = '—'; $('explorer').hidden = true; stopClock(0);
       return;
     }
-    applyStatuses(computeStatuses(flow), animate);
+    const byStep = {};
+    for (const e of flow.events) byStep[e.step] = e;
+    const t0 = byStep.signed ? new Date(byStep.signed.at) : new Date(flow.createdAt);
+
+    $('amount').textContent = tl(flow.totalAmount);
+    $('who').textContent = flow.merchant?.businessName ? flow.merchant.businessName + ' · ödeme' : 'Ödeme';
+
+    // 1) Müşteri
+    const sCustomer = statusOf(byStep, ['signed']);
+    setBox('b-customer', sCustomer === 'pending' ? 'active' : sCustomer);
+    $('customer-line').innerHTML = sCustomer === 'done' ? '<b>Kendi telefonunda imzaladı</b>' : 'Telefonunda imzalar';
+    $('customer-addr').textContent = short(byStep.signed?.data?.signer || flow.senderAddress);
+    $('customer-t').textContent = since(t0, byStep.signed);
+
+    // 2) KALEM: backend'e ulaştı + fee-bump
+    const sKalem = after(sCustomer, statusOf(byStep, ['received', 'fee_bump']));
+    setBox('b-kalem', sKalem);
+    $('kalem-line1').innerHTML = byStep.received?.status === 'done' ? '<b>İçerik faturayla uyuştu</b>' : 'İçeriği kontrol eder';
+    $('kalem-line2').innerHTML = byStep.fee_bump?.status === 'done'
+      ? '<b>Ağ ücretini KALEM ödedi</b>' + (byStep.fee_bump.data?.feeSource ? ' · ' + short(byStep.fee_bump.data.feeSource) : '')
+      : 'Ağ ücretini üstlenir';
+    $('kalem-t').textContent = since(t0, byStep.fee_bump || byStep.received);
+    $('a1').classList.toggle('on', sCustomer === 'done');
+
+    // 3) Stellar: zincire iletildi + kontrat çalıştı
+    const sChain = after(sKalem, statusOf(byStep, ['submitted', 'contract']));
+    setBox('b-chain', sChain);
+    const ledger = byStep.submitted?.data?.ledger ?? byStep.contract?.data?.ledger ?? flow.ledgerNumber;
+    $('chain-line1').innerHTML = byStep.contract?.status === 'done' ? '<b>Kontrat çalıştı</b>'
+      : byStep.submitted?.status === 'done' ? '<b>Ağa iletildi</b>' : 'Kontrat parayı böler';
+    $('chain-line2').textContent = ledger ? 'Blok ' + Number(ledger).toLocaleString('tr-TR') : '';
+    $('chain-t').textContent = since(t0, byStep.contract || byStep.submitted);
+    $('a2').classList.toggle('on', sKalem === 'done');
+
+    // Dağılım (zincirdeki transfer olaylarından okunur)
+    const dist = byStep.distribution;
+    const branches = dist?.status === 'done' ? dist.data?.branches || [] : [];
+    const total = dist?.data?.total ?? flow.totalAmount;
+    const b = (pool) => branches.find((x) => x.pool === pool);
+    const on = branches.length === 3;
+    $('fan').classList.toggle('on', on);
+    [['merchant', 1], ['fund', 3], ['ops', 4]].forEach(([k, pool]) => {
+      const br = b(pool);
+      $('d-' + k).classList.toggle('on', Boolean(br));
+      $('v-' + k).textContent = br ? tl(br.amount) : '—';
+      if (br) $('p-' + k).textContent = pct(br.amount, total) || $('p-' + k).textContent;
+    });
+    $('a-merchant').textContent = b(1)?.address ? short(b(1).address) : '';
+    $('splitnote').innerHTML = !dist ? ''
+      : dist.status === 'failed' ? 'Dağılım okunamadı'
+      : dist.data?.sumMatchesTotal ? 'Tek işlemde üç transfer · <b>toplam tutuyor</b>' : '';
+
+    // 4) Onay, fatura, esnaf ekranı
+    const sDist = dist ? (dist.status === 'failed' ? 'failed' : 'done') : 'pending';
+    const sCaught = after(sChain === 'done' ? 'done' : 'pending', statusOf(byStep, ['caught']));
+    setBox('b-caught', sCaught);
+    const src = byStep.caught?.data?.source;
+    $('caught-line').innerHTML = byStep.caught?.status === 'done'
+      ? '<b>Kesinleşti</b>' + (src === 'submit_response' ? ' · ağın cevabından' : src === 'reconciliation' ? ' · mutabakattan' : src ? ' · canlı akıştan' : '')
+      : 'Ağ kesinleştirir';
+    $('caught-t').textContent = since(t0, byStep.caught);
+
+    const sGib = after(sCaught, statusOf(byStep, ['gib']));
+    setBox('b-gib', sGib);
+    $('gib-line').innerHTML = byStep.gib?.status === 'done' ? '<b>Kesildi</b> · esnafın vergi numarasıyla' : 'Esnafın vergi numarasıyla';
+    $('gib-t').textContent = since(t0, byStep.gib);
+
+    const sSeen = after(sGib, statusOf(byStep, ['merchant_seen']));
+    setBox('b-seen', sSeen);
+    $('seen-line').innerHTML = byStep.merchant_seen?.status === 'done' ? '<b>Ödeme alındı</b> göründü' : 'Ödeme alındı';
+    $('seen-t').textContent = since(t0, byStep.merchant_seen);
+
+    // Alt bilgi
+    const hash = flow.txHash || byStep.submitted?.data?.txHash;
+    $('hash').textContent = hash ? short(hash) : '—';
+    $('explorer').hidden = !hash;
+    if (hash) $('explorer').href = EXPLORER + hash;
+
+    // Saat: ilk olaydan esnaf ekranına (ya da son olaya) kadar
+    const finished = ['merchant_seen', 'gib'].map((k) => byStep[k]).find((e) => e?.status === 'done');
+    const failed = flow.events.some((e) => e.status === 'failed');
+    if (finished || failed || sDist === 'failed') {
+      const last = flow.events.reduce((m, e) => Math.max(m, new Date(e.at).getTime()), t0.getTime());
+      stopClock(last - t0);
+    } else {
+      runClock(t0);
+    }
   }
 
-  function reducedMotion() {
-    return matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function stopClock(ms) {
+    clearInterval(tick); tick = null;
+    $('clock').innerHTML = secs(Math.max(0, ms)) + '<small>sn</small>';
   }
-
-  /**
-   * Sayfa artık viewport'a zorla sığdırılmıyor — taşarsa doğal olarak
-   * kayar. Bu yüzden takip otomatiktir: aktif (bekleyen) düğüm varsa ona,
-   * her şey bittiyse son düğüme, kullanıcı hiç scroll yapmadan yumuşak kayar.
-   */
-  function scrollToActive() {
-    const target = svg.querySelector('.node.active') || [...svg.querySelectorAll('.node')].pop();
-    target?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  function runClock(t0) {
+    clearInterval(tick);
+    const draw = () => { $('clock').innerHTML = secs(Math.max(0, Date.now() - t0)) + '<small>sn</small>'; };
+    draw();
+    tick = setInterval(draw, 100);
   }
 
   function accept(flow) {
     if (flow && current && flow.transactionId !== current.transactionId
         && new Date(flow.createdAt) < new Date(current.createdAt)) return;
-    const isNewTx = !current || !flow || flow.transactionId !== current.transactionId;
     current = flow;
-    render(flow, !isNewTx);
-    if (isNewTx) {
-      window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' });
-    } else {
-      scrollToActive();
-    }
+    render(flow);
   }
 
-  function setConn(state) {
-    conn.dataset.state = state;
-  }
+  const conn = $('conn');
+  function setConn(state, text) { conn.dataset.state = state; $('connText').textContent = text; }
 
-  buildStaticDiagram();
+  render(null);
+  if (!token) { setConn('error', 'Erişim anahtarı yok'); return; }
 
-  if (!token) {
-    setConn('error');
-    return;
-  }
-
-  const qs = `token=${encodeURIComponent(token)}`;
-  const es = new EventSource(`/api/v1/flow/stream?${qs}`);
-
-  es.addEventListener('open', () => setConn('live'));
+  const es = new EventSource('/api/v1/flow/stream?token=' + encodeURIComponent(token));
+  es.addEventListener('open', () => setConn('live', 'Canlı'));
   es.addEventListener('snapshot', (m) => accept(JSON.parse(m.data).flow));
   es.addEventListener('flow', (m) => accept(JSON.parse(m.data).flow));
   es.addEventListener('error', () => {
-    setConn(es.readyState === EventSource.CLOSED ? 'error' : 'retry');
+    if (es.readyState === EventSource.CLOSED) setConn('error', 'Bağlantı kapandı');
+    else setConn('retry', 'Yeniden bağlanıyor');
   });
 })();
 </script>
