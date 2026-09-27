@@ -35,8 +35,6 @@
   .pill[data-state="live"] i { background: var(--good); }
   .pill[data-state="retry"] i { background: #D97706; }
   .pill[data-state="error"] i { background: var(--bad); }
-  .clock { font-family: var(--sans); font-size: 30px; font-weight: 500; font-variant-numeric: tabular-nums; }
-  .clock small { font-size: 14px; color: var(--muted); font-family: var(--sans); margin-left: 4px; }
 
   /* Üst sıra: Müşteri → KALEM → Stellar */
   .chain { display: grid; grid-template-columns: 1fr 44px 1fr 44px 1fr; align-items: stretch; }
@@ -48,7 +46,6 @@
   .box { background: var(--card); border: 2px solid var(--rule); border-radius: 14px; padding: 16px 16px 14px; display: grid; gap: 6px; align-content: start; min-height: 150px; transition: border-color .35s, background .35s; }
   .box .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .box h2 { margin: 0; font-size: 21px; font-weight: 700; }
-  .box .t { font-family: var(--mono); font-size: 13px; color: var(--faint); font-variant-numeric: tabular-nums; }
   .box .line { font-size: 15px; color: var(--muted); line-height: 1.35; }
   .box .line b { color: var(--ink); font-weight: 600; }
   .box .mono { font-family: var(--mono); font-size: 13px; color: var(--muted); word-break: break-all; }
@@ -111,7 +108,6 @@
     </div>
     <div class="side">
       <span class="pill" id="conn" data-state="connecting"><i></i><span id="connText">Bağlanıyor</span></span>
-      <div class="clock" id="clock">0,0<small>sn</small></div>
     </div>
   </header>
 
@@ -126,21 +122,18 @@
         <div class="head"><h2>Müşteri</h2><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span></div>
         <div class="line" id="customer-line">Telefonunda imzalar</div>
         <div class="mono" id="customer-addr"></div>
-        <div class="t" id="customer-t"></div>
       </div>
       <div class="arrow" id="a1"><svg viewBox="0 0 40 18"><line x1="2" y1="9" x2="32" y2="9"/><path d="M26 3l7 6-7 6"/></svg></div>
       <div class="box" id="b-kalem">
         <div class="head"><h2>KALEM</h2><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span></div>
         <div class="line" id="kalem-line1">İçeriği kontrol eder</div>
         <div class="line" id="kalem-line2">Ağ ücretini üstlenir</div>
-        <div class="t" id="kalem-t"></div>
       </div>
       <div class="arrow" id="a2"><svg viewBox="0 0 40 18"><line x1="2" y1="9" x2="32" y2="9"/><path d="M26 3l7 6-7 6"/></svg></div>
       <div class="box" id="b-chain">
         <div class="head"><h2>Stellar</h2><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span></div>
         <div class="line" id="chain-line1">Kontrat parayı böler</div>
         <div class="line" id="chain-line2"></div>
-        <div class="t" id="chain-t"></div>
       </div>
     </section>
 
@@ -170,17 +163,14 @@
       <div class="box" id="b-caught">
         <div class="head"><h2>Onaylandı</h2><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span></div>
         <div class="line" id="caught-line">Ağ kesinleştirir</div>
-        <div class="t" id="caught-t"></div>
       </div>
       <div class="box" id="b-gib">
         <div class="head"><h2>e-Arşiv fatura</h2><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span></div>
         <div class="line" id="gib-line">Esnafın vergi numarasıyla</div>
-        <div class="t" id="gib-t"></div>
       </div>
       <div class="box" id="b-seen">
         <div class="head"><h2>Esnafın ekranında</h2><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span></div>
         <div class="line" id="seen-line">Ödeme alındı</div>
-        <div class="t" id="seen-t"></div>
       </div>
     </section>
   </div>
@@ -210,10 +200,8 @@
     const p = Number(BigInt(part) * 100000n / BigInt(total)) / 1000;
     return '%' + p.toLocaleString('tr-TR', { maximumFractionDigits: 1 });
   };
-  const secs = (ms) => (ms / 1000).toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
   let current = null;
-  let tick = null;
 
   function statusOf(byStep, steps) {
     const s = steps.map((k) => byStep[k] && byStep[k].status);
@@ -227,7 +215,6 @@
     return own === 'pending' ? 'active' : own;
   }
   function setBox(id, status) { $(id).className = 'box ' + status; }
-  function since(t0, ev) { return ev && ev.at && t0 ? '+' + secs(new Date(ev.at) - t0) + ' sn' : ''; }
 
   function render(flow) {
     const has = Boolean(flow);
@@ -235,12 +222,11 @@
     $('map').hidden = !has;
     if (!has) {
       $('amount').textContent = '—'; $('who').textContent = 'Ödeme bekleniyor';
-      $('hash').textContent = '—'; $('explorer').hidden = true; stopClock(0);
+      $('hash').textContent = '—'; $('explorer').hidden = true;
       return;
     }
     const byStep = {};
     for (const e of flow.events) byStep[e.step] = e;
-    const t0 = byStep.signed ? new Date(byStep.signed.at) : new Date(flow.createdAt);
 
     $('amount').textContent = tl(flow.totalAmount);
     $('who').textContent = flow.merchant?.businessName ? flow.merchant.businessName + ' · ödeme' : 'Ödeme';
@@ -250,7 +236,6 @@
     setBox('b-customer', sCustomer === 'pending' ? 'active' : sCustomer);
     $('customer-line').innerHTML = sCustomer === 'done' ? '<b>Kendi telefonunda imzaladı</b>' : 'Telefonunda imzalar';
     $('customer-addr').textContent = short(byStep.signed?.data?.signer || flow.senderAddress);
-    $('customer-t').textContent = since(t0, byStep.signed);
 
     // 2) KALEM: backend'e ulaştı + fee-bump
     const sKalem = after(sCustomer, statusOf(byStep, ['received', 'fee_bump']));
@@ -259,7 +244,6 @@
     $('kalem-line2').innerHTML = byStep.fee_bump?.status === 'done'
       ? '<b>Ağ ücretini KALEM ödedi</b>' + (byStep.fee_bump.data?.feeSource ? ' · ' + short(byStep.fee_bump.data.feeSource) : '')
       : 'Ağ ücretini üstlenir';
-    $('kalem-t').textContent = since(t0, byStep.fee_bump || byStep.received);
     $('a1').classList.toggle('on', sCustomer === 'done');
 
     // 3) Stellar: zincire iletildi + kontrat çalıştı
@@ -269,7 +253,6 @@
     $('chain-line1').innerHTML = byStep.contract?.status === 'done' ? '<b>Kontrat çalıştı</b>'
       : byStep.submitted?.status === 'done' ? '<b>Ağa iletildi</b>' : 'Kontrat parayı böler';
     $('chain-line2').textContent = ledger ? 'Blok ' + Number(ledger).toLocaleString('tr-TR') : '';
-    $('chain-t').textContent = since(t0, byStep.contract || byStep.submitted);
     $('a2').classList.toggle('on', sKalem === 'done');
 
     // Dağılım (zincirdeki transfer olaylarından okunur)
@@ -291,24 +274,20 @@
       : dist.data?.sumMatchesTotal ? 'Tek işlemde üç transfer · <b>toplam tutuyor</b>' : '';
 
     // 4) Onay, fatura, esnaf ekranı
-    const sDist = dist ? (dist.status === 'failed' ? 'failed' : 'done') : 'pending';
     const sCaught = after(sChain === 'done' ? 'done' : 'pending', statusOf(byStep, ['caught']));
     setBox('b-caught', sCaught);
     const src = byStep.caught?.data?.source;
     $('caught-line').innerHTML = byStep.caught?.status === 'done'
       ? '<b>Kesinleşti</b>' + (src === 'submit_response' ? ' · ağın cevabından' : src === 'reconciliation' ? ' · mutabakattan' : src ? ' · canlı akıştan' : '')
       : 'Ağ kesinleştirir';
-    $('caught-t').textContent = since(t0, byStep.caught);
 
     const sGib = after(sCaught, statusOf(byStep, ['gib']));
     setBox('b-gib', sGib);
     $('gib-line').innerHTML = byStep.gib?.status === 'done' ? '<b>Kesildi</b> · esnafın vergi numarasıyla' : 'Esnafın vergi numarasıyla';
-    $('gib-t').textContent = since(t0, byStep.gib);
 
     const sSeen = after(sGib, statusOf(byStep, ['merchant_seen']));
     setBox('b-seen', sSeen);
     $('seen-line').innerHTML = byStep.merchant_seen?.status === 'done' ? '<b>Ödeme alındı</b> göründü' : 'Ödeme alındı';
-    $('seen-t').textContent = since(t0, byStep.merchant_seen);
 
     // Alt bilgi
     const hash = flow.txHash || byStep.submitted?.data?.txHash;
@@ -316,26 +295,6 @@
     $('explorer').hidden = !hash;
     if (hash) $('explorer').href = EXPLORER + hash;
 
-    // Saat: ilk olaydan esnaf ekranına (ya da son olaya) kadar
-    const finished = ['merchant_seen', 'gib'].map((k) => byStep[k]).find((e) => e?.status === 'done');
-    const failed = flow.events.some((e) => e.status === 'failed');
-    if (finished || failed || sDist === 'failed') {
-      const last = flow.events.reduce((m, e) => Math.max(m, new Date(e.at).getTime()), t0.getTime());
-      stopClock(last - t0);
-    } else {
-      runClock(t0);
-    }
-  }
-
-  function stopClock(ms) {
-    clearInterval(tick); tick = null;
-    $('clock').innerHTML = secs(Math.max(0, ms)) + '<small>sn</small>';
-  }
-  function runClock(t0) {
-    clearInterval(tick);
-    const draw = () => { $('clock').innerHTML = secs(Math.max(0, Date.now() - t0)) + '<small>sn</small>'; };
-    draw();
-    tick = setInterval(draw, 100);
   }
 
   function accept(flow) {
