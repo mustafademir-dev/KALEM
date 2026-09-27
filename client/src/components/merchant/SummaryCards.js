@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Icon from '../Icon.js';
 import Amount from '../Amount.js';
 import { Skeleton } from '../StateViews.js';
@@ -66,6 +66,9 @@ function Stat({ label, value, loading, accent }) {
 
 /** Esnafın zincirdeki bakiyesi: kesintiler ödeme anında düşüldüğü için çekilebilir tutarın kendisidir. */
 export function BalanceCard({ balance, loading }) {
+  // Bakiye çekme (lisanslı ortak üzerinden FAST ile IBAN'a) ürün aşamasında; burada yalnızca
+  // yerini gösteriyoruz. Basılırsa işlem yapmaz, kısa bir bilgi notu açar.
+  const [showWithdrawInfo, setShowWithdrawInfo] = useState(false);
   return (
     <View style={[styles.card, styles.half]}>
       <View style={styles.iconBubble}>
@@ -80,6 +83,19 @@ export function BalanceCard({ balance, loading }) {
         <Amount stroops={balance} size={22} style={{ marginTop: 2 }} />
       )}
       <Text style={[type.caption, { color: colors.textMuted, marginTop: 2 }]}>%0,4 hizmet bedeli düşülmüş</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Bakiyeyi banka hesabıma aktar"
+        onPress={() => setShowWithdrawInfo((v) => !v)}
+        style={({ pressed }) => [styles.withdraw, pressed && { opacity: 0.7 }]}
+      >
+        <Text style={[type.captionMedium, { color: colors.accentStrong }]}>Banka hesabıma aktar →</Text>
+      </Pressable>
+      {showWithdrawInfo ? (
+        <Text style={[type.caption, { color: colors.textSecondary, marginTop: spacing.xs }]}>
+          Bakiyeniz FAST ile kayıtlı IBAN'ınıza aktarılır. Bu özellik yakında açılacak.
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -120,6 +136,16 @@ const styles = StyleSheet.create({
     ...cardShadow,
   },
   half: { flex: 1, padding: spacing.md },
+  withdraw: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    backgroundColor: colors.accentMuted,
+  },
   // İki kartın etiketi farklı satır sayısında olsa da tutarlar aynı hizada başlasın.
   cardLabel: { color: colors.textMuted, marginTop: spacing.sm, minHeight: 28 },
   headRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
