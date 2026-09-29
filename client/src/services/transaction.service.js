@@ -23,6 +23,7 @@ import {
   POOL_MANAGER_CONTRACT_ID,
 } from '../utils/constants.js';
 import { signData, bytesToBase64 } from './wallet.service.js';
+import { accountExists, fundViaFriendbot } from './stellar-read.service.js';
 
 const sorobanServer = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
 const horizonServer = new StellarSdk.Horizon.Server(HORIZON_URL);
@@ -40,6 +41,12 @@ const INNER_TX_TIMEOUT_SECONDS = 180;
  * @returns {Promise<{signedXdr: string, idempotencyKey: string, innerTxHash: string}>}
  */
 export async function createPaymentTransaction({ senderAddress, merchantStellarAddress, totalAmount }) {
+  // Cihaz değişiminde bakiye yeni adrese taşınır ama classic hesap yalnızca
+  // "Bakiye Yükle" akışında açılıyordu; hesap yoksa işlem kaynağı yüklenemez
+  // (Horizon 404). Ödemeden önce hesabı aç (testnet Friendbot).
+  if (!(await accountExists(senderAddress))) {
+    await fundViaFriendbot(senderAddress);
+  }
   const account = await horizonServer.loadAccount(senderAddress);
   const contract = new StellarSdk.Contract(POOL_MANAGER_CONTRACT_ID);
 
